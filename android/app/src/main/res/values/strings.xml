@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">PipLock AI</string>
+    <string name="accessibility_service_description">PipLock AI monitora l\'apertura delle app di trading per proteggere le tue regole di risk management. Non legge password o dati personali.</string>
+    <string name="default_web_client_id">573316823540-5d79lbal522jb48mib4lkcv03p35ivrb.apps.googleusercontent.com</string>
+    <string name="server_client_id">573316823540-5d79lbal522jb48mib4lkcv03p35ivrb.apps.googleusercontent.com</string>
+</resources>

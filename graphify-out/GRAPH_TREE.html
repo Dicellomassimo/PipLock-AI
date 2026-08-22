@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>. — graphify tree viewer</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f9f9f9;
+      color: #333;
+    }
+    h1 {
+      margin: 20px 0 0 24px;
+      font-size: 2.2rem;
+      font-weight: bold;
+      color: #1e3a56;
+    }
+    .controls {
+      margin: 20px 0 15px 24px;
+    }
+    button {
+      margin-right: 10px;
+      padding: 8px 18px;
+      background: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: background 0.2s ease-in-out;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    button:hover {
+      background: #0056b3;
+    }
+    button:active {
+      background: #004085;
+    }
+    #tree-container {
+      width: calc(100vw - 48px); /* Adjust for body margin/padding */
+      height: 85vh;
+      overflow: auto;
+      border-radius: 8px;
+      background: #fff;
+      margin-left: 24px;
+      margin-right: 24px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      border: 1px solid #ddd;
+    }
+    svg {
+      background: #fff;
+      border-radius: 8px;
+      display: block; /* Important for D3 */
+    }
+    .node circle {
+      stroke-width: 2.5px;
+    }
+    .node text { /* Base style for the <text> container */
+      font: 13px 'Segoe UI', sans-serif;
+      paint-order: stroke fill; /* Ensures text is readable over lines */
+      stroke: #fff; /* White halo */
+      stroke-width: 3px; /* Halo thickness */
+      stroke-linejoin: round;
+      stroke-opacity: 0.85; /* Halo opacity */
+    }
+    .link {
+      fill: none;
+      stroke-opacity: 0.7;
+      stroke-width: 2px;
+    }
+  </style>
+</head>
+<body>
+  <h1>. — Knowledge Graph</h1>
+  <div class="controls">
+    <button onclick="expandAll()">Expand All</button>
+    <button onclick="collapseAll()">Collapse All</button>
+    <button onclick="resetView()">Reset View</button>
+  </div>
+  <div id="tree-container">
+    <svg id="tree-svg" width="6000" height="8000"></svg>
+  </div>
+
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <script>
+    const initialJsonData = {"name":".","total_count":723,"children":[{"name":"android","total_count":16,"children":[{"name":"app","total_count":14,"children":[{"name":"src","total_count":13,"children":[{"name":"main","total_count":13,"children":[{"name":"kotlin","total_count":13,"children":[{"name":"com","total_count":13,"children":[{"name":"piplock","total_count":13,"children":[{"name":"piplock_ai","total_count":13,"children":[{"name":"MainActivity.kt","total_count":7,"children":[{"name":".configureFlutterEngine()","total_count":1,"children":[]},{"name":".isAccessibilityServiceEnabled()","total_count":1,"children":[]},{"name":".onCancel()","total_count":1,"children":[]},{"name":".onDestroy()","total_count":1,"children":[]},{"name":".onListen()","total_count":1,"children":[]},{"name":"EventChannel","total_count":1,"children":[]},{"name":"MainActivity","total_count":1,"children":[]}]},{"name":"PipLockAccessibilityService.kt","total_count":6,"children":[{"name":".onAccessibilityEvent()","total_count":1,"children":[]},{"name":".onDestroy()","total_count":1,"children":[]},{"name":".onInterrupt()","total_count":1,"children":[]},{"name":".onServiceConnected()","total_count":1,"children":[]},{"name":".sendBrokerEvent()","total_count":1,"children":[]},{"name":"PipLockAccessibilityService","total_count":1,"children":[]}]}]}]}]}]}]}]},{"name":"build.gradle.kts","total_count":1,"children":[]}]},{"name":"build.gradle.kts","total_count":1,"children":[]},{"name":"settings.gradle.kts","total_count":1,"children":[]}]},{"name":"lib","total_count":696,"children":[{"name":"app.dart","total_count":4,"children":[{"name":"_AuthCallbackScreen","total_count":1,"children":[]},{"name":"_buildTheme","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"PipLockApp","total_count":1,"children":[]}]},{"name":"config","total_count":23,"children":[{"name":"app_colors.dart","total_count":22,"children":[{"name":"accent","total_count":1,"children":[]},{"name":"accentDark","total_count":1,"children":[]},{"name":"AppColors","total_count":1,"children":[]},{"name":"background","total_count":1,"children":[]},{"name":"border","total_count":1,"children":[]},{"name":"cardBg","total_count":1,"children":[]},{"name":"cardBg2","total_count":1,"children":[]},{"name":"danger","total_count":1,"children":[]},{"name":"dangerDark","total_count":1,"children":[]},{"name":"divider","total_count":1,"children":[]},{"name":"fomo","total_count":1,"children":[]},{"name":"heroGradientDanger","total_count":1,"children":[]},{"name":"heroGradientOk","total_count":1,"children":[]},{"name":"heroGradientWarning","total_count":1,"children":[]},{"name":"logoGradient","total_count":1,"children":[]},{"name":"success","total_count":1,"children":[]},{"name":"surface","total_count":1,"children":[]},{"name":"textPrimary","total_count":1,"children":[]},{"name":"textSecondary","total_count":1,"children":[]},{"name":"textTertiary","total_count":1,"children":[]},{"name":"warning","total_count":1,"children":[]},{"name":"warningDark","total_count":1,"children":[]}]},{"name":"constants.dart","total_count":1,"children":[{"name":"kDevMode","total_count":1,"children":[]}]}]},{"name":"main.dart","total_count":5,"children":[{"name":"appLinks","total_count":1,"children":[]},{"name":"groqKey","total_count":1,"children":[]},{"name":"initialize","total_count":1,"children":[]},{"name":"load","total_count":1,"children":[]},{"name":"main","total_count":1,"children":[]}]},{"name":"models","total_count":71,"children":[{"name":"challenge.dart","total_count":18,"children":[{"name":"accountSize","total_count":1,"children":[]},{"name":"aiPlan","total_count":1,"children":[]},{"name":"Challenge","total_count":1,"children":[]},{"name":"copyWith","total_count":1,"children":[]},{"name":"currentDay","total_count":1,"children":[]},{"name":"durationDays","total_count":1,"children":[]},{"name":"fromJson","total_count":1,"children":[]},{"name":"id","total_count":1,"children":[]},{"name":"maxDailyLoss","total_count":1,"children":[]},{"name":"maxTotalDrawdown","total_count":1,"children":[]},{"name":"mock","total_count":1,"children":[]},{"name":"profitTarget","total_count":1,"children":[]},{"name":"propFirmName","total_count":1,"children":[]},{"name":"startedAt","total_count":1,"children":[]},{"name":"status","total_count":1,"children":[]},{"name":"style","total_count":1,"children":[]},{"name":"toJson","total_count":1,"children":[]},{"name":"userId","total_count":1,"children":[]}]},{"name":"killswitch_event.dart","total_count":14,"children":[{"name":"accountMode","total_count":1,"children":[]},{"name":"fromJson","total_count":1,"children":[]},{"name":"id","total_count":1,"children":[]},{"name":"isActive","total_count":1,"children":[]},{"name":"KillswitchEvent","total_count":1,"children":[]},{"name":"lockDurationMinutes","total_count":1,"children":[]},{"name":"mockList","total_count":1,"children":[]},{"name":"reason","total_count":1,"children":[]},{"name":"resolvedAt","total_count":1,"children":[]},{"name":"toJson","total_count":1,"children":[]},{"name":"triggeredAt","total_count":1,"children":[]},{"name":"unlockedEarly","total_count":1,"children":[]},{"name":"unlockedWithToken","total_count":1,"children":[]},{"name":"userId","total_count":1,"children":[]}]},{"name":"notification_prefs.dart","total_count":12,"children":[{"name":"challengeReminders","total_count":1,"children":[]},{"name":"copyWith","total_count":1,"children":[]},{"name":"fcmToken","total_count":1,"children":[]},{"name":"fomoAlerts","total_count":1,"children":[]},{"name":"fromJson","total_count":1,"children":[]},{"name":"mock","total_count":1,"children":[]},{"name":"newsAlerts","total_count":1,"children":[]},{"name":"NotificationPrefs","total_count":1,"children":[]},{"name":"riskWarnings","total_count":1,"children":[]},{"name":"sessionChanges","total_count":1,"children":[]},{"name":"toJson","total_count":1,"children":[]},{"name":"userId","total_count":1,"children":[]}]},{"name":"personal_rules.dart","total_count":16,"children":[{"name":"copyWith","total_count":1,"children":[]},{"name":"fromJson","total_count":1,"children":[]},{"name":"killswitchDuration","total_count":1,"children":[]},{"name":"maxDailyLoss","total_count":1,"children":[]},{"name":"maxDailyLossType","total_count":1,"children":[]},{"name":"maxTradesPerDay","total_count":1,"children":[]},{"name":"maxWeeklyLoss","total_count":1,"children":[]},{"name":"mock","total_count":1,"children":[]},{"name":"PersonalRules","total_count":1,"children":[]},{"name":"timezone","total_count":1,"children":[]},{"name":"toJson","total_count":1,"children":[]},{"name":"tradingHoursEnabled","total_count":1,"children":[]},{"name":"tradingHoursEnd","total_count":1,"children":[]},{"name":"tradingHoursStart","total_count":1,"children":[]},{"name":"updatedAt","total_count":1,"children":[]},{"name":"userId","total_count":1,"children":[]}]},{"name":"profile.dart","total_count":11,"children":[{"name":"accountMode","total_count":1,"children":[]},{"name":"copyWith","total_count":1,"children":[]},{"name":"createdAt","total_count":1,"children":[]},{"name":"fromJson","total_count":1,"children":[]},{"name":"id","total_count":1,"children":[]},{"name":"mock","total_count":1,"children":[]},{"name":"Profile","total_count":1,"children":[]},{"name":"subscriptionTier","total_count":1,"children":[]},{"name":"toJson","total_count":1,"children":[]},{"name":"tokensAvailable","total_count":1,"children":[]},{"name":"tokensResetAt","total_count":1,"children":[]}]}]},{"name":"providers","total_count":103,"children":[{"name":"accessibility_provider.dart","total_count":9,"children":[{"name":"_durationMinutes","total_count":1,"children":[]},{"name":"_ref","total_count":1,"children":[]},{"name":"_sessionTrades","total_count":1,"children":[]},{"name":"_startListening","total_count":1,"children":[]},{"name":"_sub","total_count":1,"children":[]},{"name":"AccessibilityWatcher","total_count":1,"children":[]},{"name":"accessibilityWatcherProvider","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]},{"name":"watcher","total_count":1,"children":[]}]},{"name":"auth_provider.dart","total_count":15,"children":[{"name":"_init","total_count":1,"children":[]},{"name":"_loadProfile","total_count":1,"children":[]},{"name":"_mockProfile","total_count":1,"children":[]},{"name":"AuthNotifier","total_count":1,"children":[]},{"name":"authProvider","total_count":1,"children":[]},{"name":"AuthState","total_count":1,"children":[]},{"name":"consumeToken","total_count":1,"children":[]},{"name":"copyWith","total_count":1,"children":[]},{"name":"currentUserIdProvider","total_count":1,"children":[]},{"name":"isLoading","total_count":1,"children":[]},{"name":"isLoggedIn","total_count":1,"children":[]},{"name":"profile","total_count":1,"children":[]},{"name":"signOut","total_count":1,"children":[]},{"name":"updateProfile","total_count":1,"children":[]},{"name":"watch","total_count":1,"children":[]}]},{"name":"killswitch_provider.dart","total_count":18,"children":[{"name":"_durationFromString","total_count":1,"children":[]},{"name":"_ref","total_count":1,"children":[]},{"name":"activate","total_count":1,"children":[]},{"name":"activateAndSave","total_count":1,"children":[]},{"name":"activatedAt","total_count":1,"children":[]},{"name":"activateWithDurationString","total_count":1,"children":[]},{"name":"copyWith","total_count":1,"children":[]},{"name":"deactivate","total_count":1,"children":[]},{"name":"eventId","total_count":1,"children":[]},{"name":"isActive","total_count":1,"children":[]},{"name":"isExpired","total_count":1,"children":[]},{"name":"KillswitchNotifier","total_count":1,"children":[]},{"name":"killswitchProvider","total_count":1,"children":[]},{"name":"KillswitchState","total_count":1,"children":[]},{"name":"lockDurationMinutes","total_count":1,"children":[]},{"name":"reason","total_count":1,"children":[]},{"name":"tokensAvailable","total_count":1,"children":[]},{"name":"useToken","total_count":1,"children":[]}]},{"name":"metaapi_provider.dart","total_count":39,"children":[{"name":"_checkLimits","total_count":1,"children":[]},{"name":"_dayStartEquity","total_count":1,"children":[]},{"name":"_durationMinutes","total_count":1,"children":[]},{"name":"_lastDayKey","total_count":1,"children":[]},{"name":"_loadPersistedConnection","total_count":1,"children":[]},{"name":"_poll","total_count":1,"children":[]},{"name":"_pollActive","total_count":1,"children":[]},{"name":"_pollTimer","total_count":1,"children":[]},{"name":"_ref","total_count":1,"children":[]},{"name":"_saveToSupabase","total_count":1,"children":[]},{"name":"_sentinel","total_count":1,"children":[]},{"name":"_startPolling","total_count":1,"children":[]},{"name":"_todayKey","total_count":1,"children":[]},{"name":"_updateLastSync","total_count":1,"children":[]},{"name":"accountId","total_count":1,"children":[]},{"name":"balance","total_count":1,"children":[]},{"name":"connect","total_count":1,"children":[]},{"name":"copyWith","total_count":1,"children":[]},{"name":"currency","total_count":1,"children":[]},{"name":"dailyLossPct","total_count":1,"children":[]},{"name":"dailyLossUsd","total_count":1,"children":[]},{"name":"disconnect","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]},{"name":"drawdownPct","total_count":1,"children":[]},{"name":"equity","total_count":1,"children":[]},{"name":"error","total_count":1,"children":[]},{"name":"hasAccount","total_count":1,"children":[]},{"name":"isConnected","total_count":1,"children":[]},{"name":"isConnecting","total_count":1,"children":[]},{"name":"lastUpdate","total_count":1,"children":[]},{"name":"MetaApiNotifier","total_count":1,"children":[]},{"name":"metaApiProvider","total_count":1,"children":[]},{"name":"MetaApiState","total_count":1,"children":[]},{"name":"mt5Login","total_count":1,"children":[]},{"name":"mt5Server","total_count":1,"children":[]},{"name":"openPositions","total_count":1,"children":[]},{"name":"refresh","total_count":1,"children":[]},{"name":"region","total_count":1,"children":[]},{"name":"tradesToday","total_count":1,"children":[]}]},{"name":"realtime_provider.dart","total_count":6,"children":[{"name":"_init","total_count":1,"children":[]},{"name":"_ref","total_count":1,"children":[]},{"name":"_startRealtime","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]},{"name":"RealtimeNotifier","total_count":1,"children":[]},{"name":"realtimeProvider","total_count":1,"children":[]}]},{"name":"rules_provider.dart","total_count":16,"children":[{"name":"_loadRules","total_count":1,"children":[]},{"name":"_ref","total_count":1,"children":[]},{"name":"copyWith","total_count":1,"children":[]},{"name":"isKillswitchTriggered","total_count":1,"children":[]},{"name":"isLoading","total_count":1,"children":[]},{"name":"lossToday","total_count":1,"children":[]},{"name":"reload","total_count":1,"children":[]},{"name":"resetDay","total_count":1,"children":[]},{"name":"rules","total_count":1,"children":[]},{"name":"RulesNotifier","total_count":1,"children":[]},{"name":"rulesProvider","total_count":1,"children":[]},{"name":"RulesState","total_count":1,"children":[]},{"name":"setRules","total_count":1,"children":[]},{"name":"trackLoss","total_count":1,"children":[]},{"name":"trackTrade","total_count":1,"children":[]},{"name":"tradesToday","total_count":1,"children":[]}]}]},{"name":"screens","total_count":351,"children":[{"name":"account","total_count":10,"children":[{"name":"account_screen.dart","total_count":10,"children":[{"name":"_actionTile","total_count":1,"children":[]},{"name":"_buildProfileHero","total_count":1,"children":[]},{"name":"_buildSubscriptionCard","total_count":1,"children":[]},{"name":"_copyToClipboard","total_count":1,"children":[]},{"name":"_infoTile","total_count":1,"children":[]},{"name":"_modeCard","total_count":1,"children":[]},{"name":"_sectionLabel","total_count":1,"children":[]},{"name":"_showDeleteDialog","total_count":1,"children":[]},{"name":"AccountScreen","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]}]}]},{"name":"ai_planner","total_count":29,"children":[{"name":"ai_planner_screen.dart","total_count":29,"children":[{"name":"_addBotMessage","total_count":1,"children":[]},{"name":"_AiPlannerScreenState","total_count":1,"children":[]},{"name":"_buildChatBubble","total_count":1,"children":[]},{"name":"_buildEmptyChat","total_count":1,"children":[]},{"name":"_buildInput","total_count":1,"children":[]},{"name":"_buildPlanCard","total_count":1,"children":[]},{"name":"_buildTypingIndicator","total_count":1,"children":[]},{"name":"_challenge","total_count":1,"children":[]},{"name":"_dot","total_count":1,"children":[]},{"name":"_generatePlan","total_count":1,"children":[]},{"name":"_inputController","total_count":1,"children":[]},{"name":"_isChatLoading","total_count":1,"children":[]},{"name":"_isLoadingPlan","total_count":1,"children":[]},{"name":"_loadActiveChallenge","total_count":1,"children":[]},{"name":"_messages","total_count":1,"children":[]},{"name":"_plan","total_count":1,"children":[]},{"name":"_planStatRow","total_count":1,"children":[]},{"name":"_scrollController","total_count":1,"children":[]},{"name":"_scrollToBottom","total_count":1,"children":[]},{"name":"_sendMessage","total_count":1,"children":[]},{"name":"AiPlannerScreen","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"ChatMessage","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]},{"name":"initState","total_count":1,"children":[]},{"name":"isUser","total_count":1,"children":[]},{"name":"text","total_count":1,"children":[]},{"name":"timestamp","total_count":1,"children":[]}]}]},{"name":"auth","total_count":33,"children":[{"name":"auth_screen.dart","total_count":24,"children":[{"name":"_AuthScreenState","total_count":1,"children":[]},{"name":"_buildLoginForm","total_count":1,"children":[]},{"name":"_buildRegisterForm","total_count":1,"children":[]},{"name":"_buildTextField","total_count":1,"children":[]},{"name":"_friendlyError","total_count":1,"children":[]},{"name":"_login","total_count":1,"children":[]},{"name":"_loginEmailController","total_count":1,"children":[]},{"name":"_loginLoading","total_count":1,"children":[]},{"name":"_loginObscure","total_count":1,"children":[]},{"name":"_loginPasswordController","total_count":1,"children":[]},{"name":"_regConfirmController","total_count":1,"children":[]},{"name":"_regConfirmObscure","total_count":1,"children":[]},{"name":"_regEmailController","total_count":1,"children":[]},{"name":"_register","total_count":1,"children":[]},{"name":"_regLoading","total_count":1,"children":[]},{"name":"_regObscure","total_count":1,"children":[]},{"name":"_regPasswordController","total_count":1,"children":[]},{"name":"_showError","total_count":1,"children":[]},{"name":"_tabController","total_count":1,"children":[]},{"name":"AuthScreen","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]},{"name":"initState","total_count":1,"children":[]}]},{"name":"forgot_password_screen.dart","total_count":9,"children":[{"name":"_emailController","total_count":1,"children":[]},{"name":"_ForgotPasswordScreenState","total_count":1,"children":[]},{"name":"_isLoading","total_count":1,"children":[]},{"name":"_sendReset","total_count":1,"children":[]},{"name":"_showMessage","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]},{"name":"ForgotPasswordScreen","total_count":1,"children":[]}]}]},{"name":"broker","total_count":31,"children":[{"name":"broker_screen.dart","total_count":31,"children":[{"name":"_BrokerScreenState","total_count":1,"children":[]},{"name":"_buildConnectedView","total_count":1,"children":[]},{"name":"_buildConnectionForm","total_count":1,"children":[]},{"name":"_connect","total_count":1,"children":[]},{"name":"_disconnect","total_count":1,"children":[]},{"name":"_formatTime","total_count":1,"children":[]},{"name":"_FormField","total_count":1,"children":[]},{"name":"_infoStep","total_count":1,"children":[]},{"name":"_loginController","total_count":1,"children":[]},{"name":"_MetricCard","total_count":1,"children":[]},{"name":"_MetricsGrid","total_count":1,"children":[]},{"name":"_obscurePassword","total_count":1,"children":[]},{"name":"_passwordController","total_count":1,"children":[]},{"name":"_SecurityNote","total_count":1,"children":[]},{"name":"_serverController","total_count":1,"children":[]},{"name":"_showServerInfo","total_count":1,"children":[]},{"name":"_StatusBadge","total_count":1,"children":[]},{"name":"BrokerScreen","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"color","total_count":1,"children":[]},{"name":"connected","total_count":1,"children":[]},{"name":"controller","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]},{"name":"hint","total_count":1,"children":[]},{"name":"icon","total_count":1,"children":[]},{"name":"keyboardType","total_count":1,"children":[]},{"name":"label","total_count":1,"children":[]},{"name":"prefixIcon","total_count":1,"children":[]},{"name":"state","total_count":1,"children":[]},{"name":"value","total_count":1,"children":[]}]}]},{"name":"dashboard","total_count":21,"children":[{"name":"dashboard_screen.dart","total_count":21,"children":[{"name":"_buildCheckinRow","total_count":1,"children":[]},{"name":"_buildDevSection","total_count":1,"children":[]},{"name":"_buildDevToggle","total_count":1,"children":[]},{"name":"_buildHeader","total_count":1,"children":[]},{"name":"_buildHeroCard","total_count":1,"children":[]},{"name":"_buildRecentActivity","total_count":1,"children":[]},{"name":"_buildStatsRow","total_count":1,"children":[]},{"name":"_checkinDone","total_count":1,"children":[]},{"name":"_checkinScore","total_count":1,"children":[]},{"name":"_DashboardScreenState","total_count":1,"children":[]},{"name":"_pnlToday","total_count":1,"children":[]},{"name":"_sessionName","total_count":1,"children":[]},{"name":"_sessionSub","total_count":1,"children":[]},{"name":"_showDevTools","total_count":1,"children":[]},{"name":"_showGatekeeper","total_count":1,"children":[]},{"name":"_statCard","total_count":1,"children":[]},{"name":"_todayLabel","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"DashboardScreen","total_count":1,"children":[]},{"name":"initState","total_count":1,"children":[]}]}]},{"name":"help","total_count":37,"children":[{"name":"help_faq_screen.dart","total_count":22,"children":[{"name":"_buildContactCard","total_count":1,"children":[]},{"name":"_buildEmptySearch","total_count":1,"children":[]},{"name":"_buildFaqCard","total_count":1,"children":[]},{"name":"_buildSearchBar","total_count":1,"children":[]},{"name":"_buildSectionHeader","total_count":1,"children":[]},{"name":"_expanded","total_count":1,"children":[]},{"name":"_FaqItem","total_count":1,"children":[]},{"name":"_FaqSection","total_count":1,"children":[]},{"name":"_HelpFaqScreenState","total_count":1,"children":[]},{"name":"_searchController","total_count":1,"children":[]},{"name":"_searchQuery","total_count":1,"children":[]},{"name":"_sections","total_count":1,"children":[]},{"name":"_toggleItem","total_count":1,"children":[]},{"name":"answer","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]},{"name":"HelpFaqScreen","total_count":1,"children":[]},{"name":"initState","total_count":1,"children":[]},{"name":"items","total_count":1,"children":[]},{"name":"question","total_count":1,"children":[]},{"name":"title","total_count":1,"children":[]}]},{"name":"privacy_policy_screen.dart","total_count":15,"children":[{"name":"_buildScrollableContent","total_count":1,"children":[]},{"name":"_buildTabBar","total_count":1,"children":[]},{"name":"_PolicySection","total_count":1,"children":[]},{"name":"_PrivacyPolicyScreenState","total_count":1,"children":[]},{"name":"_privacySections","total_count":1,"children":[]},{"name":"_section","total_count":1,"children":[]},{"name":"_tabController","total_count":1,"children":[]},{"name":"_termsSections","total_count":1,"children":[]},{"name":"body","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]},{"name":"initState","total_count":1,"children":[]},{"name":"PrivacyPolicyScreen","total_count":1,"children":[]},{"name":"title","total_count":1,"children":[]}]}]},{"name":"history","total_count":19,"children":[{"name":"history_screen.dart","total_count":19,"children":[{"name":"_barGroup","total_count":1,"children":[]},{"name":"_buildChartView","total_count":1,"children":[]},{"name":"_buildEmptyPlaceholder","total_count":1,"children":[]},{"name":"_buildEventCard","total_count":1,"children":[]},{"name":"_buildListView","total_count":1,"children":[]},{"name":"_buildToggle","total_count":1,"children":[]},{"name":"_colorForReason","total_count":1,"children":[]},{"name":"_events","total_count":1,"children":[]},{"name":"_HistoryScreenState","total_count":1,"children":[]},{"name":"_iconForReason","total_count":1,"children":[]},{"name":"_isLoading","total_count":1,"children":[]},{"name":"_loadHistory","total_count":1,"children":[]},{"name":"_showChart","total_count":1,"children":[]},{"name":"_statCard","total_count":1,"children":[]},{"name":"_statsSummary","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"HistoryScreen","total_count":1,"children":[]},{"name":"initState","total_count":1,"children":[]}]}]},{"name":"killswitch","total_count":19,"children":[{"name":"killswitch_screen.dart","total_count":19,"children":[{"name":"_countdownTimer","total_count":1,"children":[]},{"name":"_formatDuration","total_count":1,"children":[]},{"name":"_holdProgress","total_count":1,"children":[]},{"name":"_holdTimer","total_count":1,"children":[]},{"name":"_isHolding","total_count":1,"children":[]},{"name":"_KillswitchScreenState","total_count":1,"children":[]},{"name":"_onHoldEnd","total_count":1,"children":[]},{"name":"_onHoldStart","total_count":1,"children":[]},{"name":"_pulseAnimation","total_count":1,"children":[]},{"name":"_pulseController","total_count":1,"children":[]},{"name":"_reasonText","total_count":1,"children":[]},{"name":"_remaining","total_count":1,"children":[]},{"name":"_startCountdown","total_count":1,"children":[]},{"name":"_useToken","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]},{"name":"initState","total_count":1,"children":[]},{"name":"KillswitchScreen","total_count":1,"children":[]}]}]},{"name":"nav","total_count":9,"children":[{"name":"main_nav_screen.dart","total_count":9,"children":[{"name":"_currentIndex","total_count":1,"children":[]},{"name":"_MainNavScreenState","total_count":1,"children":[]},{"name":"_pages","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"initState","total_count":1,"children":[]},{"name":"MainNavScreen","total_count":1,"children":[]},{"name":"manrope","total_count":1,"children":[]},{"name":"navLabelStyle","total_count":1,"children":[]}]}]},{"name":"notifications","total_count":20,"children":[{"name":"notifications_screen.dart","total_count":20,"children":[{"name":"_allEnabled","total_count":1,"children":[]},{"name":"_challengeReminders","total_count":1,"children":[]},{"name":"_EconomicEventTile","total_count":1,"children":[]},{"name":"_fomoAlerts","total_count":1,"children":[]},{"name":"_formatDate","total_count":1,"children":[]},{"name":"_formatTime","total_count":1,"children":[]},{"name":"_loadPrefs","total_count":1,"children":[]},{"name":"_newsAlerts","total_count":1,"children":[]},{"name":"_NotificationsScreenState","total_count":1,"children":[]},{"name":"_notifTile","total_count":1,"children":[]},{"name":"_riskWarnings","total_count":1,"children":[]},{"name":"_savePrefs","total_count":1,"children":[]},{"name":"_sessionChanges","total_count":1,"children":[]},{"name":"_toggleAll","total_count":1,"children":[]},{"name":"_updateAll","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"event","total_count":1,"children":[]},{"name":"initState","total_count":1,"children":[]},{"name":"NotificationsScreen","total_count":1,"children":[]}]}]},{"name":"onboarding","total_count":19,"children":[{"name":"onboarding_screen.dart","total_count":19,"children":[{"name":"_buildDots","total_count":1,"children":[]},{"name":"_buildPage1","total_count":1,"children":[]},{"name":"_buildPage2","total_count":1,"children":[]},{"name":"_buildPage3","total_count":1,"children":[]},{"name":"_buildPage4","total_count":1,"children":[]},{"name":"_continue","total_count":1,"children":[]},{"name":"_controller","total_count":1,"children":[]},{"name":"_currentPage","total_count":1,"children":[]},{"name":"_modeCard","total_count":1,"children":[]},{"name":"_next","total_count":1,"children":[]},{"name":"_OnboardingScreenState","total_count":1,"children":[]},{"name":"_permissionRow","total_count":1,"children":[]},{"name":"_primaryButton","total_count":1,"children":[]},{"name":"_selectedMode","total_count":1,"children":[]},{"name":"_totalPages","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]},{"name":"OnboardingScreen","total_count":1,"children":[]}]}]},{"name":"settings","total_count":19,"children":[{"name":"permissions_screen.dart","total_count":16,"children":[{"name":"_PermissionCard","total_count":1,"children":[]},{"name":"_PermissionsScreenState","total_count":1,"children":[]},{"name":"_refreshKey","total_count":1,"children":[]},{"name":"_StaticPermissionCard","total_count":1,"children":[]},{"name":"actionButton","total_count":1,"children":[]},{"name":"activeLabel","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"description","total_count":1,"children":[]},{"name":"icon","total_count":1,"children":[]},{"name":"iconColor","total_count":1,"children":[]},{"name":"inactiveLabel","total_count":1,"children":[]},{"name":"PermissionsScreen","total_count":1,"children":[]},{"name":"statusFuture","total_count":1,"children":[]},{"name":"statusWidget","total_count":1,"children":[]},{"name":"title","total_count":1,"children":[]}]},{"name":"settings_screen.dart","total_count":3,"children":[{"name":"_settingsTile","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"SettingsScreen","total_count":1,"children":[]}]}]},{"name":"setup","total_count":66,"children":[{"name":"challenge_setup_screen.dart","total_count":31,"children":[{"name":"_accountSize","total_count":1,"children":[]},{"name":"_accountSizes","total_count":1,"children":[]},{"name":"_back","total_count":1,"children":[]},{"name":"_buildProgressBar","total_count":1,"children":[]},{"name":"_buildStep1","total_count":1,"children":[]},{"name":"_buildStep2","total_count":1,"children":[]},{"name":"_buildStep3","total_count":1,"children":[]},{"name":"_buildStep4","total_count":1,"children":[]},{"name":"_buildStep5","total_count":1,"children":[]},{"name":"_buildStep6","total_count":1,"children":[]},{"name":"_ChallengeSetupScreenState","total_count":1,"children":[]},{"name":"_controller","total_count":1,"children":[]},{"name":"_customFirmController","total_count":1,"children":[]},{"name":"_durationController","total_count":1,"children":[]},{"name":"_generate","total_count":1,"children":[]},{"name":"_maxDailyLoss","total_count":1,"children":[]},{"name":"_maxDrawdown","total_count":1,"children":[]},{"name":"_next","total_count":1,"children":[]},{"name":"_profitTarget","total_count":1,"children":[]},{"name":"_propFirm","total_count":1,"children":[]},{"name":"_propFirms","total_count":1,"children":[]},{"name":"_sliderCard","total_count":1,"children":[]},{"name":"_step","total_count":1,"children":[]},{"name":"_stepWrapper","total_count":1,"children":[]},{"name":"_styleDescriptionCard","total_count":1,"children":[]},{"name":"_styleValue","total_count":1,"children":[]},{"name":"_totalSteps","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"ChallengeSetupScreen","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]}]},{"name":"personal_rules_screen.dart","total_count":35,"children":[{"name":"_back","total_count":1,"children":[]},{"name":"_brokerController","total_count":1,"children":[]},{"name":"_buildProgressBar","total_count":1,"children":[]},{"name":"_buildStep1","total_count":1,"children":[]},{"name":"_buildStep2","total_count":1,"children":[]},{"name":"_buildStep3","total_count":1,"children":[]},{"name":"_buildStep4","total_count":1,"children":[]},{"name":"_buildStep5","total_count":1,"children":[]},{"name":"_buildStep6","total_count":1,"children":[]},{"name":"_confirm","total_count":1,"children":[]},{"name":"_controller","total_count":1,"children":[]},{"name":"_durationCard","total_count":1,"children":[]},{"name":"_endTime","total_count":1,"children":[]},{"name":"_killswitchDuration","total_count":1,"children":[]},{"name":"_lossType","total_count":1,"children":[]},{"name":"_maxDailyLoss","total_count":1,"children":[]},{"name":"_maxTradesPerDay","total_count":1,"children":[]},{"name":"_maxWeeklyLoss","total_count":1,"children":[]},{"name":"_next","total_count":1,"children":[]},{"name":"_PersonalRulesScreenState","total_count":1,"children":[]},{"name":"_preloadRules","total_count":1,"children":[]},{"name":"_startTime","total_count":1,"children":[]},{"name":"_step","total_count":1,"children":[]},{"name":"_stepperButton","total_count":1,"children":[]},{"name":"_stepWrapper","total_count":1,"children":[]},{"name":"_summaryRow","total_count":1,"children":[]},{"name":"_timePickerField","total_count":1,"children":[]},{"name":"_totalSteps","total_count":1,"children":[]},{"name":"_tradingHoursEnabled","total_count":1,"children":[]},{"name":"_weeklyLossEnabled","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]},{"name":"initState","total_count":1,"children":[]},{"name":"PersonalRulesScreen","total_count":1,"children":[]}]}]},{"name":"splash_screen.dart","total_count":13,"children":[{"name":"_authResolved","total_count":1,"children":[]},{"name":"_ctrl","total_count":1,"children":[]},{"name":"_fade","total_count":1,"children":[]},{"name":"_minDelay","total_count":1,"children":[]},{"name":"_navigate","total_count":1,"children":[]},{"name":"_navigated","total_count":1,"children":[]},{"name":"_scale","total_count":1,"children":[]},{"name":"_SplashScreenState","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]},{"name":"initState","total_count":1,"children":[]},{"name":"SplashScreen","total_count":1,"children":[]}]},{"name":"tokens","total_count":6,"children":[{"name":"tokens_screen.dart","total_count":6,"children":[{"name":"_comparisonTable","total_count":1,"children":[]},{"name":"_purchaseCard","total_count":1,"children":[]},{"name":"_TokensScreenState","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"TokensScreen","total_count":1,"children":[]}]}]}]},{"name":"services","total_count":94,"children":[{"name":"accessibility_service.dart","total_count":6,"children":[{"name":"_events","total_count":1,"children":[]},{"name":"_method","total_count":1,"children":[]},{"name":"AccessibilityService","total_count":1,"children":[]},{"name":"isEnabled","total_count":1,"children":[]},{"name":"isRunning","total_count":1,"children":[]},{"name":"openSettings","total_count":1,"children":[]}]},{"name":"ai_service.dart","total_count":10,"children":[{"name":"_apiKey","total_count":1,"children":[]},{"name":"_baseUrl","total_count":1,"children":[]},{"name":"_headers","total_count":1,"children":[]},{"name":"_mockChatResponse","total_count":1,"children":[]},{"name":"_mockPlan","total_count":1,"children":[]},{"name":"_model","total_count":1,"children":[]},{"name":"AiService","total_count":1,"children":[]},{"name":"chat","total_count":1,"children":[]},{"name":"generateChallengePlan","total_count":1,"children":[]},{"name":"setApiKey","total_count":1,"children":[]}]},{"name":"metaapi_service.dart","total_count":19,"children":[{"name":"_clientBase","total_count":1,"children":[]},{"name":"_headers","total_count":1,"children":[]},{"name":"_provBase","total_count":1,"children":[]},{"name":"_token","total_count":1,"children":[]},{"name":"balance","total_count":1,"children":[]},{"name":"currency","total_count":1,"children":[]},{"name":"deployAccount","total_count":1,"children":[]},{"name":"equity","total_count":1,"children":[]},{"name":"freeMargin","total_count":1,"children":[]},{"name":"fromJson","total_count":1,"children":[]},{"name":"getAccountInfo","total_count":1,"children":[]},{"name":"getAccountState","total_count":1,"children":[]},{"name":"getPositionsCount","total_count":1,"children":[]},{"name":"getTradesToday","total_count":1,"children":[]},{"name":"margin","total_count":1,"children":[]},{"name":"marginLevel","total_count":1,"children":[]},{"name":"MetaApiAccountInfo","total_count":1,"children":[]},{"name":"MetaApiService","total_count":1,"children":[]},{"name":"removeAccount","total_count":1,"children":[]}]},{"name":"notification_service.dart","total_count":19,"children":[{"name":"_fcmToken","total_count":1,"children":[]},{"name":"_finnhubKey","total_count":1,"children":[]},{"name":"_handleForegroundMessage","total_count":1,"children":[]},{"name":"_initialized","total_count":1,"children":[]},{"name":"actual","total_count":1,"children":[]},{"name":"country","total_count":1,"children":[]},{"name":"EconomicEvent","total_count":1,"children":[]},{"name":"estimate","total_count":1,"children":[]},{"name":"event","total_count":1,"children":[]},{"name":"fetchEconomicEvents","total_count":1,"children":[]},{"name":"fromJson","total_count":1,"children":[]},{"name":"getToken","total_count":1,"children":[]},{"name":"hasUpcomingHighImpactEvent","total_count":1,"children":[]},{"name":"impact","total_count":1,"children":[]},{"name":"initialize","total_count":1,"children":[]},{"name":"NotificationService","total_count":1,"children":[]},{"name":"setFinnhubKey","total_count":1,"children":[]},{"name":"showLocalNotification","total_count":1,"children":[]},{"name":"time","total_count":1,"children":[]}]},{"name":"purchase_service.dart","total_count":8,"children":[{"name":"_initialized","total_count":1,"children":[]},{"name":"_revenueCatApiKey","total_count":1,"children":[]},{"name":"checkProStatus","total_count":1,"children":[]},{"name":"initialize","total_count":1,"children":[]},{"name":"purchasePro","total_count":1,"children":[]},{"name":"PurchaseService","total_count":1,"children":[]},{"name":"purchaseTokens","total_count":1,"children":[]},{"name":"restorePurchases","total_count":1,"children":[]}]},{"name":"realtime_service.dart","total_count":7,"children":[{"name":"_brokerChannel","total_count":1,"children":[]},{"name":"_client","total_count":1,"children":[]},{"name":"_killswitchChannel","total_count":1,"children":[]},{"name":"_riskAlertsChannel","total_count":1,"children":[]},{"name":"RealtimeService","total_count":1,"children":[]},{"name":"startListening","total_count":1,"children":[]},{"name":"stopListening","total_count":1,"children":[]}]},{"name":"supabase_service.dart","total_count":25,"children":[{"name":"_client","total_count":1,"children":[]},{"name":"authStateChanges","total_count":1,"children":[]},{"name":"consumeToken","total_count":1,"children":[]},{"name":"currentUser","total_count":1,"children":[]},{"name":"currentUserId","total_count":1,"children":[]},{"name":"ensureProfile","total_count":1,"children":[]},{"name":"getActiveChallenge","total_count":1,"children":[]},{"name":"getKillswitchHistory","total_count":1,"children":[]},{"name":"getNotificationPrefs","total_count":1,"children":[]},{"name":"getPersonalRules","total_count":1,"children":[]},{"name":"getProfile","total_count":1,"children":[]},{"name":"getTokensAvailable","total_count":1,"children":[]},{"name":"resolveKillswitch","total_count":1,"children":[]},{"name":"saveChallenge","total_count":1,"children":[]},{"name":"saveNotificationPrefs","total_count":1,"children":[]},{"name":"savePersonalRules","total_count":1,"children":[]},{"name":"signIn","total_count":1,"children":[]},{"name":"signOut","total_count":1,"children":[]},{"name":"signUp","total_count":1,"children":[]},{"name":"SupabaseService","total_count":1,"children":[]},{"name":"triggerKillswitch","total_count":1,"children":[]},{"name":"updateAccountMode","total_count":1,"children":[]},{"name":"updateAiPlan","total_count":1,"children":[]},{"name":"updateChallengeStatus","total_count":1,"children":[]},{"name":"watchKillswitchEvents","total_count":1,"children":[]}]}]},{"name":"widgets","total_count":45,"children":[{"name":"checkin_modal.dart","total_count":23,"children":[{"name":"_buildMoodStep","total_count":1,"children":[]},{"name":"_buildResultStep","total_count":1,"children":[]},{"name":"_buildSetupStep","total_count":1,"children":[]},{"name":"_buildSleepStep","total_count":1,"children":[]},{"name":"_buildStep","total_count":1,"children":[]},{"name":"_CheckinModalState","total_count":1,"children":[]},{"name":"_emojis","total_count":1,"children":[]},{"name":"_GaugePainter","total_count":1,"children":[]},{"name":"_hasSetup","total_count":1,"children":[]},{"name":"_moodScore","total_count":1,"children":[]},{"name":"_nextButton","total_count":1,"children":[]},{"name":"_selectableCard","total_count":1,"children":[]},{"name":"_sleptWell","total_count":1,"children":[]},{"name":"_step","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"CheckinModal","total_count":1,"children":[]},{"name":"color","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"onComplete","total_count":1,"children":[]},{"name":"paint","total_count":1,"children":[]},{"name":"score","total_count":1,"children":[]},{"name":"shouldRepaint","total_count":1,"children":[]},{"name":"show","total_count":1,"children":[]}]},{"name":"donut_chart.dart","total_count":9,"children":[{"name":"_DonutPainter","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"color","total_count":1,"children":[]},{"name":"DonutChart","total_count":1,"children":[]},{"name":"paint","total_count":1,"children":[]},{"name":"percentage","total_count":1,"children":[]},{"name":"shouldRepaint","total_count":1,"children":[]},{"name":"size","total_count":1,"children":[]},{"name":"strokeWidth","total_count":1,"children":[]}]},{"name":"gatekeeper_overlay.dart","total_count":13,"children":[{"name":"_controller","total_count":1,"children":[]},{"name":"_fadeAnimation","total_count":1,"children":[]},{"name":"_GatekeeperOverlayState","total_count":1,"children":[]},{"name":"_scaleAnimation","total_count":1,"children":[]},{"name":"build","total_count":1,"children":[]},{"name":"createState","total_count":1,"children":[]},{"name":"dispose","total_count":1,"children":[]},{"name":"GatekeeperOverlay","total_count":1,"children":[]},{"name":"initState","total_count":1,"children":[]},{"name":"message","total_count":1,"children":[]},{"name":"onProceed","total_count":1,"children":[]},{"name":"onStop","total_count":1,"children":[]},{"name":"show","total_count":1,"children":[]}]}]}]},{"name":"README.md","total_count":3,"children":[{"name":"Getting Started","total_count":1,"children":[]},{"name":"piplock_ai","total_count":1,"children":[]},{"name":"README.md","total_count":1,"children":[]}]},{"name":"supabase","total_count":7,"children":[{"name":"functions","total_count":7,"children":[{"name":"ea-webhook","total_count":6,"children":[{"name":"index.ts","total_count":6,"children":[{"name":"corsHeaders","total_count":1,"children":[]},{"name":"EAPayload","total_count":1,"children":[]},{"name":"handleHardKillswitch()","total_count":1,"children":[]},{"name":"handleHeartbeat()","total_count":1,"children":[]},{"name":"handleMaxTrades()","total_count":1,"children":[]},{"name":"handleSoftWarning()","total_count":1,"children":[]}]}]},{"name":"reset-daily-limits","total_count":1,"children":[{"name":"index.ts","total_count":1,"children":[{"name":"corsHeaders","total_count":1,"children":[]}]}]}]}]},{"name":"test","total_count":1,"children":[{"name":"widget_test.dart","total_count":1,"children":[{"name":"main","total_count":1,"children":[]}]}]}]};
+
+    function transformData(jsonData) {
+        // Helper function to recursively build the children structure
+        function processNode(node, parentL1StageName) {
+            let displayName = node.name;
+            // Append total_count if it exists and is not already in the name
+            if (node.total_count !== undefined) {
+                if (!/\(Total Count: \d+\)$/.test(displayName)) {
+                    displayName += ` (Total Count: ${node.total_count})`;
+                }
+            }
+
+            const newNode = { name: displayName };
+
+            if (parentL1StageName === "Root") {
+                 newNode.originalStageName = node.name;
+            } else {
+                newNode.originalStageName = parentL1StageName;
+            }
+
+            if (node.children && node.children.length > 0) {
+                const stageNameToPass = (parentL1StageName === "Root") ? node.name : parentL1StageName;
+                newNode.children = node.children.map(child => processNode(child, stageNameToPass));
+            }
+
+            return newNode;
+        }
+
+        let rootDisplayName = jsonData.name;
+        if (jsonData.total_count !== undefined && !/\(Total Count: \d+\)$/.test(rootDisplayName)) {
+            rootDisplayName += ` (Total Count: ${jsonData.total_count})`;
+        }
+
+        return {
+            name: rootDisplayName,
+            originalStageName: "Root",
+            children: (jsonData.children || []).map(child => processNode(child, "Root"))
+        };
+    }
+
+    const treeData = transformData(initialJsonData);
+
+    // Auto-populated phaseColors: every depth-1 child of the root gets
+    // a stable colour from a bigger palette so all top-level dirs are
+    // distinguishable.
+    const PALETTE = [
+      ["#3498DB","#2980B9","#AED6F1"], ["#2ECC71","#27AE60","#A9DFBF"],
+      ["#E74C3C","#C0392B","#F5B7B1"], ["#9B59B6","#8E44AD","#D7BDE2"],
+      ["#F39C12","#D68910","#FAD7A0"], ["#1ABC9C","#117864","#A2D9CE"],
+      ["#34495E","#1B2631","#ABB2B9"], ["#E67E22","#BA4A00","#F5CBA7"],
+      ["#16A085","#0E6655","#A2D9CE"], ["#D35400","#A04000","#EDBB99"],
+      ["#7F8C8D","#566573","#D5DBDB"], ["#C0392B","#7B241C","#F5B7B1"],
+      ["#2E86C1","#1B4F72","#A9CCE3"], ["#28B463","#196F3D","#A9DFBF"],
+      ["#AF7AC5","#6C3483","#D2B4DE"],
+    ];
+    const phaseColors = { "Root": { fill: "#4A4A4A", stroke: "#333333", collapsedFill: "#6C757D" },
+                          "Default": { fill: "#BDC3C7", stroke: "#95A5A6", collapsedFill: "#ECF0F1" } };
+    (initialJsonData.children || []).forEach((c, i) => {
+      const pal = PALETTE[i % PALETTE.length];
+      phaseColors[c.name] = { fill: pal[0], stroke: pal[1], collapsedFill: pal[2] };
+    });
+
+    const levelSpecificPalettes = {
+      0: { fill: "#4A4A4A", stroke: "#333333", collapsedFill: "#6C757D" },
+      2: { fill: "#6ab04c", stroke: "#508a38", collapsedFill: "#a3d391" },
+      3: { fill: "#f0932b", stroke: "#d0730f", collapsedFill: "#f6c07e" },
+      4: { fill: "#be2edd", stroke: "#a01cb3", collapsedFill: "#e08bf2" },
+      5: { fill: "#00a8ff", stroke: "#007ac1", collapsedFill: "#74d2ff" },
+      6: { fill: "#e55039", stroke: "#c23620", collapsedFill: "#f09a8d" },
+      default: { fill: "#747d8c", stroke: "#57606f", collapsedFill: "#a4b0be" }
+    };
+
+    const svgElement = d3.select("#tree-svg");
+    const initialSvgWidth = +svgElement.attr("width");
+    const initialSvgHeight = +svgElement.attr("height");
+    const margin = { top: 40, right: 120, bottom: 80, left: 450 };
+    let width = initialSvgWidth - margin.left - margin.right;
+    let height = initialSvgHeight - margin.top - margin.bottom;
+    const duration = 500;
+    let nodeCounter = 0;
+    const g = svgElement.append("g").attr("transform", `translate(${margin.left},${margin.top})`);
+    const treemap = d3.tree().nodeSize([40, 0]);
+    let rootNode = d3.hierarchy(treeData, d => d.children);
+    rootNode.x0 = 0;
+    rootNode.y0 = 0;
+
+    if (rootNode.children) {
+      rootNode.children.forEach(d_child => {
+        if (d_child.children) { collapseBranch(d_child); }
+      });
+    }
+    updateTree(rootNode);
+
+    function collapseBranch(d) { if (d.children) { d._children = d.children; d._children.forEach(collapseBranch); d.children = null; } }
+    function expandBranch(d) { if (d._children) { d.children = d._children; d._children = null; } if (d.children) { d.children.forEach(expandBranch); } }
+    window.expandAll = () => { expandBranch(rootNode); updateTree(rootNode); };
+    window.collapseAll = () => { if (rootNode.children) { rootNode.children.forEach(collapseBranch); } updateTree(rootNode); };
+    window.resetView = () => { if (rootNode.children) { rootNode.children.forEach(d_child => { if (d_child.children || d_child._children) { collapseBranch(d_child); } }); } if (rootNode._children && !rootNode.children) { rootNode.children = rootNode._children; rootNode._children = null; } updateTree(rootNode); };
+
+    function updateTree(source) {
+      const treeLayoutData = treemap(rootNode);
+      let nodes = treeLayoutData.descendants();
+      let links = treeLayoutData.descendants().slice(1);
+
+      let minX = 0;
+      let maxX = 0;
+      if (nodes.length > 0) {
+        minX = d3.min(nodes, d => d.x);
+        maxX = d3.max(nodes, d => d.x);
+      }
+
+      let neededHeight = Math.max(initialSvgHeight, maxX - minX + margin.top + margin.bottom + 100);
+      svgElement.transition().duration(duration / 2).attr("height", neededHeight);
+      g.transition().duration(duration / 2).attr("transform", `translate(${margin.left},${margin.top - minX + 40})`);
+
+      nodes.forEach(d => { d.y = d.depth * 400; }); // Adjust horizontal separation if needed
+
+      const node = g.selectAll('g.node').data(nodes, d => d.id || (d.id = ++nodeCounter));
+      const nodeEnter = node.enter().append('g')
+        .attr('class', d => "node" + (d.children || d._children ? " node--internal" : " node--leaf") + (d._children ? " _children" : ""))
+        .attr('transform', d => `translate(${source.y0},${source.x0})`)
+        .on('click', (event, d) => { if (d.children) { d._children = d.children; d.children = null; } else if (d._children) { d.children = d._children; d._children = null; } updateTree(d); })
+        .style('cursor', d => (d.children || d._children) ? 'pointer' : 'default');
+
+      nodeEnter.append('circle').attr('r', 1e-6);
+
+      nodeEnter.append('text')
+        .attr('dy', '.35em')
+        .attr('x', d => d.children || d._children ? -14 : 14)
+        .attr('text-anchor', d => d.children || d._children ? 'end' : 'start')
+        .style("fill-opacity", 1e-6)
+        .call(wrapText, 380);
+
+      const nodeUpdate = nodeEnter.merge(node);
+      nodeUpdate.transition().duration(duration)
+        .attr('transform', d => `translate(${d.y},${d.x})`)
+        .attr('class', d => "node" + (d.children ? " node--internal" : " node--leaf") + (d._children ? " node--internal _children" : ""));
+
+      nodeUpdate.select('circle').attr('r', 8.5)
+        .style('fill', d => {
+            let palette;
+            if (d.depth === 0) {
+                palette = levelSpecificPalettes[0];
+            } else if (d.depth === 1) {
+                palette = phaseColors[d.data.originalStageName] || phaseColors.Default;
+            } else {
+                palette = levelSpecificPalettes[d.depth] || levelSpecificPalettes.default;
+            }
+            if (d._children) return palette.collapsedFill;
+            if (d.children) return palette.fill;
+            return "#fff";
+        })
+        .style('stroke', d => {
+            let palette;
+            if (d.depth === 0) {
+                palette = levelSpecificPalettes[0];
+            } else if (d.depth === 1) {
+                palette = phaseColors[d.data.originalStageName] || phaseColors.Default;
+            } else {
+                palette = levelSpecificPalettes[d.depth] || levelSpecificPalettes.default;
+            }
+            return palette.stroke;
+        });
+      nodeUpdate.select('text').style("fill-opacity", 1).call(wrapText, 380);
+
+      const nodeExit = node.exit().transition().duration(duration).attr('transform', d => `translate(${source.y},${source.x})`).remove();
+      nodeExit.select('circle').attr('r', 1e-6);
+      nodeExit.select('text').style('fill-opacity', 1e-6);
+
+      const link = g.selectAll('path.link').data(links, d => d.id);
+      const linkEnter = link.enter().insert('path', "g").attr('class', 'link').attr('d', d => { const o = { x: source.x0, y: source.y0 }; return diagonal(o, o); });
+
+      linkEnter.merge(link).transition().duration(duration).attr('d', d => diagonal(d, d.parent))
+        .style('stroke', d => {
+            const sourceNode = d.parent;
+            if (!sourceNode) return phaseColors.Default.stroke;
+            const l1AncestorName = sourceNode.data.originalStageName;
+            const colorPalette = phaseColors[l1AncestorName] || phaseColors.Default;
+            return colorPalette.stroke;
+        });
+      link.exit().transition().duration(duration).attr('d', d => { const o = { x: source.x, y: source.y }; return diagonal(o, o); }).remove();
+      nodes.forEach(d => { d.x0 = d.x; d.y0 = d.y; });
+    }
+
+    function diagonal(s, d) { return `M ${s.y} ${s.x} C ${(s.y + d.y) / 2} ${s.x}, ${(s.y + d.y) / 2} ${d.x}, ${d.y} ${d.x}`; }
+
+    function wrapText(textElements, maxWidth) {
+        const textPartColors = {
+            name: '#343a40',
+            count: '#0056b3'
+        };
+        const countRegex = /(\s\(Total Count: \d+\))$/;
+
+        textElements.each(function () {
+            const textD3 = d3.select(this);
+            const originalNodeText = textD3.datum().data.name;
+            const x = parseFloat(textD3.attr("x") || 0);
+            const initialDy = textD3.attr("dy");
+            const textAnchor = textD3.attr("text-anchor");
+            const lineHeight = 1.1;
+
+            textD3.text(null);
+
+            let namePart = originalNodeText;
+            let countPartText = "";
+
+            const countMatch = originalNodeText.match(countRegex);
+            if (countMatch && originalNodeText.endsWith(countMatch[0])) {
+                namePart = originalNodeText.substring(0, originalNodeText.length - countMatch[0].length).trim();
+                countPartText = countMatch[0].trim();
+            }
+
+            const tokens = [];
+            namePart.split(/\s+/).filter(Boolean).forEach(word => {
+                tokens.push({ text: word, type: 'name' });
+            });
+            if (countPartText) {
+                tokens.push({ text: countPartText, type: 'count' });
+            }
+
+            if (tokens.length === 0 && originalNodeText) {
+                tokens.push({ text: originalNodeText, type: 'name' });
+            }
+
+            let currentTspan = textD3.append("tspan").attr("x", x).attr("dy", initialDy);
+            if (textAnchor === "end") currentTspan.attr("text-anchor", "end");
+
+            let lineTokens = [];
+
+            for (let i = 0; i < tokens.length; i++) {
+                const tokenObj = tokens[i];
+
+                lineTokens.push(tokenObj);
+                currentTspan.text(lineTokens.map(t => t.text).join(" "));
+
+                if (currentTspan.node().getComputedTextLength() > maxWidth && lineTokens.length > 1) {
+                    lineTokens.pop();
+
+                    currentTspan.text(null);
+                    lineTokens.forEach((prevToken, idx) => {
+                        currentTspan.append("tspan")
+                            .text((idx > 0 ? " " : "") + prevToken.text)
+                            .style("fill", textPartColors[prevToken.type] || textPartColors.name)
+                            .style("font-weight", prevToken.type === 'count' ? "bold" : "normal");
+                    });
+
+                    lineTokens = [tokenObj];
+                    currentTspan = textD3.append("tspan").attr("x", x).attr("dy", lineHeight + "em");
+                    if (textAnchor === "end") currentTspan.attr("text-anchor", "end");
+                }
+            }
+
+            currentTspan.text(null);
+            lineTokens.forEach((token, idx) => {
+                currentTspan.append("tspan")
+                    .text((idx > 0 ? " " : "") + token.text)
+                    .style("fill", textPartColors[token.type] || textPartColors.name)
+                    .style("font-weight", token.type === 'count' ? "bold" : "normal");
+            });
+
+            if (textD3.selectAll("tspan > tspan").empty() && textD3.select("tspan").text().length === 0 && originalNodeText) {
+                let t = textD3.select("tspan");
+                let displayText = originalNodeText;
+                t.text(displayText).style("fill", textPartColors.name);
+                if (t.node() && t.node().getComputedTextLength() > maxWidth && displayText.length > 20) {
+                    let estimatedChars = Math.floor(maxWidth / (t.node().getComputedTextLength()/displayText.length) );
+                    displayText = displayText.substring(0, Math.max(0, estimatedChars - 3)) + "...";
+                    t.text(displayText);
+                }
+            }
+        });
+    }
+  </script>
+</body>
+</html>

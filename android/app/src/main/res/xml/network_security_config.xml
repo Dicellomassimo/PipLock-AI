@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    PipLock AI — Network Security Config
+    Blocca qualsiasi traffico HTTP cleartext: solo HTTPS è consentito.
+    Riferimento: https://developer.android.com/training/articles/security-config
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <!-- Certificati di sistema (CA pubbliche) -->
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

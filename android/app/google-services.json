@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "573316823540",
+    "project_id": "piplock-ai",
+    "storage_bucket": "piplock-ai.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:573316823540:android:a2190d06d01ec6183661a1",
+        "android_client_info": {
+          "package_name": "com.piplock.piplock_ai"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "573316823540-6j3elv2v9vu633pf44iet6uu8su7udpm.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.piplock.piplock_ai",
+            "certificate_hash": "79a2b8486a32322dc15c836e6182e0fa0bf79265"
+          }
+        },
+        {
+          "client_id": "573316823540-5d79lbal522jb48mib4lkcv03p35ivrb.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCeMp2whvZzYUSyr0QwgvIDMDjXuiSF4ko"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "573316823540-5d79lbal522jb48mib4lkcv03p35ivrb.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

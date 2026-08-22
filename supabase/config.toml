@@ -1,0 +1,94 @@
+# supabase/config.toml
+# Configurazione locale del progetto Supabase per PipLock AI
+#
+# Documentazione: https://supabase.com/docs/guides/cli/config
+#
+# Come usarlo:
+#   supabase start          → avvia ambiente Supabase locale (Docker)
+#   supabase db push        → applica le migrations al DB remoto
+#   supabase functions deploy ea-webhook
+#   supabase functions deploy reset-daily-limits
+
+[project]
+id = "fltxpskrhjczpcaxvkpj"
+
+# ------------------------------------------------------------------ #
+# Edge Function: ea-webhook                                            #
+# Riceve i dati dall'EA MQL5                                          #
+# verify_jwt = false perché l'EA autentica con secret custom,         #
+# non con il JWT di Supabase Auth                                     #
+# ------------------------------------------------------------------ #
+[functions.ea-webhook]
+verify_jwt = false
+
+# ------------------------------------------------------------------ #
+# Edge Function: reset-daily-limits                                    #
+# Schedulata ogni giorno a mezzanotte UTC                             #
+# Formato cron: "min ora giorno-mese mese giorno-settimana"           #
+#   "0 0 * * *" = ogni giorno alle 00:00 UTC                          #
+#                                                                      #
+# NOTA: Il campo `schedule` nelle Edge Functions è supportato         #
+# dalla Supabase CLI >= 1.127.0 e richiede la feature "cron" attiva. #
+# In alternativa, usa Dashboard → Edge Functions → Schedule           #
+# oppure pg_cron via SQL Editor (istruzioni nel file index.ts).       #
+# ------------------------------------------------------------------ #
+[functions.reset-daily-limits]
+verify_jwt = false
+schedule = "0 0 * * *"
+
+# ------------------------------------------------------------------ #
+# Configurazione database locale (per sviluppo con supabase start)    #
+# ------------------------------------------------------------------ #
+[db]
+port = 54322
+shadow_port = 54320
+major_version = 15
+
+[db.pooler]
+enabled = false
+port = 54329
+pool_mode = "transaction"
+default_pool_size = 20
+max_client_conn = 100
+
+# ------------------------------------------------------------------ #
+# API locale                                                           #
+# ------------------------------------------------------------------ #
+[api]
+enabled = true
+port = 54321
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 1000
+
+# ------------------------------------------------------------------ #
+# Auth locale                                                          #
+# ------------------------------------------------------------------ #
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+additional_redirect_urls = []
+jwt_expiry = 3600
+enable_refresh_token_rotation = true
+refresh_token_reuse_interval = 10
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+
+# ------------------------------------------------------------------ #
+# Storage locale                                                        #
+# ------------------------------------------------------------------ #
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+# ------------------------------------------------------------------ #
+# Studio (dashboard locale)                                            #
+# ------------------------------------------------------------------ #
+[studio]
+enabled = true
+port = 54323
+api_url = "http://localhost"
