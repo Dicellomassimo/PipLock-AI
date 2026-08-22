@@ -6,6 +6,7 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/app_colors.dart';
+import '../../config/app_theme.dart';
 import '../../config/app_strings.dart';
 import '../../config/constants.dart';
 import '../../models/challenge.dart';
@@ -211,11 +212,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 _KillswitchBanner(),
                 Expanded(
                   child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    padding: const EdgeInsets.symmetric(horizontal: 22),
                     child: StaggeredList(
                       key: ValueKey(metaState.isConnected),
                       children: [
-                        const SizedBox(height: 24),
+                        const SizedBox(height: 28),
                         _buildHeader(profile?.tokensAvailable ?? 2),
                         const SizedBox(height: 20),
                         _buildHeroCard(
@@ -256,7 +257,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                             _buildDevSection(),
                           ],
                         ],
-                        const SizedBox(height: 36),
+                        // Extra padding per la floating nav bar
+                        const SizedBox(height: 100),
                       ],
                     ),
                   ),
@@ -446,55 +448,49 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       width: double.infinity,
       decoration: BoxDecoration(
         gradient: heroGradient,
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(AppTheme.radiusXl), // 32 — più rotondo
         boxShadow: [
           BoxShadow(
-            color: heroGradient.colors.first.withValues(alpha: 0.38),
-            blurRadius: 48,
+            color: heroGradient.colors.first.withValues(alpha: 0.30),
+            blurRadius: 40,
             spreadRadius: -8,
-            offset: const Offset(0, 16),
-          ),
-          BoxShadow(
-            color: heroGradient.colors.first.withValues(alpha: 0.15),
-            blurRadius: 80,
-            spreadRadius: -12,
-            offset: const Offset(0, 24),
+            offset: const Offset(0, 12),
           ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(26),
+        borderRadius: BorderRadius.circular(AppTheme.radiusXl),
         child: Stack(
           children: [
-            // Radial glow from top-left corner
+            // Radial glow top-left
             Positioned(
-              top: -60,
-              left: -40,
+              top: -50,
+              left: -30,
               child: Container(
-                width: 200,
-                height: 200,
+                width: 180,
+                height: 180,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
                     colors: [
-                      Colors.white.withValues(alpha: 0.12),
+                      Colors.white.withValues(alpha: 0.08),
                       Colors.transparent,
                     ],
                   ),
                 ),
               ),
             ),
-            // Shine overlay — top shimmer line
+            // Silver shimmer line — firma del tema argento
             Positioned(
               top: 0, left: 0, right: 0,
               child: Container(
-                height: 1.5,
+                height: 1,
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      Colors.white.withValues(alpha: 0),
-                      Colors.white.withValues(alpha: 0.35),
-                      Colors.white.withValues(alpha: 0),
+                      Colors.transparent,
+                      AppColors.accentBright.withValues(alpha: 0.45),
+                      Colors.transparent,
                     ],
                   ),
                 ),
@@ -502,7 +498,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             ),
             // Content
             Padding(
-              padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+              padding: const EdgeInsets.fromLTRB(26, 24, 26, 26),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
@@ -627,11 +623,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   Widget _heroPill(String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.20),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.18), width: 1),
+        color: Colors.black.withValues(alpha: 0.22),
+        borderRadius: BorderRadius.circular(AppTheme.radiusFull),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.14), width: 0.5),
       ),
       child: Text(
         label,
@@ -676,43 +672,57 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         ? s.dashBrokerEquityLive
         : s.dashBrokerConnectInSettings;
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          _statCard(
-            icon: Icons.public_rounded,
-            label: s.dashStatSession,
-            value: _sessionName(s),
-            sub: _sessionSub(s),
-          ),
-          const SizedBox(width: 10),
-          _statCard(
-            icon: Icons.flag_rounded,
-            label: s.dashStatChallenge,
-            value: challenge != null ? s.dashDay(challengeDay) : '—',
-            sub: challenge != null
-                ? s.dashDayOf(challengeDay, challengeDuration)
-                : s.dashNoActiveChallenge,
-            progress: challenge != null ? challengeProgress : null,
-          ),
-          const SizedBox(width: 10),
-          _statCard(
-            icon: Icons.psychology_rounded,
-            label: s.dashStatReadiness,
-            value: '$_checkinScore/10',
-            sub: checkinLabel,
-          ),
-          const SizedBox(width: 10),
-          _statCard(
-            icon: Icons.account_balance_wallet_outlined,
-            label: s.dashStatBroker,
-            value: brokerLabel,
-            sub: brokerSub,
-            iconColor: metaState.isConnected ? AppColors.accent : AppColors.textSecondary,
-          ),
-        ],
-      ),
+    // Griglia 2×2 — più leggibile, più Opal, niente scroll orizzontale
+    return Column(
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: _statCard(
+                icon: Icons.public_rounded,
+                label: s.dashStatSession,
+                value: _sessionName(s),
+                sub: _sessionSub(s),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _statCard(
+                icon: Icons.flag_rounded,
+                label: s.dashStatChallenge,
+                value: challenge != null ? s.dashDay(challengeDay) : '—',
+                sub: challenge != null
+                    ? s.dashDayOf(challengeDay, challengeDuration)
+                    : s.dashNoActiveChallenge,
+                progress: challenge != null ? challengeProgress : null,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            Expanded(
+              child: _statCard(
+                icon: Icons.psychology_rounded,
+                label: s.dashStatReadiness,
+                value: '$_checkinScore/10',
+                sub: checkinLabel,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _statCard(
+                icon: Icons.account_balance_wallet_outlined,
+                label: s.dashStatBroker,
+                value: brokerLabel,
+                sub: brokerSub,
+                iconColor: metaState.isConnected ? AppColors.success : AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -726,13 +736,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   }) {
     final ic = iconColor ?? AppColors.accent;
     return GlassCard(
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(AppTheme.radiusLg),
       glowColor: ic == AppColors.accent ? AppColors.accent : null,
-      glassOpacity: 0.05,
-      child: SizedBox(
-        width: 160,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      glassOpacity: 0.04,
+      child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 16, 14, 16),
           child: progress != null
               ? Row(
                   children: [
@@ -855,7 +863,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                     ),
                   ],
                 ),
-        ),
       ),
     );
   }
@@ -885,12 +892,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         }
       }),
       child: GlassCard(
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
         glowColor: color,
         glassOpacity: 0.04,
         customBorder: Border.all(
-          color: color.withValues(alpha: 0.28),
-          width: 1,
+          color: color.withValues(alpha: 0.22),
+          width: 0.5,
         ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(16, 15, 16, 15),
@@ -1024,24 +1031,24 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         ),
         const SizedBox(height: 10),
         AnimatedCard(
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
           backgroundColor: AppColors.cardBg,
-          border: Border.all(color: AppColors.border, width: 1),
+          border: Border.all(color: AppColors.border, width: 0.5),
           boxShadow: const [],
           child: Padding(
-            padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
             child: Row(
               children: [
                 Container(
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: AppColors.accent.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(13),
+                    color: AppColors.success.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                   ),
                   child: const Icon(
                     Icons.check_circle_outline_rounded,
-                    color: AppColors.accent,
+                    color: AppColors.success,
                     size: 22,
                   ),
                 ),
@@ -1123,11 +1130,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         : '${pnl >= 0 ? '+' : ''}${pnl.toStringAsFixed(2)}';
 
     return Container(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.border),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+        border: Border.all(color: AppColors.border, width: 0.5),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1220,11 +1227,11 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     if (personalPlan == null &&
         (challenge == null || challenge.aiPlan == null)) {
       return Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(18),
         decoration: BoxDecoration(
-          color: AppColors.accent.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.accent.withValues(alpha: 0.2)),
+          color: AppColors.cardBg,
+          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+          border: Border.all(color: AppColors.border, width: 0.5),
         ),
         child: Row(
           children: [
@@ -1350,9 +1357,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
     return AnimatedCard(
       onTap: () => Navigator.pushNamed(context, '/ai_planner'),
-      borderRadius: BorderRadius.circular(16),
-      backgroundColor: AppColors.accent.withValues(alpha: 0.05),
-      border: Border.all(color: AppColors.accent.withValues(alpha: 0.2)),
+      borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+      backgroundColor: AppColors.cardBg,
+      border: Border.all(color: AppColors.border, width: 0.5),
       boxShadow: const [],
       child: Padding(
         padding: const EdgeInsets.all(16),
@@ -1390,16 +1397,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   Widget _planChip(String label) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: AppColors.accent.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.accent.withValues(alpha: 0.2)),
+        color: AppColors.cardBg2,
+        borderRadius: BorderRadius.circular(AppTheme.radiusFull),
+        border: Border.all(color: AppColors.border, width: 0.5),
       ),
       child: Text(
         label,
         style: GoogleFonts.manrope(
-          color: AppColors.accent,
+          color: AppColors.textSecondary,
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
@@ -1411,12 +1418,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   Widget _buildLimitsCard(RulesState rulesState, BrokerState metaState) {
     final s = ref.watch(appStringsProvider);
     return AnimatedCard(
-      borderRadius: BorderRadius.circular(18),
+      borderRadius: BorderRadius.circular(AppTheme.radiusLg),
       backgroundColor: AppColors.cardBg,
-      border: Border.all(color: AppColors.border, width: 1),
+      border: Border.all(color: AppColors.border, width: 0.5),
       boxShadow: const [],
       child: Padding(
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1660,13 +1667,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   }) {
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: AppColors.cardBg,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
         border: Border.all(
-          color: isActive ? AppColors.accent : AppColors.border,
-          width: isActive ? 1.5 : 1,
+          color: isActive ? AppColors.accent.withValues(alpha: 0.5) : AppColors.border,
+          width: isActive ? 1 : 0.5,
         ),
         boxShadow: isActive ? [
           BoxShadow(

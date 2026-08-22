@@ -67,10 +67,11 @@ class _PremiumButtonState extends State<PremiumButton>
     if (widget.gradient != null) return widget.gradient!;
     switch (widget.variant) {
       case PremiumButtonVariant.primary:
+        // Dark steel premium — testo bianco ad alta leggibilità
         return AppColors.accentGradient;
       case PremiumButtonVariant.danger:
         return const LinearGradient(
-          colors: [Color(0xFFEF4444), Color(0xFFB91C1C)],
+          colors: [Color(0xFFFF4455), Color(0xFFC42030)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         );
@@ -89,6 +90,7 @@ class _PremiumButtonState extends State<PremiumButton>
       case PremiumButtonVariant.danger:
         return Colors.white;
       case PremiumButtonVariant.ghost:
+        // Ghost usa il silver come colore testo (premium)
         return AppColors.accent;
       case PremiumButtonVariant.secondary:
         return AppColors.textPrimary;
@@ -100,13 +102,21 @@ class _PremiumButtonState extends State<PremiumButton>
         widget.variant == PremiumButtonVariant.secondary) {
       return [];
     }
-    final color = widget.variant == PremiumButtonVariant.danger
-        ? AppColors.danger
-        : AppColors.accent;
+    if (widget.variant == PremiumButtonVariant.danger) {
+      return [
+        BoxShadow(
+          color: AppColors.danger.withValues(alpha: (_pressed ? 0.15 : 0.28) * _glowAnim.value),
+          blurRadius: _pressed ? 12 : 24,
+          spreadRadius: -4,
+          offset: const Offset(0, 6),
+        ),
+      ];
+    }
+    // Primary: silver glow sottile (non più viola)
     return [
       BoxShadow(
-        color: color.withValues(alpha: (_pressed ? 0.15 : 0.30) * _glowAnim.value),
-        blurRadius: _pressed ? 12 : 24,
+        color: AppColors.accent.withValues(alpha: (_pressed ? 0.10 : 0.20) * _glowAnim.value),
+        blurRadius: _pressed ? 10 : 20,
         spreadRadius: -4,
         offset: const Offset(0, 6),
       ),
@@ -134,6 +144,7 @@ class _PremiumButtonState extends State<PremiumButton>
   @override
   Widget build(BuildContext context) {
     final enabled = widget.onTap != null && !widget.loading;
+    final isBorderVariant = widget.variant == PremiumButtonVariant.ghost;
 
     return GestureDetector(
       onTapDown: enabled ? _onTapDown : null,
@@ -155,10 +166,16 @@ class _PremiumButtonState extends State<PremiumButton>
                   : const EdgeInsets.symmetric(horizontal: 24),
               decoration: BoxDecoration(
                 gradient: _gradient,
-                borderRadius: AppTheme.bMd,
-                border: widget.variant == PremiumButtonVariant.ghost
-                    ? Border.all(color: AppColors.accent.withValues(alpha: 0.4))
-                    : null,
+                borderRadius: AppTheme.bLg, // più rotondo rispetto a prima (bMd)
+                border: isBorderVariant
+                    ? Border.all(
+                        color: AppColors.accent.withValues(alpha: 0.35),
+                        width: 1,
+                      )
+                    : Border.all(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        width: 0.5,
+                      ),
                 boxShadow: _buildShadow(),
               ),
               child: Center(

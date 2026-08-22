@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 /// Design tokens centralizzati — unico source of truth per spacing, radius,
 /// durations, curves, shadows, typography scale.
-/// Ispirato a Apple HIG + Revolut design system.
+/// Stile: Opal × Trading — minimalismo rotondo, premium, arioso.
 class AppTheme {
   AppTheme._();
 
@@ -21,16 +21,16 @@ class AppTheme {
   static const double sp48 = 48.0;
   static const double sp64 = 64.0;
 
-  // Screen horizontal padding
-  static const double pagePadding = 20.0;
+  // Screen horizontal padding — leggermente più arioso
+  static const double pagePadding = 22.0;
 
-  // ── Border radius ───────────────────────────────────────────────────────
-  static const double radiusXs   = 8.0;
-  static const double radiusSm   = 12.0;
-  static const double radiusMd   = 16.0;
-  static const double radiusLg   = 20.0;
-  static const double radiusXl   = 26.0;
-  static const double radius2xl  = 32.0;
+  // ── Border radius (più grandi = più rotondo = più Opal) ─────────────────
+  static const double radiusXs   = 10.0;
+  static const double radiusSm   = 14.0;
+  static const double radiusMd   = 18.0;
+  static const double radiusLg   = 24.0;
+  static const double radiusXl   = 32.0;
+  static const double radius2xl  = 40.0;
   static const double radiusFull = 999.0;
 
   static BorderRadius bXs   = BorderRadius.circular(radiusXs);
@@ -141,18 +141,15 @@ class AppTheme {
   );
 
   // ── Shadow / elevation system ───────────────────────────────────────────
-  // Level 1 — card resting state
   static const List<BoxShadow> shadowSm = [
     BoxShadow(color: Color(0x18000000), blurRadius: 8, offset: Offset(0, 2)),
   ];
 
-  // Level 2 — card lifted / focused
   static const List<BoxShadow> shadowMd = [
     BoxShadow(color: Color(0x28000000), blurRadius: 24, offset: Offset(0, 8)),
     BoxShadow(color: Color(0x10000000), blurRadius: 8, offset: Offset(0, 2)),
   ];
 
-  // Level 3 — floating / modal
   static const List<BoxShadow> shadowLg = [
     BoxShadow(color: Color(0x38000000), blurRadius: 48, offset: Offset(0, 16)),
     BoxShadow(color: Color(0x18000000), blurRadius: 16, offset: Offset(0, 6)),

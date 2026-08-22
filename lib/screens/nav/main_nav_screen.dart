@@ -1,3 +1,4 @@
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -71,9 +72,6 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
   Widget build(BuildContext context) {
     final s = ref.watch(appStringsProvider);
 
-    // Il killswitch NON blocca PipLock — mostra solo un banner nella dashboard.
-    // L'overlay di blocco viene applicato sull'app broker via AccessibilityService.
-
     ref.listen<String?>(pendingNavigationProvider, (_, route) {
       if (route != null && mounted) {
         Navigator.of(context).pushNamed(route);
@@ -81,24 +79,23 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
       }
     });
 
-    // Sync token count to native SharedPreferences every time it changes,
-    // so the Kotlin killswitch overlay can check it without calling Flutter.
     ref.listen<AsyncValue<int>>(tokenRealtimeProvider, (_, next) {
       next.whenData((count) => AccessibilityService.syncTokenCount(count));
     });
 
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle.light.copyWith(
-        systemNavigationBarColor: AppColors.surface,
+        systemNavigationBarColor: Colors.transparent,
         systemNavigationBarIconBrightness: Brightness.light,
       ),
       child: Scaffold(
         backgroundColor: AppColors.background,
+        extendBody: true, // il body va sotto la nav bar floating
         body: _FadedIndexedStack(
           index: _currentIndex,
           children: _pages,
         ),
-        bottomNavigationBar: _PremiumNavBar(
+        bottomNavigationBar: _FloatingNavBar(
           currentIndex: _currentIndex,
           items: _navItems,
           strings: s,
@@ -171,15 +168,15 @@ class _NavItemData {
   const _NavItemData({required this.icon, required this.selectedIcon, required this.label});
 }
 
-// ── Premium Navigation Bar ───────────────────────────────────────────────────
+// ── Floating Pill Navigation Bar ─────────────────────────────────────────────
 
-class _PremiumNavBar extends StatelessWidget {
+class _FloatingNavBar extends StatelessWidget {
   final int currentIndex;
   final List<_NavItemData> items;
   final AppStrings strings;
   final ValueChanged<int> onTap;
 
-  const _PremiumNavBar({
+  const _FloatingNavBar({
     required this.currentIndex,
     required this.items,
     required this.strings,
@@ -200,29 +197,48 @@ class _PremiumNavBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final bottom = MediaQuery.of(context).padding.bottom;
     return Container(
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        border: Border(
-          top: BorderSide(color: AppColors.border.withValues(alpha: 0.4), width: 0.5),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.30),
-            blurRadius: 24,
-            offset: const Offset(0, -6),
+      // Trasparente — il contenuto visivo è nella pill interna
+      color: Colors.transparent,
+      padding: EdgeInsets.fromLTRB(20, 8, 20, 12 + bottom),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(AppTheme.radius2xl),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 24, sigmaY: 24),
+          child: Container(
+            decoration: BoxDecoration(
+              color: AppColors.surface.withValues(alpha: 0.88),
+              borderRadius: BorderRadius.circular(AppTheme.radius2xl),
+              border: Border.all(
+                color: AppColors.glassBorderStrong,
+                width: 0.5,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  blurRadius: 40,
+                  offset: const Offset(0, 10),
+                ),
+                BoxShadow(
+                  color: AppColors.accent.withValues(alpha: 0.04),
+                  blurRadius: 20,
+                  offset: const Offset(0, 0),
+                ),
+              ],
+            ),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: List.generate(
+                items.length,
+                (i) => _NavItem(
+                  item: items[i],
+                  label: _label(i, strings),
+                  selected: currentIndex == i,
+                  onTap: () => onTap(i),
+                ),
+              ),
+            ),
           ),
-        ],
-      ),
-      child: Padding(
-        padding: EdgeInsets.only(left: 8, right: 8, top: 10, bottom: 10 + bottom),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceAround,
-          children: List.generate(items.length, (i) => _NavItem(
-            item: items[i],
-            label: _label(i, strings),
-            selected: currentIndex == i,
-            onTap: () => onTap(i),
-          )),
         ),
       ),
     );
@@ -268,6 +284,10 @@ class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin 
   @override
   Widget build(BuildContext context) {
     final selected = widget.selected;
+    // Colori silver: attivo = silver chrome, inattivo = dim
+    final activeColor = AppColors.accent;      // silver chrome
+    final inactiveColor = AppColors.textTertiary;
+
     return GestureDetector(
       onTap: widget.onTap,
       onTapDown: (_) => _ctrl.forward(),
@@ -281,48 +301,52 @@ class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin 
           duration: AppTheme.dMedium,
           curve: AppTheme.cSpring,
           padding: EdgeInsets.symmetric(
-            horizontal: selected ? 16 : 12,
-            vertical: 8,
+            horizontal: selected ? 18 : 14,
+            vertical: 7,
           ),
           decoration: BoxDecoration(
-            color: selected ? AppColors.accent.withValues(alpha: 0.10) : Colors.transparent,
-            borderRadius: AppTheme.bMd,
+            // Pill highlight per item attivo — silver con bassa opacità
+            color: selected
+                ? AppColors.accent.withValues(alpha: 0.10)
+                : Colors.transparent,
+            borderRadius: BorderRadius.circular(AppTheme.radiusFull),
+            // Micro-border silver sull'item attivo
+            border: selected
+                ? Border.all(
+                    color: AppColors.accent.withValues(alpha: 0.18),
+                    width: 0.5,
+                  )
+                : null,
           ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              // Icona con glow silver quando attiva
               AnimatedSwitcher(
                 duration: AppTheme.dFast,
-                child: Icon(
-                  selected ? widget.item.selectedIcon : widget.item.icon,
-                  key: ValueKey(selected),
-                  color: selected ? AppColors.accent : AppColors.textTertiary,
-                  size: 22,
-                ),
+                child: selected
+                    ? ShaderMask(
+                        key: const ValueKey('selected'),
+                        shaderCallback: (bounds) => AppColors.silverGradient.createShader(bounds),
+                        blendMode: BlendMode.srcIn,
+                        child: Icon(widget.item.selectedIcon, size: 22, color: Colors.white),
+                      )
+                    : Icon(
+                        key: const ValueKey('unselected'),
+                        widget.item.icon,
+                        color: inactiveColor,
+                        size: 22,
+                      ),
               ),
               const SizedBox(height: 4),
-              // Dot indicator — solo quando selected
-              AnimatedContainer(
-                duration: AppTheme.dMedium,
-                curve: AppTheme.cSpring,
-                width: selected ? 16 : 4,
-                height: 3,
-                decoration: BoxDecoration(
-                  color: selected ? AppColors.accent : Colors.transparent,
-                  borderRadius: BorderRadius.circular(2),
-                  boxShadow: selected
-                      ? [BoxShadow(color: AppColors.accent.withValues(alpha: 0.6), blurRadius: 6)]
-                      : null,
-                ),
-              ),
-              const SizedBox(height: 2),
+              // Label
               AnimatedDefaultTextStyle(
                 duration: AppTheme.dFast,
                 style: GoogleFonts.manrope(
-                  color: selected ? AppColors.accent : AppColors.textTertiary,
-                  fontSize: 10,
+                  color: selected ? activeColor : inactiveColor,
+                  fontSize: 9,
                   fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-                  letterSpacing: selected ? -0.1 : 0,
+                  letterSpacing: selected ? 0.2 : 0,
                 ),
                 child: Text(widget.label),
               ),
