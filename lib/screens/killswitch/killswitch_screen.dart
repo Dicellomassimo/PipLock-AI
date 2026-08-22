@@ -555,7 +555,7 @@ class _CountdownBlock extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 20),
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: 0.04),
-        borderRadius: BorderRadius.circular(20),
+        borderRadius: BorderRadius.circular(AppTheme.radiusLg),
         border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
       ),
       child: Column(
@@ -756,7 +756,7 @@ class _BreathingWidgetState extends State<_BreathingWidget>
         if (t < _inhaleEnd) {
           final progress = t / _inhaleEnd;
           phaseLabel = 'Inhale';
-          circleColor = const Color(0xFF7B61FF);
+          circleColor = AppColors.accent; // silver chrome
           size = 80 + 80 * progress;
         } else if (t < _holdEnd) {
           phaseLabel = 'Hold';

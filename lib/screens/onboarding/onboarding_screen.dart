@@ -26,18 +26,18 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   static const int _totalSlides = 12;
 
   static const _accentColors = [
-    Color(0xFFFF3B30),   // 0
-    Color(0xFFFF6B35),   // 1
-    Color(0xFF7B61FF),   // 2
-    Color(0xFF7B61FF),   // 3
-    Color(0xFF7C3AED),   // 4
-    Color(0xFF4A90E2),   // 5 - social proof
-    Color(0xFFFF6B35),   // 6 - why traders fail (orange/warning)
-    Color(0xFF00D4AA),   // 7 - discipline edge (teal/success)
-    Color(0xFF00D4AA),   // 8 - benefits (was 6)
-    Color(0xFFFFBD2E),   // 9 - savings (was 7)
-    Color(0xFF7B61FF),   // 10 - platform (was 8)
-    Color(0xFF7B61FF),   // 11 - paywall (was 9)
+    Color(0xFFFF4455),   // 0 - hook (danger red)
+    Color(0xFFFF6B35),   // 1 - cost (orange)
+    Color(0xFFC4D0DC),   // 2 - brand reveal (silver chrome)
+    Color(0xFFFF4455),   // 3 - killswitch mockup (danger red)
+    Color(0xFF00C896),   // 4 - AI planner (teal-mint)
+    Color(0xFF4A90E2),   // 5 - social proof (steel blue)
+    Color(0xFFFF6B35),   // 6 - why traders fail (orange)
+    Color(0xFF00C896),   // 7 - discipline edge (teal)
+    Color(0xFF00C896),   // 8 - benefits (teal)
+    Color(0xFFFFBD2E),   // 9 - savings (amber)
+    Color(0xFF8B98AA),   // 10 - platform (silver dim)
+    Color(0xFFC4D0DC),   // 11 - paywall (silver chrome)
   ];
 
   @override
@@ -1258,7 +1258,7 @@ class _WhyTradersFailState extends State<_WhyTradersFail>
     (Icons.repeat_rounded, 'Overtrading', '68% of failed challenges', 0.68, Color(0xFFFF3B30)),
     (Icons.psychology_rounded, 'Revenge Trading', '61% of blown accounts', 0.61, Color(0xFFFF6B35)),
     (Icons.trending_up_rounded, 'FOMO Entries', '74% of avoidable losses', 0.74, Color(0xFFFFBD2E)),
-    (Icons.schedule_rounded, 'Wrong trading hours', '45% of overtraders', 0.45, Color(0xFF7C3AED)),
+    (Icons.schedule_rounded, 'Wrong trading hours', '45% of overtraders', 0.45, Color(0xFF4A90E2)),
   ];
 
   @override
@@ -1790,11 +1790,11 @@ class _BenefitsSlideState extends State<_BenefitsSlide>
 
   static const _items = [
     (Icons.lock_rounded, 'Hard Killswitch', 'Full-screen lock when you break your rules. No way around it.', Color(0xFFFF3B30)),
-    (Icons.auto_awesome_rounded, 'AI Challenge Planner', 'Personalized day-by-day plan with estimated success %.', Color(0xFF7B61FF)),
+    (Icons.auto_awesome_rounded, 'AI Challenge Planner', 'Personalized day-by-day plan with estimated success %.', Color(0xFF00C896)),
     (Icons.warning_amber_rounded, 'FOMO Gatekeeper', 'Real-time alert before you chase a move you already missed.', Color(0xFFFFBD2E)),
     (Icons.notifications_active_rounded, 'News & Session Alerts', 'NFP, CPI, Fed decisions — notified before they hit.', Color(0xFF4A90E2)),
     (Icons.bar_chart_rounded, 'MT5 Live Integration', 'EA reads your real equity and drawdown — no guessing.', Color(0xFF00D4AA)),
-    (Icons.self_improvement_rounded, '4-7-8 Breathing', 'Built-in cooldown exercise during your locked period.', Color(0xFF7C3AED)),
+    (Icons.self_improvement_rounded, '4-7-8 Breathing', 'Built-in cooldown exercise during your locked period.', Color(0xFF8B98AA)),
   ];
 
   @override

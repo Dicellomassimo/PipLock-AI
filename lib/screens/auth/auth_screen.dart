@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../config/app_colors.dart';
+import '../../config/app_theme.dart';
 import '../../config/app_strings.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/supabase_service.dart';
@@ -342,16 +343,16 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
         fillColor: AppColors.cardBg,
         contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.border),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          borderSide: BorderSide(color: AppColors.border, width: 0.5),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.border),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          borderSide: BorderSide(color: AppColors.border, width: 0.5),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: AppColors.accent, width: 1.5),
+          borderRadius: BorderRadius.circular(AppTheme.radiusMd),
+          borderSide: BorderSide(color: AppColors.accent, width: 1),
         ),
       ),
     );

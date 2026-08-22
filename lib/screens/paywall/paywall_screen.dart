@@ -464,7 +464,7 @@ class _AnimatedBorderCardState extends State<_AnimatedBorderCard>
             endAngle: _ctrl.value * 2 * math.pi + math.pi * 2,
             colors: const [
               AppColors.accent,
-              Color(0xFF7C3AED),
+              AppColors.accentDark,
               AppColors.warning,
               AppColors.accent,
             ],
