@@ -130,14 +130,12 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
   }
 
   Future<void> _tryUnlock() async {
+    final s = ref.read(appStringsProvider);
     // Face ID: optional attempt, does not block flow if unavailable.
     try {
-      await FaceAuthService.authenticate(
-        reason: 'Confirm your identity to unlock the Killswitch early',
-      );
+      await FaceAuthService.authenticate(reason: s.ksConfirmIdentity);
     } catch (_) {}
 
-    final s = ref.read(appStringsProvider);
     final success = await ref.read(killswitchProvider.notifier).useToken();
     if (!success && mounted) {
       _cancelHold();
@@ -152,7 +150,7 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('killswitch_token_used', true);
       if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/personal_rules');
+        Navigator.of(context).pushReplacementNamed('/main');
       }
     }
   }
@@ -177,7 +175,7 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
       case 'fomo_pattern':
         return s.ksFomoPattern;
       default:
-        return s.t('Limit reached', 'Limite raggiunto');
+        return s.ksLimitReached;
     }
   }
 
@@ -341,7 +339,7 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
                           ),
                           const SizedBox(height: 8),
                           Text(
-                            s.t('Stay calm. The lock will end automatically.', 'Mantieni la calma. Il blocco terminerà automaticamente.'),
+                            s.ksStayCalm,
                             textAlign: TextAlign.center,
                             style: GoogleFonts.manrope(
                               color: AppColors.textSecondary,
@@ -461,7 +459,7 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
                                       color: Colors.white70, size: 18),
                                   const SizedBox(width: 8),
                                   Text(
-                                    s.t('Exit MT5', 'Esci da MT5'),
+                                    s.ksExitMt5,
                                     style: GoogleFonts.manrope(
                                       color: Colors.white70,
                                       fontWeight: FontWeight.w600,
@@ -482,7 +480,7 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
                               Padding(
                                 padding: const EdgeInsets.symmetric(horizontal: 14),
                                 child: Text(
-                                  s.t('STAY CALM', 'MANTIENI LA CALMA'),
+                                  s.ksStayCalmLabel,
                                   style: GoogleFonts.manrope(
                                     color: Colors.white.withValues(alpha: 0.25),
                                     fontSize: 9,
@@ -495,7 +493,12 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
                             ],
                           ),
                           const SizedBox(height: 28),
-                          const _BreathingWidget(),
+                          _BreathingWidget(
+                            inhale: s.ksInhale,
+                            hold: s.ksHold,
+                            exhale: s.ksExhale,
+                            title: s.ks478Exercise,
+                          ),
                           const SizedBox(height: 40),
                         ],
                       ),
@@ -712,7 +715,17 @@ class _HoldToUnlockButton extends StatelessWidget {
 // ─── Breathing Exercise Widget ─────────────────────────────────────────────────
 
 class _BreathingWidget extends StatefulWidget {
-  const _BreathingWidget();
+  final String inhale;
+  final String hold;
+  final String exhale;
+  final String title;
+
+  const _BreathingWidget({
+    required this.inhale,
+    required this.hold,
+    required this.exhale,
+    required this.title,
+  });
 
   @override
   State<_BreathingWidget> createState() => _BreathingWidgetState();
@@ -755,16 +768,16 @@ class _BreathingWidgetState extends State<_BreathingWidget>
 
         if (t < _inhaleEnd) {
           final progress = t / _inhaleEnd;
-          phaseLabel = 'Inhale';
+          phaseLabel = widget.inhale;
           circleColor = AppColors.accent; // silver chrome
           size = 80 + 80 * progress;
         } else if (t < _holdEnd) {
-          phaseLabel = 'Hold';
+          phaseLabel = widget.hold;
           circleColor = const Color(0xFFFFC947);
           size = 160;
         } else {
           final progress = (t - _holdEnd) / (1.0 - _holdEnd);
-          phaseLabel = 'Exhale';
+          phaseLabel = widget.exhale;
           circleColor = const Color(0xFF4CAF50);
           size = 160 - 80 * progress;
         }
@@ -773,7 +786,7 @@ class _BreathingWidgetState extends State<_BreathingWidget>
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '4-7-8 Exercise',
+              widget.title,
               style: GoogleFonts.manrope(
                 color: Colors.white.withValues(alpha: 0.6),
                 fontSize: 12,

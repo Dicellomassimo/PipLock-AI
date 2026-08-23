@@ -61,12 +61,17 @@ Future<void> main() async {
 
   await NotificationService.initialize();
   NotificationService.startFinnhubMonitoring();
-  // Pre-schedule notifications for the next 30 days (works even when app is closed)
-  unawaited(NotificationService.scheduleUpcomingNotifications());
+  // NOTE: scheduleUpcomingNotifications() is called in MainNavScreen.initState()
+  // (after the user is on the main screen and the network is ready).
 
   // In release mode Flutter shows a white screen on uncaught widget errors.
   // This fallback shows a dark recovery card instead of crashing silently.
+  // Cannot use Riverpod providers here (ProviderScope not yet in tree),
+  // so we detect the system language from the platform dispatcher.
   ErrorWidget.builder = (FlutterErrorDetails details) {
+    final lang = WidgetsBinding
+        .instance.platformDispatcher.locale.languageCode;
+    final isIt = lang == 'it';
     return MaterialApp(
       debugShowCheckedModeBanner: false,
       home: Scaffold(
@@ -81,8 +86,8 @@ Future<void> main() async {
                     color: Color(0xFFFF9500), size: 48),
                 const SizedBox(height: 16),
                 Text(
-                  'Something went wrong',
-                  style: TextStyle(
+                  isIt ? 'Qualcosa è andato storto' : 'Something went wrong',
+                  style: const TextStyle(
                     color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
@@ -91,8 +96,8 @@ Future<void> main() async {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Please restart the app.',
-                  style: TextStyle(color: Colors.white54, fontSize: 14),
+                  isIt ? 'Riavvia l\'app.' : 'Please restart the app.',
+                  style: const TextStyle(color: Colors.white54, fontSize: 14),
                   textAlign: TextAlign.center,
                 ),
               ],

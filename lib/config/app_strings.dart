@@ -98,10 +98,15 @@ class AppStrings {
   String dashHello(String name) => _t('Hi, $name', 'Ciao, $name');
   String get dashSessionLondon => _t('London', 'Londra');
   String get dashSessionNewYork => _t('New York', 'New York');
-  String get dashSessionAsia => _t('Asia', 'Asia');
-  String get dashSessionClosesLondon => _t('closes 17:00', 'chiude 17:00');
-  String get dashSessionClosesNY => _t('closes 23:00', 'chiude 23:00');
-  String get dashSessionOpensAsia => _t('opens 01:00', 'apre 01:00');
+  String get dashSessionAsia => _t('Asia · Tokyo', 'Asia · Tokyo');
+  String get dashSessionSydney => _t('Sydney', 'Sydney');
+  String get dashSessionClosed => _t('Market Closed', 'Mercato chiuso');
+  String get dashSessionClosedSub => _t('Opens Monday', 'Apre lunedì');
+  String get dashSessionClosesLondon => _t('closes 17:00 UTC', 'chiude 17:00 UTC');
+  String get dashSessionClosesNY => _t('closes 22:00 UTC', 'chiude 22:00 UTC');
+  String get dashSessionClosesSydney => _t('closes 07:00 UTC', 'chiude 07:00 UTC');
+  String get dashSessionOpensAsia => _t('opens 00:00 UTC', 'apre 00:00 UTC');
+  String get dashSessionOpensLondon => _t('opens 08:00 UTC', 'apre 08:00 UTC');
   String get dashToday => _t('TODAY', 'OGGI');
   String get dashStatusOk => _t('All good', 'Tutto OK');
   String get dashStatusWarning => _t('Warning', 'Attenzione');
@@ -155,6 +160,18 @@ class AppStrings {
   String dashPersonalLimit(String limit) => _t('Limit: $limit / day', 'Limite: $limit / giorno');
   String get dashNoLimitSet => _t('No limit set', 'Nessun limite impostato');
   String dashChallengeDay(int day, int total, String pct) => _t('Day $day/$total · Target $pct%', 'Giorno $day/$total · Target $pct%');
+  String get dashAccountActive => _t('ACTIVE', 'ATTIVO');
+  String get dashRiskUsed => _t('Risk used', 'Rischio usato');
+  String get dashNotConnected => _t('Not connected', 'Non connesso');
+  String get dashPnlToday => _t('P&L Today', 'P&L Oggi');
+  String get dashMaxLossLabel => _t('Max loss', 'Perdita massima');
+  String get dashMaxTradesLabel => _t('Max trades', 'Trade massimi');
+  String get dashTradingHoursLabel => _t('Trading hours', 'Orario operativo');
+  String get dashKillswitchLockLabel => _t('Killswitch lock', 'Blocco killswitch');
+  String get dashAiTarget => _t('Target', 'Target');
+  String get dashAiMaxLoss => _t('Max loss', 'Max perdita');
+  String get dashAiMaxTrades => _t('Max trades', 'Max trade');
+  String dashLossLimitPerDay(String limit) => _t('Limit $limit/day', 'Limite $limit/giorno');
 
   // ── Personal rules setup ─────────────────────────────────────────────────
   String personalRulesStep(int step, int total) => _t('Step $step of $total', 'Step $step di $total');
@@ -289,6 +306,9 @@ class AppStrings {
   String get ksInhale => _t('Inhale', 'Inspira');
   String get ksHold => _t('Hold', 'Tieni');
   String get ksExhale => _t('Exhale', 'Espira');
+  String get ksStayCalm => _t('Stay calm. The lock will end automatically.', 'Mantieni la calma. Il blocco terminerà automaticamente.');
+  String get ksStayCalmLabel => _t('STAY CALM', 'MANTIENI LA CALMA');
+  String get ksLimitReached => _t('Limit reached', 'Limite raggiunto');
 
   // ── History screen ───────────────────────────────────────────────────────
   String get historyTitle => _t('History', 'Storico');
@@ -484,6 +504,8 @@ class AppStrings {
   String get brokerOpenPositions => _t('Open positions', 'Posizioni aperte');
   String get brokerLive => _t('LIVE', 'LIVE');
   String get brokerWaiting => _t('WAITING', 'ATTESA');
+  String get brokerEquityLabel => _t('Equity', 'Equity');
+  String get brokerBalanceLabel => _t('Balance', 'Balance');
 
   // ── Help & FAQ screen ────────────────────────────────────────────────────
   String get helpTitle => _t('Help & FAQ', 'Aiuto & FAQ');

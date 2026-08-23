@@ -7,7 +7,17 @@ import '../../config/app_colors.dart';
 import '../../config/app_strings.dart';
 import '../../services/notification_service.dart';
 
-// ── Mapping asset → valute rilevanti su ForexFactory ──────────────────────────
+// ── TradingView country code → currency code ──────────────────────────────────
+// TradingView returns ISO country codes (US, EU, GB…) not currency codes.
+const _countryToCurrency = <String, String>{
+  'US': 'USD', 'EU': 'EUR', 'DE': 'EUR', 'FR': 'EUR', 'IT': 'EUR',
+  'ES': 'EUR', 'GB': 'GBP', 'JP': 'JPY', 'CH': 'CHF', 'CA': 'CAD',
+  'AU': 'AUD', 'NZ': 'NZD', 'CN': 'CNY', 'KR': 'KRW', 'IN': 'INR',
+  'BR': 'BRL', 'MX': 'MXN', 'SG': 'SGD', 'HK': 'HKD', 'SE': 'SEK',
+  'NO': 'NOK', 'ZA': 'ZAR', 'RU': 'RUB', 'TR': 'TRY',
+};
+
+// ── Strumento → valute che lo muovono ─────────────────────────────────────────
 const _assetCurrencies = <String, List<String>>{
   'XAUUSD': ['USD'],
   'XAGUSD': ['USD'],
@@ -32,8 +42,106 @@ const _assetCurrencies = <String, List<String>>{
   'BTC':    ['USD'],
 };
 
-// Tutte le valute note (per i chip valuta anche se non ci sono eventi questa settimana)
-const _allCurrencies = ['USD', 'EUR', 'GBP', 'JPY', 'CHF', 'AUD', 'NZD', 'CAD', 'CNY'];
+// ── Strumento → keyword rilevanti nel titolo dell'evento ──────────────────────
+// Permette di catturare eventi come "NFP" per XAUUSD anche se non c'è un campo
+// "gold" — viene guardato il titolo dell'evento TradingView.
+const _assetKeywords = <String, List<String>>{
+  'XAUUSD': [
+    'fed', 'fomc', 'cpi', 'nfp', 'non-farm', 'payroll', 'inflation',
+    'interest rate', 'pce', 'gdp', 'gold', 'treasury', 'unemployment',
+    'powell', 'retail sales', 'core', 'consumer price', 'producer price',
+    'ppi', 'durable goods', 'housing',
+  ],
+  'XAGUSD': [
+    'fed', 'fomc', 'cpi', 'inflation', 'interest rate', 'industrial',
+    'manufacturing', 'pmi', 'gdp', 'silver', 'payroll', 'nfp',
+  ],
+  'XPTUSD': [
+    'fed', 'fomc', 'cpi', 'interest rate', 'industrial', 'manufacturing',
+    'gdp', 'platinum', 'automotive', 'vehicle',
+  ],
+  'EURUSD': [
+    'ecb', 'cpi', 'inflation', 'gdp', 'interest rate', 'employment',
+    'pmi', 'ifo', 'zew', 'sentix', 'lagarde', 'fed', 'fomc', 'nfp',
+    'trade balance', 'retail sales', 'unemployment',
+  ],
+  'GBPUSD': [
+    'boe', 'bank of england', 'cpi', 'inflation', 'gdp', 'employment',
+    'retail sales', 'pmi', 'interest rate', 'bailey', 'fed', 'fomc', 'nfp',
+    'claimant', 'trade balance',
+  ],
+  'USDJPY': [
+    'boj', 'bank of japan', 'fed', 'fomc', 'cpi', 'interest rate', 'gdp',
+    'tankan', 'nfp', 'payroll', 'trade balance', 'kuroda', 'ueda',
+    'unemployment', 'inflation',
+  ],
+  'USDCHF': [
+    'snb', 'swiss', 'fed', 'fomc', 'cpi', 'interest rate', 'gdp',
+    'inflation', 'nfp', 'payroll', 'unemployment', 'trade balance',
+  ],
+  'AUDUSD': [
+    'rba', 'reserve bank of australia', 'cpi', 'inflation', 'gdp',
+    'employment', 'unemployment', 'trade balance', 'china', 'chinese',
+    'pmi', 'retail sales', 'fed', 'fomc', 'nfp', 'interest rate',
+  ],
+  'NZDUSD': [
+    'rbnz', 'reserve bank of new zealand', 'cpi', 'inflation', 'gdp',
+    'employment', 'trade balance', 'interest rate', 'fed', 'fomc', 'nfp',
+  ],
+  'USDCAD': [
+    'boc', 'bank of canada', 'cpi', 'inflation', 'gdp', 'employment',
+    'trade balance', 'oil', 'crude', 'interest rate', 'fed', 'fomc', 'nfp',
+    'ivey', 'unemployment',
+  ],
+  'GBPJPY': [
+    'boe', 'boj', 'cpi', 'gdp', 'inflation', 'interest rate', 'employment',
+    'pmi', 'retail sales', 'tankan',
+  ],
+  'EURJPY': [
+    'ecb', 'boj', 'cpi', 'gdp', 'inflation', 'interest rate', 'pmi',
+    'ifo', 'zew', 'tankan', 'employment',
+  ],
+  'EURGBP': [
+    'ecb', 'boe', 'cpi', 'gdp', 'inflation', 'interest rate', 'pmi',
+    'employment', 'retail sales', 'ifo', 'zew',
+  ],
+  'EURAUD': [
+    'ecb', 'rba', 'cpi', 'gdp', 'inflation', 'interest rate', 'pmi',
+    'employment', 'china',
+  ],
+  'GBPAUD': [
+    'boe', 'rba', 'cpi', 'gdp', 'inflation', 'interest rate', 'employment',
+    'pmi', 'retail sales', 'china',
+  ],
+  'EURCHF': [
+    'ecb', 'snb', 'cpi', 'gdp', 'inflation', 'interest rate', 'pmi',
+    'swiss', 'ifo', 'zew',
+  ],
+  'US30': [
+    'fed', 'fomc', 'cpi', 'nfp', 'payroll', 'gdp', 'pce', 'retail sales',
+    'consumer confidence', 'inflation', 'interest rate', 'unemployment',
+    'powell', 'industrial production', 'durable goods', 'housing',
+  ],
+  'NAS100': [
+    'fed', 'fomc', 'cpi', 'pce', 'gdp', 'inflation', 'interest rate',
+    'retail sales', 'consumer', 'powell', 'nfp', 'payroll', 'unemployment',
+    'tech', 'treasury',
+  ],
+  'SP500': [
+    'fed', 'fomc', 'cpi', 'nfp', 'payroll', 'gdp', 'pce', 'inflation',
+    'interest rate', 'retail sales', 'consumer confidence', 'unemployment',
+    'powell', 'durable goods', 'industrial',
+  ],
+  'USOIL': [
+    'crude', 'oil', 'opec', 'eia', 'api', 'inventory', 'energy',
+    'gdp', 'fed', 'fomc', 'cpi', 'inflation', 'nfp', 'payroll',
+    'industrial production', 'manufacturing', 'pmi',
+  ],
+  'BTC': [
+    'fed', 'fomc', 'cpi', 'inflation', 'interest rate', 'powell',
+    'crypto', 'bitcoin', 'digital', 'sec', 'etf', 'pce', 'gdp',
+  ],
+};
 
 class NotificationsScreen extends ConsumerStatefulWidget {
   const NotificationsScreen({super.key});
@@ -45,18 +153,18 @@ class NotificationsScreen extends ConsumerStatefulWidget {
 class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   List<EconomicEvent> _events = [];
   List<Map<String, dynamic>> _killswitchEvents = [];
+  List<NewsArticle> _news = [];
   bool _loading = true;
   String? _error;
 
   // ── Filtri ────────────────────────────────────────────────────────────────
   bool _filtersExpanded = false;
-  Set<String> _selectedImpacts = {'high', 'medium', 'low'};
-  Set<String> _selectedCurrencies = {};   // vuoto = tutte
-  String? _selectedAsset;                 // null = nessun quick-filter
+  // 'all' | 'medium' (med+high) | 'high'
+  String _selectedImpact = 'all';
+  String? _selectedAsset;
 
-  static const _prefImpacts    = 'notif_filter_impacts';
-  static const _prefCurrencies = 'notif_filter_currencies';
-  static const _prefAsset      = 'notif_filter_asset';
+  static const _prefImpact = 'notif_filter_impact_v2';
+  static const _prefAsset  = 'notif_filter_asset';
 
   @override
   void initState() {
@@ -66,20 +174,15 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
 
   Future<void> _loadPrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    final impacts = prefs.getStringList(_prefImpacts);
-    final currencies = prefs.getStringList(_prefCurrencies);
-    final asset = prefs.getString(_prefAsset);
     setState(() {
-      if (impacts != null) _selectedImpacts = impacts.toSet();
-      if (currencies != null) _selectedCurrencies = currencies.toSet();
-      _selectedAsset = asset;
+      _selectedImpact = prefs.getString(_prefImpact) ?? 'all';
+      _selectedAsset  = prefs.getString(_prefAsset);
     });
   }
 
   Future<void> _savePrefs() async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setStringList(_prefImpacts, _selectedImpacts.toList());
-    await prefs.setStringList(_prefCurrencies, _selectedCurrencies.toList());
+    await prefs.setString(_prefImpact, _selectedImpact);
     if (_selectedAsset != null) {
       await prefs.setString(_prefAsset, _selectedAsset!);
     } else {
@@ -92,33 +195,31 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   List<EconomicEvent> get _filteredEvents {
     return _events.where((e) {
       // 1. Impatto
-      if (!_selectedImpacts.contains(e.impact)) return false;
+      if (_selectedImpact == 'high' && e.impact != 'high') return false;
+      if (_selectedImpact == 'medium' && e.impact == 'low') return false;
 
-      // 2. Asset rapido → filtra per valute dell'asset
-      final assetCurrencies = _selectedAsset != null
-          ? (_assetCurrencies[_selectedAsset!] ?? [])
-          : <String>[];
+      // 2. Nessun asset selezionato → mostra tutto
+      if (_selectedAsset == null) return true;
 
-      if (assetCurrencies.isNotEmpty) {
-        final country = e.country.toUpperCase();
-        if (!assetCurrencies.any((c) => country.contains(c))) return false;
-        return true; // asset filter sovrascrive currency filter
-      }
+      // 3. Converti country code TradingView → currency code
+      final eventCurrency =
+          _countryToCurrency[e.country.toUpperCase()] ?? e.country.toUpperCase();
 
-      // 3. Valute manuali
-      if (_selectedCurrencies.isNotEmpty) {
-        final country = e.country.toUpperCase();
-        if (!_selectedCurrencies.any((c) => country.contains(c))) return false;
-      }
+      // 4. Controlla se la valuta dell'evento è rilevante per l'asset
+      final currencies = _assetCurrencies[_selectedAsset!] ?? [];
+      final currencyMatch = currencies.any((c) => eventCurrency == c);
 
-      return true;
+      if (currencyMatch) return true;
+
+      // 5. Controlla keyword nel titolo dell'evento (cattura FOMC, NFP, CPI ecc.)
+      final keywords = _assetKeywords[_selectedAsset!] ?? [];
+      final eventTitle = e.event.toLowerCase();
+      return keywords.any((kw) => eventTitle.contains(kw));
     }).toList();
   }
 
   bool get _hasActiveFilters =>
-      _selectedImpacts.length < 3 ||
-      _selectedCurrencies.isNotEmpty ||
-      _selectedAsset != null;
+      _selectedImpact != 'all' || _selectedAsset != null;
 
   // ── Dati ─────────────────────────────────────────────────────────────────
 
@@ -138,11 +239,13 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               .then((res) => (res as List<dynamic>).cast<Map<String, dynamic>>())
           : Future.value(<Map<String, dynamic>>[]);
 
-      final results = await Future.wait([eventsFuture, killswitchFuture]);
+      final newsFuture = NotificationService.fetchLatestNews();
+      final results = await Future.wait([eventsFuture, killswitchFuture, newsFuture]);
       if (!mounted) return;
       setState(() {
         _events = results[0] as List<EconomicEvent>;
         _killswitchEvents = results[1] as List<Map<String, dynamic>>;
+        _news = results[2] as List<NewsArticle>;
         _loading = false;
       });
     } catch (e) {
@@ -274,84 +377,50 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                 ),
             ],
           ),
-          const SizedBox(height: 14),
-
-          // ── 1. Impatto ─────────────────────────────────────────────────
-          Text(s.notificationsImpact,
-              style: GoogleFonts.manrope(
-                  color: AppColors.textPrimary,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600)),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              _ImpactChip(
-                label: 'HIGH',
-                color: AppColors.danger,
-                selected: _selectedImpacts.contains('high'),
-                onTap: () => _toggleImpact('high'),
-              ),
-              const SizedBox(width: 8),
-              _ImpactChip(
-                label: 'MEDIUM',
-                color: AppColors.warning,
-                selected: _selectedImpacts.contains('medium'),
-                onTap: () => _toggleImpact('medium'),
-              ),
-              const SizedBox(width: 8),
-              _ImpactChip(
-                label: 'LOW',
-                color: AppColors.textSecondary,
-                selected: _selectedImpacts.contains('low'),
-                onTap: () => _toggleImpact('low'),
-              ),
-            ],
-          ),
           const SizedBox(height: 16),
 
-          // ── 2. Asset rapido ────────────────────────────────────────────
-          Text(s.notificationsAssets,
+          // ── 1. Cosa tradi? ────────────────────────────────────────────
+          Text(s.t('What do you trade?', 'Cosa tradi?'),
               style: GoogleFonts.manrope(
                   color: AppColors.textPrimary,
                   fontSize: 12,
                   fontWeight: FontWeight.w600)),
           const SizedBox(height: 4),
-          Text(s.notificationsAssetsHint,
-              style: GoogleFonts.manrope(
-                  color: AppColors.textSecondary, fontSize: 10)),
-          const SizedBox(height: 8),
+          Text(
+            s.t(
+              'Shows only events relevant to your instrument',
+              'Mostra solo eventi rilevanti per il tuo strumento',
+            ),
+            style: GoogleFonts.manrope(
+                color: AppColors.textSecondary, fontSize: 10),
+          ),
+          const SizedBox(height: 10),
           SizedBox(
-            height: 34,
+            height: 36,
             child: ListView(
               scrollDirection: Axis.horizontal,
               children: _assetCurrencies.keys.map((asset) {
                 final selected = _selectedAsset == asset;
                 return Padding(
-                  padding: const EdgeInsets.only(right: 6),
+                  padding: const EdgeInsets.only(right: 7),
                   child: GestureDetector(
                     onTap: () => _selectAsset(asset),
                     child: AnimatedContainer(
                       duration: const Duration(milliseconds: 150),
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 6),
+                          horizontal: 13, vertical: 7),
                       decoration: BoxDecoration(
-                        color: selected
-                            ? AppColors.accent
-                            : AppColors.cardBg,
+                        color: selected ? AppColors.accent : AppColors.cardBg,
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: selected
-                              ? AppColors.accent
-                              : AppColors.divider,
+                          color: selected ? AppColors.accent : AppColors.divider,
                         ),
                       ),
                       child: Text(
                         asset,
                         style: GoogleFonts.manrope(
-                          color: selected
-                              ? Colors.black
-                              : AppColors.textPrimary,
-                          fontSize: 11,
+                          color: selected ? Colors.black : AppColors.textPrimary,
+                          fontSize: 12,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -361,122 +430,89 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               }).toList(),
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 18),
 
-          // ── 3. Valuta manuale ──────────────────────────────────────────
+          // ── 2. Impatto ────────────────────────────────────────────────
+          Text(s.notificationsImpact,
+              style: GoogleFonts.manrope(
+                  color: AppColors.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600)),
+          const SizedBox(height: 10),
           Row(
             children: [
-              Text(s.notificationsCurrency,
-                  style: GoogleFonts.manrope(
-                      color: AppColors.textPrimary,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600)),
+              _ImpactToggle(
+                label: s.t('All', 'Tutti'),
+                selected: _selectedImpact == 'all',
+                color: AppColors.textSecondary,
+                onTap: () => _setImpact('all'),
+              ),
               const SizedBox(width: 8),
-              if (_selectedAsset != null)
-                Text(s.notificationsCurrencyDisabled,
-                    style: GoogleFonts.manrope(
-                        color: AppColors.textSecondary, fontSize: 10)),
+              _ImpactToggle(
+                label: 'Med+',
+                selected: _selectedImpact == 'medium',
+                color: AppColors.warning,
+                onTap: () => _setImpact('medium'),
+              ),
+              const SizedBox(width: 8),
+              _ImpactToggle(
+                label: 'High',
+                selected: _selectedImpact == 'high',
+                color: AppColors.danger,
+                onTap: () => _setImpact('high'),
+              ),
             ],
           ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 34,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: _buildCurrencyChips(),
+
+          // Hint contestuale quando asset selezionato
+          if (_selectedAsset != null) ...[
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              decoration: BoxDecoration(
+                color: AppColors.accent.withValues(alpha: 0.07),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: AppColors.accent.withValues(alpha: 0.15)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.auto_awesome,
+                      color: AppColors.accent, size: 13),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      s.t(
+                        'Showing FOMC, CPI, NFP and all events that move $_selectedAsset',
+                        'Mostro FOMC, CPI, NFP e tutti gli eventi che muovono $_selectedAsset',
+                      ),
+                      style: GoogleFonts.manrope(
+                          color: AppColors.accent, fontSize: 10),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
+          ],
         ],
       ),
     );
   }
 
-  List<Widget> _buildCurrencyChips() {
-    // Prendi le valute presenti negli eventi questa settimana + tutte quelle note
-    final available = {
-      ..._events.map((e) => e.country.toUpperCase()),
-      ..._allCurrencies,
-    }.toList()..sort();
-
-    return available.map((currency) {
-      final selected = _selectedCurrencies.contains(currency);
-      final disabled = _selectedAsset != null;
-      return Padding(
-        padding: const EdgeInsets.only(right: 6),
-        child: GestureDetector(
-          onTap: disabled ? null : () => _toggleCurrency(currency),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: selected && !disabled
-                  ? AppColors.accent.withValues(alpha: 0.2)
-                  : AppColors.cardBg,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: selected && !disabled
-                    ? AppColors.accent
-                    : AppColors.divider.withValues(
-                        alpha: disabled ? 0.3 : 1.0),
-              ),
-            ),
-            child: Text(
-              currency,
-              style: GoogleFonts.manrope(
-                color: disabled
-                    ? AppColors.textSecondary.withValues(alpha: 0.4)
-                    : selected
-                        ? AppColors.accent
-                        : AppColors.textPrimary,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ),
-      );
-    }).toList();
-  }
-
   // ── Azioni filtri ─────────────────────────────────────────────────────────
 
-  void _toggleImpact(String impact) {
-    setState(() {
-      if (_selectedImpacts.contains(impact) && _selectedImpacts.length > 1) {
-        _selectedImpacts = Set.from(_selectedImpacts)..remove(impact);
-      } else {
-        _selectedImpacts = Set.from(_selectedImpacts)..add(impact);
-      }
-    });
+  void _setImpact(String impact) {
+    setState(() => _selectedImpact = impact);
     _savePrefs();
   }
 
   void _selectAsset(String asset) {
-    setState(() {
-      _selectedAsset = _selectedAsset == asset ? null : asset;
-      // Deseleziona valute manuali quando si usa il filtro asset
-      if (_selectedAsset != null) _selectedCurrencies = {};
-    });
-    _savePrefs();
-  }
-
-  void _toggleCurrency(String currency) {
-    setState(() {
-      final next = Set<String>.from(_selectedCurrencies);
-      if (next.contains(currency)) {
-        next.remove(currency);
-      } else {
-        next.add(currency);
-      }
-      _selectedCurrencies = next;
-    });
+    setState(() => _selectedAsset = _selectedAsset == asset ? null : asset);
     _savePrefs();
   }
 
   void _resetFilters() {
     setState(() {
-      _selectedImpacts = {'high', 'medium', 'low'};
-      _selectedCurrencies = {};
+      _selectedImpact = 'all';
       _selectedAsset = null;
     });
     _savePrefs();
@@ -612,6 +648,16 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
             const SizedBox(height: 20),
           ],
 
+          // ── Financial news ────────────────────────────────────────────
+          if (_news.isNotEmpty) ...[
+            _sectionTitle(s.t('MARKET NEWS', 'NEWS DI MERCATO')),
+            const SizedBox(height: 12),
+            ..._news.take(15).map((n) => _NewsCard(article: n)),
+            const SizedBox(height: 20),
+            const Divider(color: AppColors.divider),
+            const SizedBox(height: 20),
+          ],
+
           // ── Killswitch recenti ─────────────────────────────────────────
           if (_killswitchEvents.isNotEmpty) ...[
             _sectionTitle(s.notificationsRecentKs),
@@ -663,18 +709,9 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   Widget _buildActiveFiltersSummary() {
     final s = ref.read(appStringsProvider);
     final parts = <String>[];
-    if (_selectedImpacts.length < 3) {
-      final labels = {
-        'high': 'HIGH',
-        'medium': 'MED',
-        'low': 'LOW',
-      };
-      parts.add(_selectedImpacts.map((i) => labels[i] ?? i).join(' · '));
-    }
-    if (_selectedAsset != null) {
-      parts.add('Asset: $_selectedAsset');
-    } else if (_selectedCurrencies.isNotEmpty) {
-      parts.add('Valute: ${_selectedCurrencies.join(', ')}');
+    if (_selectedAsset != null) parts.add(_selectedAsset!);
+    if (_selectedImpact != 'all') {
+      parts.add(_selectedImpact == 'high' ? 'HIGH only' : 'Med+High');
     }
 
     return Container(
@@ -827,15 +864,15 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   }
 }
 
-// ── Chip impatto ───────────────────────────────────────────────────────────────
+// ── Impact toggle ──────────────────────────────────────────────────────────────
 
-class _ImpactChip extends StatelessWidget {
+class _ImpactToggle extends StatelessWidget {
   final String label;
   final Color color;
   final bool selected;
   final VoidCallback onTap;
 
-  const _ImpactChip({
+  const _ImpactToggle({
     required this.label,
     required this.color,
     required this.selected,
@@ -848,17 +885,18 @@ class _ImpactChip extends StatelessWidget {
       onTap: onTap,
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
           color: selected ? color.withValues(alpha: 0.15) : AppColors.cardBg,
           borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: selected ? color : AppColors.divider),
+          border: Border.all(
+              color: selected ? color : AppColors.divider, width: selected ? 1.5 : 0.5),
         ),
         child: Text(
           label,
           style: GoogleFonts.manrope(
             color: selected ? color : AppColors.textSecondary,
-            fontSize: 11,
+            fontSize: 12,
             fontWeight: FontWeight.w700,
           ),
         ),
@@ -1063,6 +1101,92 @@ class _EventCard extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ── News card ─────────────────────────────────────────────────────────────────
+
+class _NewsCard extends StatelessWidget {
+  final NewsArticle article;
+  const _NewsCard({required this.article});
+
+  String _timeLabel(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${dt.day.toString().padLeft(2,'0')}/${dt.month.toString().padLeft(2,'0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.divider),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: Text(
+                  article.source.toUpperCase(),
+                  style: GoogleFonts.manrope(
+                    color: AppColors.accent,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 0.8,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                _timeLabel(article.publishedAt),
+                style: GoogleFonts.manrope(
+                  color: AppColors.textSecondary,
+                  fontSize: 10,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 7),
+          Text(
+            article.title,
+            style: GoogleFonts.manrope(
+              color: AppColors.textPrimary,
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              height: 1.4,
+            ),
+            maxLines: 3,
+            overflow: TextOverflow.ellipsis,
+          ),
+          if (article.summary != null && article.summary!.isNotEmpty) ...[
+            const SizedBox(height: 5),
+            Text(
+              article.summary!,
+              style: GoogleFonts.manrope(
+                color: AppColors.textSecondary,
+                fontSize: 11,
+                height: 1.4,
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ],
       ),
     );
   }

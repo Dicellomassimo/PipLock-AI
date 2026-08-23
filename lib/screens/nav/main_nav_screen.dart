@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -12,6 +13,7 @@ import '../../providers/navigation_provider.dart';
 import '../../providers/realtime_provider.dart';
 import '../../providers/token_provider.dart';
 import '../../services/accessibility_service.dart';
+import '../../services/notification_service.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../ai_planner/ai_planner_screen.dart';
 import '../history/history_screen.dart';
@@ -25,8 +27,9 @@ class MainNavScreen extends ConsumerStatefulWidget {
 }
 
 class _MainNavScreenState extends ConsumerState<MainNavScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   int _currentIndex = 0;
+  DateTime? _lastResumeRefresh;
 
   static const List<Widget> _pages = [
     DashboardScreen(),
@@ -45,6 +48,7 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final args = ModalRoute.of(context)?.settings.arguments;
       if (args is int && args >= 0 && args < _pages.length) {
@@ -57,7 +61,34 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
         ref.read(realtimeProvider);
         ref.read(brokerProvider);
       } catch (_) {}
+
+      // Schedule economic calendar notifications after 4s — by this point
+      // the user is on the main screen and the network stack is fully ready.
+      Future.delayed(const Duration(seconds: 4), () {
+        if (mounted) unawaited(NotificationService.scheduleUpcomingNotifications());
+      });
     });
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  /// Called automatically when the app comes back to foreground.
+  /// Refreshes the economic calendar and reschedules notifications,
+  /// but at most once every 30 minutes to avoid hammering the API.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    final now = DateTime.now();
+    if (_lastResumeRefresh != null &&
+        now.difference(_lastResumeRefresh!) < const Duration(minutes: 30)) {
+      return; // skip — refreshed recently
+    }
+    _lastResumeRefresh = now;
+    unawaited(NotificationService.refresh());
   }
 
   void _onTap(int i) {

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+// Completer imported via dart:async above
 import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -47,6 +48,30 @@ class EconomicEvent {
       time: parsedTime,
       actual: json['actual']?.toString(),
       estimate: json['estimate']?.toString(),
+      previous: json['prev']?.toString(),
+    );
+  }
+
+  /// From TradingView Economic Calendar API
+  factory EconomicEvent.fromTradingView(Map<String, dynamic> json) {
+    DateTime parsedTime;
+    try {
+      parsedTime = DateTime.parse(json['date'] as String? ?? '').toLocal();
+    } catch (_) {
+      parsedTime = DateTime.now();
+    }
+    // TradingView uses "importance" with scale: -1=low, 0=medium, 1=high
+    final impactNum = (json['importance'] as num?)?.toInt()
+        ?? (json['impact'] as num?)?.toInt()
+        ?? -1;
+    final impact = impactNum >= 1 ? 'high' : impactNum == 0 ? 'medium' : 'low';
+    return EconomicEvent(
+      country: json['country'] as String? ?? '',
+      event: json['title'] as String? ?? '',
+      impact: impact,
+      time: parsedTime,
+      actual: json['actual']?.toString(),
+      estimate: json['forecast']?.toString(),
       previous: json['prev']?.toString(),
     );
   }
@@ -107,6 +132,25 @@ class EconomicEvent {
 }
 
 // ---------------------------------------------------------------------------
+// NewsArticle — financial news from RSS feeds
+// ---------------------------------------------------------------------------
+class NewsArticle {
+  final String title;
+  final String url;
+  final String source;
+  final DateTime publishedAt;
+  final String? summary;
+
+  const NewsArticle({
+    required this.title,
+    required this.url,
+    required this.source,
+    required this.publishedAt,
+    this.summary,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // NotificationService
 // ---------------------------------------------------------------------------
 class NotificationService {
@@ -125,6 +169,8 @@ class NotificationService {
   static List<EconomicEvent>? _cachedMonthEvents;
   static DateTime? _cacheTime;
   static const _cacheTtl = Duration(minutes: 60);
+  // In-flight deduplication: if a fetch is already running, all callers share the same Future
+  static Completer<List<EconomicEvent>>? _fetchMonthInFlight;
 
   static final FlutterLocalNotificationsPlugin _fln =
       FlutterLocalNotificationsPlugin();
@@ -139,6 +185,18 @@ class NotificationService {
 
   static const _ffBaseUrl = 'https://nfs.faireconomy.media';
   static const _finnhubBaseUrl = 'https://finnhub.io/api/v1';
+  static const _tvCalendarUrl = 'https://economic-calendar.tradingview.com/events';
+
+  // News cache — TTL 60 minutes
+  static List<NewsArticle>? _cachedNews;
+  static DateTime? _newsCacheTime;
+  static const _newsCacheTtl = Duration(minutes: 60);
+
+  static const _newsRssSources = <(String, String)>[
+    ('ForexLive', 'https://www.forexlive.com/feed/'),
+    ('FXStreet', 'https://www.fxstreet.com/rss/news'),
+    ('MarketWatch', 'https://feeds.marketwatch.com/marketwatch/topstories/'),
+  ];
 
   // ---------------------------------------------------------------------------
   // Initialization
@@ -248,7 +306,9 @@ class NotificationService {
   // Daily refresh of the scheduled notification list
   // ---------------------------------------------------------------------------
   static void startFinnhubMonitoring() {
-    _checkUpcomingEvents();
+    // Delay the first check by 15s: scheduleUpcomingNotifications() is called
+    // in MainNavScreen after ~4s; this gives it time to populate the cache first.
+    Future.delayed(const Duration(seconds: 15), _checkUpcomingEvents);
     _monitoringTimer?.cancel();
     _monitoringTimer = Timer.periodic(
       const Duration(minutes: 5),
@@ -421,6 +481,13 @@ class NotificationService {
   // ---------------------------------------------------------------------------
 
   /// Returns all events in the next 30 days, with 60-minute cache.
+  /// Uses a Completer to deduplicate concurrent requests — if a fetch is already
+  /// in progress (e.g. two callers at startup), all waiters share the same Future.
+  // Retry state: how many auto-retries have been attempted after an empty result
+  static int _fetchRetryCount = 0;
+  static const _fetchMaxRetries = 3;
+  static const _fetchRetryDelays = [30, 90, 300]; // seconds
+
   static Future<List<EconomicEvent>> _fetchMonth() async {
     if (_cachedMonthEvents != null &&
         _cacheTime != null &&
@@ -428,19 +495,74 @@ class NotificationService {
       return _cachedMonthEvents!;
     }
 
+    // Another fetch is already in flight — join it instead of making a second request
+    if (_fetchMonthInFlight != null) {
+      return _fetchMonthInFlight!.future;
+    }
+
+    final completer = Completer<List<EconomicEvent>>();
+    _fetchMonthInFlight = completer;
+
+    try {
+      final result = await _doFetchMonth();
+      completer.complete(result);
+      // If all sources returned empty (likely a network-not-ready transient failure),
+      // schedule an automatic retry with backoff, up to _fetchMaxRetries times.
+      if (result.isEmpty && _fetchRetryCount < _fetchMaxRetries) {
+        final delaySeconds = _fetchRetryDelays[_fetchRetryCount];
+        _fetchRetryCount++;
+        debugPrint('[NotificationService] Empty result — retry #$_fetchRetryCount in ${delaySeconds}s');
+        Future.delayed(Duration(seconds: delaySeconds), () async {
+          // Only retry if still no cached data
+          if (_cachedMonthEvents == null || _cachedMonthEvents!.isEmpty) {
+            _cachedMonthEvents = null;
+            _cacheTime = null;
+            try {
+              await scheduleUpcomingNotifications();
+            } catch (_) {}
+          }
+        });
+      } else if (result.isNotEmpty) {
+        _fetchRetryCount = 0; // reset on success
+      }
+      return result;
+    } catch (e) {
+      completer.completeError(e);
+      // Schedule retry on exception too
+      if (_fetchRetryCount < _fetchMaxRetries) {
+        final delaySeconds = _fetchRetryDelays[_fetchRetryCount];
+        _fetchRetryCount++;
+        debugPrint('[NotificationService] Fetch error — retry #$_fetchRetryCount in ${delaySeconds}s');
+        Future.delayed(Duration(seconds: delaySeconds), () async {
+          _cachedMonthEvents = null;
+          _cacheTime = null;
+          try { await scheduleUpcomingNotifications(); } catch (_) {}
+        });
+      }
+      rethrow;
+    } finally {
+      _fetchMonthInFlight = null;
+    }
+  }
+
+  static Future<List<EconomicEvent>> _doFetchMonth() async {
     final now = DateTime.now();
     final from = now;
     final to = now.add(const Duration(days: 30));
 
     List<EconomicEvent> events = [];
 
-    // Try Finnhub first
-    if (_finnhubKey.isNotEmpty) {
+    // Primary: TradingView Economic Calendar (free, no key needed)
+    events = await _fetchTradingView(from, to);
+    debugPrint('[NotificationService] TradingView returned ${events.length} events');
+
+    // Fallback 1: Finnhub
+    if (events.isEmpty && _finnhubKey.isNotEmpty) {
       events = await _fetchFinnhub(from, to);
       debugPrint('[NotificationService] Finnhub returned ${events.length} events');
     }
 
-    // Fallback to ForexFactory if Finnhub returned nothing
+    // Fallback 2: ForexFactory
     if (events.isEmpty) {
       debugPrint('[NotificationService] Falling back to ForexFactory monthly feeds');
       events = await _fetchForexFactoryMonthly();
@@ -459,6 +581,177 @@ class NotificationService {
     _cacheTime = DateTime.now();
     debugPrint('[NotificationService] Loaded ${filtered.length} events (30 days)');
     return filtered;
+  }
+
+  // ---------------------------------------------------------------------------
+  // TradingView Economic Calendar (primary source, free, no API key)
+  // ---------------------------------------------------------------------------
+
+  static Future<List<EconomicEvent>> _fetchTradingView(
+      DateTime from, DateTime to) async {
+    try {
+      String iso(DateTime d) {
+        final u = d.toUtc();
+        return '${u.year}-${u.month.toString().padLeft(2,'0')}-${u.day.toString().padLeft(2,'0')}'
+               'T${u.hour.toString().padLeft(2,'0')}:${u.minute.toString().padLeft(2,'0')}:00.000Z';
+      }
+      const countries =
+          'US,EU,GB,JP,CN,CA,AU,NZ,CH,DE,FR,IT,ES,KR,SG,HK,MX,BR,IN,ZA,SE,NO';
+      final url = Uri.parse(
+        '$_tvCalendarUrl?from=${iso(from)}&to=${iso(to)}&countries=$countries',
+      );
+      final resp = await http.get(url, headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'Mozilla/5.0 PipLockApp/1.0',
+        'Origin': 'https://www.tradingview.com',
+        'Referer': 'https://www.tradingview.com/',
+      }).timeout(const Duration(seconds: 20));
+
+      if (resp.statusCode == 200) {
+        final raw = jsonDecode(resp.body);
+        List<dynamic> list;
+        if (raw is List) {
+          list = raw;
+        } else if (raw is Map && raw.containsKey('result')) {
+          list = raw['result'] as List<dynamic>? ?? [];
+        } else {
+          list = [];
+        }
+        return list
+            .map((e) => EconomicEvent.fromTradingView(e as Map<String, dynamic>))
+            .where((e) => e.event.isNotEmpty)
+            .toList();
+      }
+      debugPrint('[NotificationService] TradingView HTTP ${resp.statusCode}');
+    } catch (e) {
+      debugPrint('[NotificationService] TradingView error: $e');
+    }
+    return [];
+  }
+
+  // ---------------------------------------------------------------------------
+  // News RSS feeds (ForexLive, FXStreet, MarketWatch)
+  // ---------------------------------------------------------------------------
+
+  /// Returns latest financial news, sorted by date, with 60-min cache.
+  static Future<List<NewsArticle>> fetchLatestNews() async {
+    if (_cachedNews != null &&
+        _newsCacheTime != null &&
+        DateTime.now().difference(_newsCacheTime!) < _newsCacheTtl) {
+      return _cachedNews!;
+    }
+
+    final results = await Future.wait(
+      _newsRssSources.map((s) => _fetchRss(s.$1, s.$2)),
+      eagerError: false,
+    );
+
+    final seen = <String>{};
+    final all = <NewsArticle>[];
+    for (final list in results) {
+      for (final a in list) {
+        final key = a.title.toLowerCase().replaceAll(RegExp(r'\s+'), '');
+        if (seen.add(key)) all.add(a);
+      }
+    }
+    all.sort((a, b) => b.publishedAt.compareTo(a.publishedAt));
+    final news = all.take(40).toList();
+
+    _cachedNews = news;
+    _newsCacheTime = DateTime.now();
+    debugPrint('[NotificationService] Loaded ${news.length} news articles');
+    return news;
+  }
+
+  static Future<List<NewsArticle>> _fetchRss(
+      String source, String url) async {
+    try {
+      final resp = await http.get(
+        Uri.parse(url),
+        headers: {'User-Agent': 'Mozilla/5.0 PipLockApp/1.0'},
+      ).timeout(const Duration(seconds: 12));
+
+      if (resp.statusCode != 200) {
+        debugPrint('[NotificationService] RSS $source HTTP ${resp.statusCode}');
+        return [];
+      }
+
+      final items = _parseRssItems(resp.body);
+      return items.map((item) {
+        DateTime dt;
+        try { dt = _parseRssDate(item['pubDate'] ?? ''); } catch (_) { dt = DateTime.now(); }
+        final summary = _stripHtml(item['description'] ?? '');
+        return NewsArticle(
+          title: _stripHtml(item['title'] ?? ''),
+          url: (item['link'] ?? '').trim(),
+          source: source,
+          publishedAt: dt.toLocal(),
+          summary: summary.isEmpty ? null : summary,
+        );
+      }).where((a) => a.title.isNotEmpty).toList();
+    } catch (e) {
+      debugPrint('[NotificationService] RSS $source error: $e');
+      return [];
+    }
+  }
+
+  static List<Map<String, String>> _parseRssItems(String xmlContent) {
+    final items = <Map<String, String>>[];
+    final itemRx = RegExp(r'<item[^>]*>([\s\S]*?)<\/item>');
+    final titleRx = RegExp(r'<title>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/title>');
+    final linkRx  = RegExp(r'<link>([\s\S]*?)<\/link>');
+    final dateRx  = RegExp(r'<pubDate>([\s\S]*?)<\/pubDate>');
+    final descRx  = RegExp(r'<description>(?:<!\[CDATA\[)?([\s\S]*?)(?:\]\]>)?<\/description>');
+
+    for (final m in itemRx.allMatches(xmlContent)) {
+      final content = m.group(1) ?? '';
+      final title = titleRx.firstMatch(content)?.group(1)?.trim() ?? '';
+      if (title.isEmpty) continue;
+      items.add({
+        'title': title,
+        'link': linkRx.firstMatch(content)?.group(1)?.trim() ?? '',
+        'pubDate': dateRx.firstMatch(content)?.group(1)?.trim() ?? '',
+        'description': descRx.firstMatch(content)?.group(1)?.trim() ?? '',
+      });
+    }
+    return items;
+  }
+
+  static DateTime _parseRssDate(String raw) {
+    if (raw.isEmpty) return DateTime.now();
+    try { return DateTime.parse(raw); } catch (_) {}
+    // RFC 822: "Fri, 22 Aug 2026 10:30:00 +0000"
+    try {
+      const months = {
+        'Jan':1,'Feb':2,'Mar':3,'Apr':4,'May':5,'Jun':6,
+        'Jul':7,'Aug':8,'Sep':9,'Oct':10,'Nov':11,'Dec':12,
+      };
+      final p = raw.replaceAll(',', '').trim().split(RegExp(r'\s+'));
+      final day   = int.parse(p[1]);
+      final month = months[p[2]] ?? 1;
+      final year  = int.parse(p[3]);
+      final tp    = p[4].split(':');
+      return DateTime.utc(year, month, day, int.parse(tp[0]), int.parse(tp[1]),
+          tp.length > 2 ? int.parse(tp[2]) : 0);
+    } catch (_) {}
+    return DateTime.now();
+  }
+
+  static String _stripHtml(String html) => html
+      .replaceAll(RegExp(r'<[^>]*>'), '')
+      .replaceAll('&amp;', '&')
+      .replaceAll('&lt;', '<')
+      .replaceAll('&gt;', '>')
+      .replaceAll('&quot;', '"')
+      .replaceAll('&#39;', "'")
+      .replaceAll('&nbsp;', ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+
+  /// Invalidate news cache
+  static void invalidateNewsCache() {
+    _cachedNews = null;
+    _newsCacheTime = null;
   }
 
   /// Fetch from Finnhub /calendar/economic with from/to date range
@@ -584,6 +877,8 @@ class NotificationService {
   static Future<void> refresh() async {
     _cachedMonthEvents = null;
     _cacheTime = null;
+    _cachedNews = null;
+    _newsCacheTime = null;
     await scheduleUpcomingNotifications();
   }
 

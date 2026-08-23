@@ -44,7 +44,6 @@ class AppColors {
   static const Color glassBorderStrong = Color(0x22FFFFFF);
 
   // ── Shadow / glow system ─────────────────────────────────────────────────
-  // Glow argento (accent principale)
   static List<BoxShadow> glowAccent({double intensity = 1.0}) => [
     BoxShadow(
       color: accent.withValues(alpha: 0.18 * intensity),
@@ -87,19 +86,16 @@ class AppColors {
   ];
 
   // ── Hero card gradients ──────────────────────────────────────────────────
-  // OK: dark slate premium — "calma autorità", stile Bloomberg terminal
   static const LinearGradient heroGradientOk = LinearGradient(
     colors: [Color(0xFF1C2E45), Color(0xFF0F1D2E)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
-  // Warning: dark amber
   static const LinearGradient heroGradientWarning = LinearGradient(
     colors: [Color(0xFF2E1E08), Color(0xFF1C1205)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
-  // Danger: deep red
   static const LinearGradient heroGradientDanger = LinearGradient(
     colors: [Color(0xFFC91C1C), Color(0xFF7A1616)],
     begin: Alignment.topLeft,
@@ -113,14 +109,14 @@ class AppColors {
     end: Alignment.bottomCenter,
   );
 
-  // Logo / brand gradient — silver chrome (il lucchetto)
+  // Logo / brand gradient — silver chrome
   static const LinearGradient logoGradient = LinearGradient(
     colors: [Color(0xFFE8F0F6), Color(0xFF8B98AA)],
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,
   );
 
-  // CTA button gradient — dark steel premium (testo bianco sopra = alta leggibilità)
+  // CTA button gradient — dark steel premium
   static const LinearGradient accentGradient = LinearGradient(
     colors: [Color(0xFF2C3E55), Color(0xFF1A2A3D)],
     begin: Alignment.topLeft,
@@ -142,7 +138,6 @@ class AppColors {
   );
 
   // ── Ambient background blob gradients ────────────────────────────────────
-  // blobAccent ora usa silver (accent = silver) — blob sottili, non protagonisti
   static RadialGradient blobAccent({double opacity = 0.06}) => RadialGradient(
     colors: [accent.withValues(alpha: opacity), Colors.transparent],
     radius: 0.8,
@@ -161,13 +156,13 @@ class AppColors {
   );
 
   // ── Light theme ──────────────────────────────────────────────────────────
-  static const Color lightBackground   = Color(0xFFF2F4FA);
-  static const Color lightSurface      = Color(0xFFFFFFFF);
-  static const Color lightCardBg       = Color(0xFFFFFFFF);
-  static const Color lightCardBg2      = Color(0xFFF0F2FA);
-  static const Color lightTextPrimary  = Color(0xFF0F1629);
+  static const Color lightBackground    = Color(0xFFF2F4FA);
+  static const Color lightSurface       = Color(0xFFFFFFFF);
+  static const Color lightCardBg        = Color(0xFFFFFFFF);
+  static const Color lightCardBg2       = Color(0xFFF0F2FA);
+  static const Color lightTextPrimary   = Color(0xFF0F1629);
   static const Color lightTextSecondary = Color(0xFF6B7489);
   static const Color lightTextTertiary  = Color(0xFF9EA8BC);
-  static const Color lightDivider = Color(0xFFE3E6EE);
-  static const Color lightBorder  = Color(0xFFD8DCE9);
+  static const Color lightDivider       = Color(0xFFE3E6EE);
+  static const Color lightBorder        = Color(0xFFD8DCE9);
 }

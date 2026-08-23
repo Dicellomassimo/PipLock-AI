@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 
 /// Design tokens centralizzati — unico source of truth per spacing, radius,
 /// durations, curves, shadows, typography scale.
-/// Stile: Opal × Trading — minimalismo rotondo, premium, arioso.
 class AppTheme {
   AppTheme._();
 
@@ -21,10 +20,9 @@ class AppTheme {
   static const double sp48 = 48.0;
   static const double sp64 = 64.0;
 
-  // Screen horizontal padding — leggermente più arioso
   static const double pagePadding = 22.0;
 
-  // ── Border radius (più grandi = più rotondo = più Opal) ─────────────────
+  // ── Border radius ────────────────────────────────────────────────────────
   static const double radiusXs   = 10.0;
   static const double radiusSm   = 14.0;
   static const double radiusMd   = 18.0;
@@ -63,7 +61,6 @@ class AppTheme {
   static const double iconXl = 36.0;
 
   // ── Typography scale ────────────────────────────────────────────────────
-  // Display — hero numbers, killswitch countdown
   static const TextStyle display = TextStyle(
     fontSize: 56,
     fontWeight: FontWeight.w900,
@@ -71,7 +68,6 @@ class AppTheme {
     height: 0.95,
   );
 
-  // Title large — main screen headlines
   static const TextStyle titleLg = TextStyle(
     fontSize: 36,
     fontWeight: FontWeight.w900,
@@ -79,7 +75,6 @@ class AppTheme {
     height: 1.0,
   );
 
-  // Title — section titles, hero card status
   static const TextStyle title = TextStyle(
     fontSize: 28,
     fontWeight: FontWeight.w800,
@@ -87,7 +82,6 @@ class AppTheme {
     height: 1.05,
   );
 
-  // Headline — card titles
   static const TextStyle headline = TextStyle(
     fontSize: 20,
     fontWeight: FontWeight.w700,
@@ -95,7 +89,6 @@ class AppTheme {
     height: 1.2,
   );
 
-  // Body large — primary readable text
   static const TextStyle bodyLg = TextStyle(
     fontSize: 16,
     fontWeight: FontWeight.w500,
@@ -103,7 +96,6 @@ class AppTheme {
     height: 1.5,
   );
 
-  // Body — standard text
   static const TextStyle body = TextStyle(
     fontSize: 14,
     fontWeight: FontWeight.w400,
@@ -111,28 +103,24 @@ class AppTheme {
     height: 1.5,
   );
 
-  // Label — button text, important labels
   static const TextStyle label = TextStyle(
     fontSize: 15,
     fontWeight: FontWeight.w700,
     letterSpacing: -0.2,
   );
 
-  // Caption — metadata, timestamps
   static const TextStyle caption = TextStyle(
     fontSize: 11,
     fontWeight: FontWeight.w500,
     letterSpacing: 0.1,
   );
 
-  // Overline — section headers (ALL CAPS usage)
   static const TextStyle overline = TextStyle(
     fontSize: 10,
     fontWeight: FontWeight.w700,
     letterSpacing: 1.8,
   );
 
-  // Mono — countdown, numbers, code
   static const TextStyle mono = TextStyle(
     fontFamily: 'RobotoMono',
     fontSize: 14,

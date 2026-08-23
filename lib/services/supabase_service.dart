@@ -209,7 +209,7 @@ class SupabaseService {
         .select()
         .eq('user_id', userId)
         .order('started_at', ascending: false);
-    final list = response is List ? response : <dynamic>[];
+    final list = response as List<dynamic>;
 
     // Cache for 1 hour
     await CacheService.write('challenges_$userId', list, ttlHours: 1);
@@ -226,7 +226,7 @@ class SupabaseService {
         .eq('user_id', userId)
         .eq('status', 'active')
         .order('started_at', ascending: false);
-    final activeList = response is List ? response : <dynamic>[];
+    final activeList = response as List<dynamic>;
     return activeList
         .whereType<Map>()
         .map((e) => Challenge.fromJson(Map<String, dynamic>.from(e)))
@@ -331,7 +331,7 @@ class SupabaseService {
         .eq('user_id', userId)
         .order('triggered_at', ascending: false)
         .limit(50);
-    final list = response is List ? response : <dynamic>[];
+    final list = response as List<dynamic>;
 
     // Cache for 1 hour
     await CacheService.write('ks_$userId', list, ttlHours: 1);

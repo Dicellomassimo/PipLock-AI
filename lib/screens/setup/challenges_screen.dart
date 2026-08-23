@@ -163,8 +163,8 @@ class _ChallengesScreenState extends ConsumerState<ChallengesScreen> {
         '${challenge.startedAt.day.toString().padLeft(2, '0')}/'
         '${challenge.startedAt.month.toString().padLeft(2, '0')}/'
         '${challenge.startedAt.year}';
-    final totalDays = challenge.durationDays ?? 30;
-    final currentDay = challenge.currentDay ?? 0;
+    final totalDays = challenge.durationDays;
+    final currentDay = challenge.currentDay;
     final dayProgress = totalDays > 0 ? (currentDay / totalDays).clamp(0.0, 1.0) : 0.0;
 
     return Padding(

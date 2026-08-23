@@ -49,11 +49,21 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       final auth = ref.read(authProvider);
       if (!auth.isLoading) _navigate();
     });
+
+    // Timeout di sicurezza: se auth non si risolve entro 8s, naviga comunque.
+    Future.delayed(const Duration(seconds: 8), () {
+      if (mounted && !_navigated) _navigate();
+    });
   }
 
   void _navigate() async {
     if (!mounted || _navigated) return;
     _navigated = true;
+    // DEV: mostra sempre l'onboarding per poterlo testare
+    if (kDevMode) {
+      Navigator.of(context).pushReplacementNamed('/onboarding');
+      return;
+    }
     final prefs = await SharedPreferences.getInstance();
     final onboardingDone = prefs.getBool('onboarding_completed') ?? false;
     final auth = ref.read(authProvider);

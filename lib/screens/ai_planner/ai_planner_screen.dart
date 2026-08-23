@@ -206,15 +206,22 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
           sessions.isEmpty ? _buildEmpty() : _buildSessionList(sessions),
         ],
       ),
+      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
       floatingActionButton: sessions.isEmpty
           ? null
-          : FloatingActionButton.extended(
-              onPressed: _showNewChatSheet,
-              backgroundColor: AppColors.accent,
-              foregroundColor: Colors.black,
-              icon: const Icon(Icons.add, size: 20),
-              label: Text(ref.watch(appStringsProvider).aiPlannerNewChat,
-                  style: GoogleFonts.manrope(fontWeight: FontWeight.bold)),
+          : Padding(
+              // Lift the FAB above the floating nav bar (64dp) + system gesture inset
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).padding.bottom + 72,
+              ),
+              child: FloatingActionButton.extended(
+                onPressed: _showNewChatSheet,
+                backgroundColor: AppColors.accent,
+                foregroundColor: Colors.black,
+                icon: const Icon(Icons.add, size: 20),
+                label: Text(ref.watch(appStringsProvider).aiPlannerNewChat,
+                    style: GoogleFonts.manrope(fontWeight: FontWeight.bold)),
+              ),
             ),
     );
   }

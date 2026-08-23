@@ -292,6 +292,7 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.background,
+      resizeToAvoidBottomInset: false,
       appBar: AppBar(
         backgroundColor: AppColors.background,
         elevation: 0,

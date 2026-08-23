@@ -118,18 +118,38 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     return DateFormat.yMMMMd(s.locale).format(DateTime.now());
   }
 
+  /// Forex sessions in UTC:
+  /// Sydney:   22:00 – 07:00
+  /// Asia:     00:00 – 09:00
+  /// London:   08:00 – 17:00
+  /// New York: 13:00 – 22:00
+  /// Closed:   Fri 22:00 UTC → Sun 22:00 UTC (full weekend)
+  bool _isWeekendClosed() {
+    final now = DateTime.now().toUtc();
+    final wd = now.weekday; // Mon=1 … Sat=6, Sun=7
+    final h = now.hour;
+    if (wd == 6) return true;                    // Saturday all day
+    if (wd == 5 && h >= 22) return true;         // Friday after 22:00 UTC
+    if (wd == 7 && h < 22) return true;          // Sunday before 22:00 UTC
+    return false;
+  }
+
   String _sessionName(AppStrings s) {
-    final h = DateTime.now().hour;
-    if (h >= 8 && h < 17) return s.dashSessionLondon;
-    if (h >= 14 && h < 23) return s.dashSessionNewYork;
-    return s.dashSessionAsia;
+    if (_isWeekendClosed()) return s.dashSessionClosed;
+    final h = DateTime.now().toUtc().hour;
+    if (h >= 8 && h < 13) return s.dashSessionLondon;
+    if (h >= 13 && h < 22) return s.dashSessionNewYork;
+    if (h >= 22 || h < 7) return s.dashSessionSydney;
+    return s.dashSessionAsia; // 07:00–08:00 transition
   }
 
   String _sessionSub(AppStrings s) {
-    final h = DateTime.now().hour;
-    if (h >= 8 && h < 17) return s.dashSessionClosesLondon;
-    if (h >= 14 && h < 23) return s.dashSessionClosesNY;
-    return s.dashSessionOpensAsia;
+    if (_isWeekendClosed()) return s.dashSessionClosedSub;
+    final h = DateTime.now().toUtc().hour;
+    if (h >= 8 && h < 13) return s.dashSessionClosesLondon;
+    if (h >= 13 && h < 22) return s.dashSessionClosesNY;
+    if (h >= 22 || h < 7) return s.dashSessionClosesSydney;
+    return s.dashSessionOpensLondon; // 07:00–08:00
   }
 
   String _lossLimitLabel(double pnlLimit, bool brokerConnected, String? currency) {
@@ -439,8 +459,6 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     required bool brokerConnected,
     String? currency,
   }) {
-    final pnlStr =
-        '${brokerConnected ? (currency ?? '') : '€'}${pnlToday >= 0 ? '+' : ''}${pnlToday.toStringAsFixed(0)}';
     final tradeStr = s.dashTradeCount(tradesToday, maxTrades);
     final pctUsed = (maxPercent * 100).round();
 
@@ -576,7 +594,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
                       Text(
-                        s.t('Risk used', 'Rischio usato'),
+                        s.dashRiskUsed,
                         style: GoogleFonts.manrope(
                           color: Colors.white.withValues(alpha: 0.55),
                           fontSize: 11,
@@ -605,8 +623,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    s.t('Limit ${_lossLimitLabel(pnlLimit, brokerConnected, currency)}/day',
-                        'Limite ${_lossLimitLabel(pnlLimit, brokerConnected, currency)}/giorno'),
+                    s.dashLossLimitPerDay(_lossLimitLabel(pnlLimit, brokerConnected, currency)),
                     style: GoogleFonts.manrope(
                       color: Colors.white.withValues(alpha: 0.45),
                       fontSize: 11,
@@ -667,7 +684,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     // Broker: mostra equity se connesso
     final brokerLabel = metaState.isConnected
         ? '${metaState.currency ?? ''} ${metaState.equity?.toStringAsFixed(0) ?? '—'}'
-        : s.t('Not connected', 'Non connesso');
+        : s.dashNotConnected;
     final brokerSub = metaState.isConnected
         ? s.dashBrokerEquityLive
         : s.dashBrokerConnectInSettings;
@@ -1174,7 +1191,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             children: [
               Expanded(
                 child: chip(
-                  'Equity',
+                  s.brokerEquityLabel,
                   metaState.equity != null
                       ? '$currency ${metaState.equity!.toStringAsFixed(2)}'
                       : '—',
@@ -1182,7 +1199,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               ),
               Expanded(
                 child: chip(
-                  'Balance',
+                  s.brokerBalanceLabel,
                   metaState.balance != null
                       ? '$currency ${metaState.balance!.toStringAsFixed(2)}'
                       : '—',
@@ -1194,7 +1211,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           Row(
             children: [
               Expanded(
-                child: chip(s.t('P&L Today', 'P&L Oggi'), pnlStr, valueColor: pnlColor),
+                child: chip(s.dashPnlToday, pnlStr, valueColor: pnlColor),
               ),
               Expanded(
                 child: chip(
@@ -1333,9 +1350,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             spacing: 8,
             runSpacing: 6,
             children: [
-              if (dailyTarget != null) _planChip('Target $dailyTarget'),
-              if (maxLoss != null) _planChip('Max perdita $maxLoss'),
-              if (maxTrades != null) _planChip('Max trade $maxTrades'),
+              if (dailyTarget != null) _planChip('${s.dashAiTarget} $dailyTarget'),
+              if (maxLoss != null) _planChip('${s.dashAiMaxLoss} $maxLoss'),
+              if (maxTrades != null) _planChip('${s.dashAiMaxTrades} $maxTrades'),
             ],
           ),
           if (advice != null && advice.isNotEmpty) ...[
@@ -1450,7 +1467,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                   ),
                 ),
                 GestureDetector(
-                  onTap: () => Navigator.pushNamed(context, '/setup_rules'),
+                  onTap: () => Navigator.pushNamed(context, '/personal_rules'),
                   child: Text(
                     s.dashConfigureRules,
                     style: GoogleFonts.manrope(
@@ -1465,7 +1482,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           else ...[
             // Riga 1 — Max perdita
             _buildLimitRow(
-              label: s.t('Max loss', 'Perdita massima'),
+              label: s.dashMaxLossLabel,
               value: rulesState.rules!.maxDailyLossType == 'percent'
                   ? '${rulesState.rules!.maxDailyLoss ?? 0}%'
                   : '€${(rulesState.rules!.maxDailyLoss ?? 0).toStringAsFixed(0)}',
@@ -1474,14 +1491,16 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                     rulesState.rules!.maxDailyLoss! <= 0) return 0.0;
                 final rawPnl = metaState.dailyPnl ?? 0.0;
                 final safePnl = (rawPnl.isNaN || rawPnl.isInfinite) ? 0.0 : rawPnl;
-                final r = safePnl.abs() / rulesState.rules!.maxDailyLoss!;
+                // Only show loss progress when actually losing; profit → 0.
+                final loss = safePnl < 0 ? safePnl.abs() : 0.0;
+                final r = loss / rulesState.rules!.maxDailyLoss!;
                 return (r.isNaN || r.isInfinite) ? 0.0 : r.clamp(0.0, 1.0);
               }(),
             ),
             const SizedBox(height: 12),
             // Riga 2 — Max trade
             _buildLimitRow(
-              label: s.t('Max trades', 'Trade massimi'),
+              label: s.dashMaxTradesLabel,
               value:
                   '${rulesState.tradesToday} / ${rulesState.rules!.maxTradesPerDay ?? '—'}',
               progress: rulesState.rules!.maxTradesPerDay != null &&
@@ -1497,7 +1516,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 rulesState.rules!.tradingHoursEnd != null) ...[
               const SizedBox(height: 12),
               _buildLimitRowIcon(
-                label: s.t('Trading hours', 'Orario operativo'),
+                label: s.dashTradingHoursLabel,
                 value:
                     '${rulesState.rules!.tradingHoursStart} - ${rulesState.rules!.tradingHoursEnd}',
                 icon: Icons.access_time_rounded,
@@ -1506,7 +1525,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             // Riga 4 — Durata killswitch
             const SizedBox(height: 12),
             _buildLimitRowIcon(
-              label: s.t('Killswitch lock', 'Blocco killswitch'),
+              label: s.dashKillswitchLockLabel,
               value: rulesState.rules!.killswitchDuration,
               icon: Icons.lock_outline_rounded,
             ),
@@ -1609,6 +1628,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     if (personalAccount != null && personalAccount.isNotEmpty) {
       final isActive = detectedAccount == personalAccount;
       activeAccounts.add(_accountCard(
+        s: s,
         icon: Icons.person_rounded,
         label: s.dashPersonalAccountLabel,
         accountNumber: personalAccount,
@@ -1625,6 +1645,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     for (final c in challenges.where((c) => c.status == 'active' && c.accountNumber != null)) {
       final isActive = detectedAccount == c.accountNumber;
       activeAccounts.add(_accountCard(
+        s: s,
         icon: Icons.emoji_events_rounded,
         label: c.propFirmName ?? 'Challenge',
         accountNumber: c.accountNumber!,
@@ -1659,6 +1680,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   }
 
   Widget _accountCard({
+    required AppStrings s,
     required IconData icon,
     required String label,
     required String accountNumber,
@@ -1739,7 +1761,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 borderRadius: BorderRadius.circular(6),
               ),
               child: Text(
-                'ATTIVO',
+                s.dashAccountActive,
                 style: GoogleFonts.manrope(
                   color: AppColors.accent,
                   fontSize: 10,

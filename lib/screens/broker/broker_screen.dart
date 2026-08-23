@@ -244,10 +244,10 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
           icon: Icons.phone_android_outlined,
           title: 'Screen Reading (MT5 Mobile)',
           subtitle: 'MetaTrader 5 Android, MetaTrader 4 Android',
-          accuracyBadge: '~70% · Improving',
+          accuracyBadge: '~85% · Improving',
           accuracyColor: const Color(0xFF4A90E2),
           description:
-              'PipLock uses the Android Accessibility Service to read equity and P&L directly from the broker app screen. No credentials required. Continuously improving.',
+              'PipLock uses the Android Accessibility Service to read equity and P&L directly from the broker app screen. Back and Recents keys are blocked during lockdown. No credentials required.',
           setupGuide: const [
             'Tap "Enable Accessibility Service" below',
             'Find PipLock in the list and enable it',

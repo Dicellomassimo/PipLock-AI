@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import '../config/app_colors.dart';
 import '../config/app_theme.dart';
 
+/// Card interattiva con press animation premium.
 class AnimatedCard extends StatefulWidget {
   final Widget child;
   final VoidCallback? onTap;

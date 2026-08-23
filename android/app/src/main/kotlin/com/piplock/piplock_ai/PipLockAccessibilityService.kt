@@ -7,6 +7,7 @@ import android.content.Intent
 import android.util.Log
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.KeyEvent
 
 /**
  * PipLockAccessibilityService
@@ -56,7 +57,7 @@ class PipLockAccessibilityService : AccessibilityService() {
     private var lastDetectedPackage: String? = null
     private var lastDetectedTime: Long = 0
     private var lastExtractionTime: Long = 0
-    private val EXTRACTION_INTERVAL_MS = 2000L
+    private val EXTRACTION_INTERVAL_MS = 1500L
     private val BROKER_DEBOUNCE_MS = 1000L
 
     // ---- FOMO detection state -----------------------------------
@@ -103,12 +104,14 @@ class PipLockAccessibilityService : AccessibilityService() {
         serviceInfo = AccessibilityServiceInfo().apply {
             eventTypes = (AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED
                     or AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED
-                    or AccessibilityEvent.TYPE_VIEW_SCROLLED)
+                    or AccessibilityEvent.TYPE_VIEW_SCROLLED
+                    or AccessibilityEvent.TYPE_WINDOWS_CHANGED)
             feedbackType = AccessibilityServiceInfo.FEEDBACK_GENERIC
-            notificationTimeout = 100
+            notificationTimeout = 80
             packageNames = null
             flags = (AccessibilityServiceInfo.FLAG_REPORT_VIEW_IDS
-                    or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS)
+                    or AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                    or AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS)
         }
         sendBrokerEvent("service_started", packageName, "PipLock")
     }
@@ -117,6 +120,31 @@ class PipLockAccessibilityService : AccessibilityService() {
         isServiceRunning = false
         currentBrokerPackage = null
         instance = null
+    }
+
+    /**
+     * Intercetta i tasti hardware BACK e RECENTS durante il Killswitch LOCKDOWN.
+     * Tecnica ispirata ad Opal: impedisce all'utente di bypassare l'overlay
+     * premendo Back all'interno di MT5 o aprendo il pannello Recenti.
+     * Richiede FLAG_REQUEST_FILTER_KEY_EVENTS nell'AccessibilityServiceInfo.
+     */
+    override fun onKeyEvent(event: KeyEvent?): Boolean {
+        if (event == null) return false
+        if (KillswitchOverlayService.isRunning && KillswitchOverlayService.isOverlayVisible) {
+            if (event.action == KeyEvent.ACTION_DOWN) {
+                when (event.keyCode) {
+                    KeyEvent.KEYCODE_BACK -> {
+                        Log.d(TAG, "BACK intercettato durante Killswitch LOCKDOWN")
+                        return true  // consumato — Back non fa nulla
+                    }
+                    KeyEvent.KEYCODE_APP_SWITCH -> {
+                        Log.d(TAG, "RECENTS intercettato durante Killswitch LOCKDOWN")
+                        return true  // consumato — Recenti non apre il pannello
+                    }
+                }
+            }
+        }
+        return false
     }
 
     override fun onDestroy() {
@@ -191,6 +219,11 @@ class PipLockAccessibilityService : AccessibilityService() {
             AccessibilityEvent.TYPE_VIEW_SCROLLED -> {
                 // Il contenuto è stabile: estraiamo i dati solo qui, non durante transizioni
                 if (pkg == currentBrokerPackage) tryExtractData()
+            }
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> {
+                // Dialog/popup MT5 aperto/chiuso: ri-estrai dati se il broker è attivo.
+                // TYPE_WINDOWS_CHANGED può non avere packageName → usiamo currentBrokerPackage.
+                if (currentBrokerPackage != null) tryExtractData()
             }
         }
     }
@@ -338,7 +371,14 @@ class PipLockAccessibilityService : AccessibilityService() {
         // Common cross-language
         "credit", "credito", "crédito", "crédit", "kredit",
         "swap", "commission", "commissione", "comisión", "provision",
-        "level"
+        "level",
+        // Russian (MT5 Russian UI — transliterated and Cyrillic)
+        "маржа", "своб. маржа", "свободная маржа", "уровень маржи",
+        "marzha", "svobodnaya", "uroven",
+        // Polish
+        "depozyt", "wolny depozyt", "poziom depozytu",
+        // Turkish
+        "teminat", "serbest teminat", "teminat seviyesi"
     )
 
     // MT5 / MT4: la tab Trade mostra Balance, Equity, Margin, Free Margin, Profit
@@ -356,17 +396,20 @@ class PipLockAccessibilityService : AccessibilityService() {
 
             if (balance == null) {
                 val v = extractNumberFromLabeledText(text,
-                    "balance", "saldo", "bilancio")
+                    "balance", "saldo", "bilancio",
+                    "баланс", "saldo konta")
                 if (v != null) balance = v
             }
             if (equity == null) {
                 val v = extractNumberFromLabeledText(text,
-                    "equity", "equita", "equità", "patrimonio")
+                    "equity", "equita", "equità", "patrimonio",
+                    "эквитет", "эквити", "kapitał")
                 if (v != null) equity = v
             }
             if (profit == null) {
                 val v = extractNumberFromLabeledText(text,
-                    "profit", "profitto", "profitto flott", "p/l", "p&l", "floating")
+                    "profit", "profitto", "profitto flott", "p/l", "p&l", "floating",
+                    "прибыль", "профит", "zysk")
                 if (v != null) profit = v
             }
             if (positions == null) {
@@ -393,14 +436,17 @@ class PipLockAccessibilityService : AccessibilityService() {
                 }
 
                 when {
-                    (t == "balance" || t == "saldo" || t == "bilancio") && balance == null ->
+                    (t == "balance" || t == "saldo" || t == "bilancio" ||
+                     t == "баланс" || t == "saldo konta") && balance == null ->
                         balance = findNumberInNext(texts, i)
-                    (t == "equity" || t == "equita" || t == "equità" || t == "patrimonio") && equity == null ->
+                    (t == "equity" || t == "equita" || t == "equità" || t == "patrimonio" ||
+                     t == "эквитет" || t == "эквити" || t == "kapitał") && equity == null ->
                         equity = findNumberInNext(texts, i)
                     // NOTA: "margine libero" / "free margin" RIMOSSO da questo bucket —
                     // è un campo contabile MT5 (Free Margin), NON il P&L della posizione.
                     (t == "profit" || t.contains("floating") || t == "p&l" || t == "p/l" ||
-                     t.contains("profitto")) && profit == null ->
+                     t.contains("profitto") || t == "прибыль" || t.contains("профит") ||
+                     t == "zysk") && profit == null ->
                         profit = findNumberInNext(texts, i)
                     (t == "positions" || t == "position" || t == "posizioni" ||
                      t.startsWith("positions (") || t.startsWith("position (")) && positions == null -> {
