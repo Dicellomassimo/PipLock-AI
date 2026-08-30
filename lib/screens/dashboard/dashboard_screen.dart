@@ -46,6 +46,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   bool _showDevTools = false;
   Challenge? _activeChallenge;
   String? _avatarPath;
+  bool _showSetupBanner = false;
+  int  _wizardStep = 0; // >0 means wizard was started but not finished
   static const _avatarPrefKey = 'profile_avatar_path';
 
   Future<void> _loadAvatar() async {
@@ -54,11 +56,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     if (mounted) setState(() => _avatarPath = (path != null && File(path).existsSync()) ? path : null);
   }
 
+  Future<void> _checkSetupBanner() async {
+    final prefs = await SharedPreferences.getInstance();
+    final completed = prefs.getBool('setup_wizard_completed') ?? false;
+    final step = prefs.getInt('setup_wizard_step') ?? 0;
+    if (mounted) setState(() {
+      _showSetupBanner = !completed;
+      _wizardStep = step;
+    });
+  }
+
+  Future<void> _openSetupWizard() async {
+    await Navigator.of(context).pushNamed('/setup_wizard');
+    // Re-check banner state after wizard returns
+    _checkSetupBanner();
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _loadAvatar();
+    _checkSetupBanner();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_checkinDone) {
         CheckinModal.showIfNeeded(context).then((result) async {
@@ -284,6 +303,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               children: [
                 // ── Killswitch banner (non bloccante — PipLock resta usabile) ──
                 _KillswitchBanner(),
+                // ── Setup wizard banner ─────────────────────────────────────
+                if (_showSetupBanner)
+                  _SetupWizardBanner(
+                    wizardStep: _wizardStep,
+                    onTap: _openSetupWizard,
+                  ),
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.symmetric(horizontal: 22),
@@ -2647,6 +2672,91 @@ class _QuickLogSheetState extends ConsumerState<QuickLogSheet> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Setup Wizard Banner ────────────────────────────────────────────────────────
+
+class _SetupWizardBanner extends StatelessWidget {
+  final int          wizardStep;
+  final VoidCallback onTap;
+  const _SetupWizardBanner({required this.wizardStep, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final isResume = wizardStep > 0;
+    final stepLabels = ['Permissions', 'Account type', 'Connect broker',
+                        'Set rules', 'Notifications'];
+    final currentLabel = wizardStep < stepLabels.length
+        ? stepLabels[wizardStep] : '';
+
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(14),
+          gradient: LinearGradient(
+            colors: [
+              AppColors.accent.withValues(alpha: 0.18),
+              AppColors.accent.withValues(alpha: 0.08),
+            ],
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+          ),
+          border: Border.all(
+              color: AppColors.accent.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36, height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.accent.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Icon(Icons.rocket_launch_rounded,
+                  color: AppColors.accent, size: 18),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isResume
+                        ? 'Continue setup'
+                        : 'Set up your first account',
+                    style: GoogleFonts.manrope(
+                      color: AppColors.textPrimary, fontSize: 13.5,
+                      fontWeight: FontWeight.w800),
+                  ),
+                  if (isResume && currentLabel.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Next: $currentLabel',
+                      style: GoogleFonts.manrope(
+                        color: AppColors.accent, fontSize: 11.5,
+                        fontWeight: FontWeight.w600),
+                    ),
+                  ] else ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      'Takes about 2 minutes',
+                      style: GoogleFonts.manrope(
+                        color: AppColors.textSecondary, fontSize: 11.5),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded,
+                color: AppColors.accent, size: 14),
+          ],
         ),
       ),
     );

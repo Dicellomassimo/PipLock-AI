@@ -30,6 +30,7 @@ import 'screens/journal/journal_screen.dart';
 import 'screens/journal/journal_entry_form_screen.dart';
 import 'screens/paywall/paywall_screen.dart';
 import 'screens/killswitch/trading_hours_block_screen.dart';
+import 'screens/setup/setup_wizard_screen.dart';
 
 // Re-esporta kDevMode per compatibilità con altri file che lo importano da app.dart
 export 'config/constants.dart' show kDevMode;
@@ -114,6 +115,8 @@ class PipLockApp extends StatelessWidget {
                   return _slideUpRoute(const OnboardingScreen());
                 case '/paywall':
                   return _slideUpRoute(const PaywallScreen());
+                case '/setup_wizard':
+                  return _slideUpRoute(const SetupWizardScreen());
                 default:
                   return null; // fallback alle routes statiche
               }
