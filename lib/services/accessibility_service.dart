@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/services.dart';
 
 class AccessibilityService {
@@ -150,6 +151,31 @@ class AccessibilityService {
     } catch (_) {}
   }
 
+  // ── Sync mappa regole multi-account ──────────────────────────
+  // Invia a Kotlin un JSON { "accountNumber": { regole } } con le regole di
+  // TUTTI gli account registrati dall'utente (personali + challenge).
+  // L'Accessibility Service lo usa in loadRulesForAccount() al cambio account,
+  // senza dover richiamare Flutter (funziona anche con app in background).
+  //
+  // Formato atteso per ogni account:
+  // {
+  //   "max_daily_loss_amount": 100.0,   // -1 = non configurato
+  //   "max_daily_loss_pct":    -1.0,
+  //   "max_trades_per_day":    3,
+  //   "killswitch_duration_minutes": 360,
+  //   "trading_hours_enabled": false,
+  //   "trading_hours_start":  "08:00",
+  //   "trading_hours_end":    "18:00"
+  // }
+  static Future<void> syncMultiAccountRules(
+      Map<String, Map<String, dynamic>> accountRulesMap) async {
+    try {
+      await _method.invokeMethod('syncMultiAccountRules', {
+        'rulesMapJson': jsonEncode(accountRulesMap),
+      });
+    } catch (_) {}
+  }
+
   /// Writes the current token count to native SharedPreferences so the
   /// Kotlin overlay can check it without calling back into Flutter.
   static Future<void> syncTokenCount(int count) async {
@@ -175,4 +201,9 @@ class AccessibilityService {
   /// Solo i dati finanziari estratti dall'albero di accessibilità.
   static Stream<Map<String, dynamic>> get brokerDataStream =>
       _shared.where((e) => e['event_type'] == 'broker_data');
+
+  /// Emesso quando l'utente cambia account su MT5 (switcher in alto a sinistra).
+  /// Payload: { 'from_account': '12345678', 'to_account': '87654321' }
+  static Stream<Map<String, dynamic>> get accountSwitchedStream =>
+      _shared.where((e) => e['event_type'] == 'account_switched');
 }

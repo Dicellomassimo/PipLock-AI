@@ -50,6 +50,12 @@ class MainActivity : FlutterActivity() {
                     "account_number" to (intent.getStringExtra("account_number") ?: ""),
                     "timestamp" to intent.getLongExtra("timestamp", 0L)
                 )
+                "account_switched" -> mapOf(
+                    "event_type" to "account_switched",
+                    "from_account" to (intent.getStringExtra("from_account") ?: ""),
+                    "to_account" to (intent.getStringExtra("to_account") ?: ""),
+                    "timestamp" to intent.getLongExtra("timestamp", 0L)
+                )
                 else -> mapOf(
                     "event_type" to eventType,
                     "package_name" to (intent.getStringExtra(PipLockAccessibilityService.EXTRA_PACKAGE_NAME) ?: ""),
@@ -205,6 +211,17 @@ class MainActivity : FlutterActivity() {
                             "positions" to positions,
                             "timestamp" to timestamp
                         ))
+                    }
+
+                    // ── Sync mappa regole multi-account ───────────────────
+                    // Flutter invia un JSON { "accountNumber": { rules... } }
+                    // L'Accessibility Service lo legge in loadRulesForAccount()
+                    // al momento del cambio account, senza dover contattare Flutter.
+                    "syncMultiAccountRules" -> {
+                        val json = call.argument<String>("rulesMapJson") ?: "{}"
+                        getSharedPreferences("piplock_rules", Context.MODE_PRIVATE)
+                            .edit().putString("account_rules_map", json).apply()
+                        result.success(null)
                     }
 
                     // ── Sync regole da Flutter a SharedPreferences native

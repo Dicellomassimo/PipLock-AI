@@ -88,6 +88,11 @@ class PipLockAccessibilityService : AccessibilityService() {
     private val OVERTRADING_SOFT_THRESHOLD = 3
     private val OVERTRADING_ALERT_COOLDOWN_MS = 30 * 60_000L
 
+    // ---- Multi-account switch detection state ---------------------------
+    // Tracks the last confirmed account number seen on screen.
+    // When this changes, an "account_switched" event is broadcast to Flutter.
+    private var lastActiveAccountNumber: String? = null
+
     // ---- Debounce broker unfocused (evita scatti per dialog/notifiche) -----
     private val brokerHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val BROKER_UNFOCUS_DEBOUNCE_MS = 4000L     // 4s debounce prima di nascondere overlay
@@ -262,6 +267,19 @@ class PipLockAccessibilityService : AccessibilityService() {
         }
         if (result != null) {
             val accountNum = extractAccountNumber(texts)
+
+            // ── Multi-account switch detection ────────────────────────────────
+            // Broadcast "account_switched" when the visible account number changes
+            // so Flutter can reset daily counters and apply the correct rules.
+            if (accountNum != null && accountNum.isNotEmpty()) {
+                if (lastActiveAccountNumber != null && lastActiveAccountNumber != accountNum) {
+                    Log.d(TAG, "Account switch: $lastActiveAccountNumber → $accountNum")
+                    sendAccountSwitchEvent(lastActiveAccountNumber!!, accountNum)
+                    loadRulesForAccount(accountNum)
+                }
+                lastActiveAccountNumber = accountNum
+            }
+
             val withAccount = result.copy(accountNumber = accountNum)
             val adjusted = computeDailyPnl(withAccount)
             Log.d(TAG, "Dati estratti: eq=${adjusted.equity} bal=${adjusted.balance} pnl=${adjusted.profit} pos=${adjusted.positions} acc=${adjusted.accountNumber}")
@@ -934,6 +952,75 @@ class PipLockAccessibilityService : AccessibilityService() {
             lastOvertradingAlertTime = now
             positionIncreaseTimes.clear()
             FomoGatekeeperOverlayService.show(this, "overtrading")
+        }
+    }
+
+    // ---- Multi-account helpers ----------------------------------
+
+    /**
+     * Broadcasts an "account_switched" intent so Flutter can:
+     * 1. Reset daily counters (trades, P&L tracking)
+     * 2. Apply the rules registered for [toAccount]
+     * 3. Notify the user that a different account is now active
+     */
+    private fun sendAccountSwitchEvent(fromAccount: String, toAccount: String) {
+        sendBroadcast(Intent(ACTION_BROKER_DETECTED).apply {
+            setPackage(this@PipLockAccessibilityService.packageName)
+            putExtra("event_type", "account_switched")
+            putExtra("from_account", fromAccount)
+            putExtra("to_account", toAccount)
+            putExtra("timestamp", System.currentTimeMillis())
+        })
+    }
+
+    /**
+     * Reads the pre-populated "account_rules_map" JSON from SharedPreferences
+     * (written by Flutter via syncMultiAccountRules) and overwrites the active
+     * rule keys so [checkLimitsNatively] immediately uses the correct limits.
+     *
+     * JSON format: { "accountNumber": { "max_daily_loss_amount": 100.0, ... } }
+     */
+    private fun loadRulesForAccount(accountNumber: String) {
+        val prefs = getSharedPreferences(RULES_PREFS, Context.MODE_PRIVATE)
+        val mapJson = prefs.getString("account_rules_map", null) ?: return
+        try {
+            val map = org.json.JSONObject(mapJson)
+            if (!map.has(accountNumber)) {
+                Log.d(TAG, "No rules registered for account $accountNumber — enforcement paused")
+                // Clear active rules so we don't enforce rules that belong to a different account
+                prefs.edit().apply {
+                    putFloat("max_daily_loss_amount", -1f)
+                    putFloat("max_daily_loss_pct", -1f)
+                    putInt("max_trades_per_day", -1)
+                    putString("registered_account_number", accountNumber)
+                    apply()
+                }
+                return
+            }
+            val rules = map.getJSONObject(accountNumber)
+            prefs.edit().apply {
+                putFloat("max_daily_loss_amount",
+                    rules.optDouble("max_daily_loss_amount", -1.0).toFloat())
+                putFloat("max_daily_loss_pct",
+                    rules.optDouble("max_daily_loss_pct", -1.0).toFloat())
+                putInt("max_trades_per_day",
+                    rules.optInt("max_trades_per_day", -1))
+                putInt("killswitch_duration_minutes",
+                    rules.optInt("killswitch_duration_minutes", 360))
+                putBoolean("trading_hours_enabled",
+                    rules.optBoolean("trading_hours_enabled", false))
+                putString("trading_hours_start",
+                    rules.optString("trading_hours_start", ""))
+                putString("trading_hours_end",
+                    rules.optString("trading_hours_end", ""))
+                putString("registered_account_number", accountNumber)
+                apply()
+            }
+            Log.d(TAG, "Rules loaded for account $accountNumber: " +
+                "maxLoss=${rules.optDouble("max_daily_loss_amount")} " +
+                "maxTrades=${rules.optInt("max_trades_per_day")}")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error parsing account_rules_map: $e")
         }
     }
 

@@ -16,6 +16,7 @@ import 'killswitch_provider.dart';
 import 'navigation_provider.dart';
 import 'rules_provider.dart';
 import 'auth_provider.dart';
+import 'personal_accounts_provider.dart';
 
 export '../models/broker_data.dart';
 
@@ -474,6 +475,51 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           profit:    (profitRaw    != null && !profitRaw.isNaN)   ? profitRaw    : null,
           positions: (positionsRaw != null && positionsRaw >= 0)  ? positionsRaw : null,
         );
+      } else if (eventType == 'account_switched') {
+        final toAccount = event['to_account'] as String? ?? '';
+        final fromAccount = event['from_account'] as String? ?? '';
+        if (toAccount.isNotEmpty) {
+          // Update detected account number
+          state = state.copyWith(detectedAccountNumber: toAccount);
+
+          // Reset ALL daily tracking state — new account = fresh session
+          _positionsBaselineSet = false;
+          _lastNonZeroPositions = 0;
+          _positionsDroppedToZero = false;
+          _soft80AlertSent = false;
+          _prevTradesToday = 0;
+          _prevDailyPnl = null;
+          _consecutiveLossesLocal = 0;
+          _consecutiveLossAlertSent = false;
+          _baselineLotSizeToday = null;
+          _lotSizeAlertSent = false;
+          _planViolationAlertSent = false;
+          _prevOpenPositions = -1;
+          _lastPositionCloseTime = null;
+          _fastReentryAlertSent = false;
+
+          // Reset broker data to avoid showing yesterday's data for new account
+          state = state.copyWith(
+            data: state.data.copyWith(
+              tradesToday: 0,
+              dailyPnl: null,
+              dailyLossUsd: null,
+              dailyLossPct: null,
+            ),
+          );
+
+          // Sync the correct rules for the newly active account to native
+          _syncRulesForDetectedAccount(toAccount);
+
+          // Notify user
+          NotificationService.showLocalNotification(
+            title: 'Account switched',
+            body: fromAccount.isNotEmpty
+                ? 'Active account: $toAccount (was $fromAccount). Rules updated.'
+                : 'Active account: $toAccount. Rules updated.',
+            id: 8011,
+          );
+        }
       } else if (eventType == 'revenge_detected') {
         if (event['revenge_detected'] == true) {
           try {
@@ -812,6 +858,124 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         body: signal.alertMessage,
         id: 8010,
       );
+    } catch (_) {}
+  }
+
+  // ── Multi-account rules sync ────────────────────────────────────────────────
+
+  /// Called after an "account_switched" event. Looks up the registered rules
+  /// for [accountNumber] across personal accounts and active challenges, then
+  /// calls [AccessibilityService.syncRulesToNative] so the Kotlin layer enforces
+  /// the correct limits immediately — even if Flutter is in the background.
+  void _syncRulesForDetectedAccount(String accountNumber) {
+    try {
+      // 1. Look for a personal account with this number
+      final accounts = _ref.read(personalAccountsProvider).accounts;
+      final matched = accounts.where(
+        (a) => a.accountNumber != null && a.accountNumber == accountNumber,
+      ).toList();
+
+      if (matched.isNotEmpty) {
+        final a = matched.first;
+        final durationMin = _durationMinutes(a.killswitchDuration);
+        final isPct = a.maxDailyLossType == 'percent';
+        AccessibilityService.syncRulesToNative(
+          maxDailyLossAmount: isPct ? null : a.maxDailyLoss,
+          maxDailyLossPct:    isPct ? a.maxDailyLoss : null,
+          maxTradesPerDay:    a.maxTradesPerDay,
+          killswitchDurationMinutes: durationMin,
+          accountNumber: accountNumber,
+        );
+        return;
+      }
+
+      // 2. Look for an active challenge with this account number
+      final challenges = _ref.read(challengeListProvider);
+      final challengeMatch = challenges.where(
+        (c) => c.status == 'active' &&
+               c.accountNumber != null &&
+               c.accountNumber == accountNumber,
+      ).toList();
+
+      if (challengeMatch.isNotEmpty) {
+        final c = challengeMatch.first;
+        final plan = c.aiPlan;
+        final hardPct = (plan?['hardKillswitchThreshold'] as num?)?.toDouble();
+        final hardUsd = (hardPct != null && c.accountSize > 0)
+            ? c.accountSize * hardPct / 100
+            : null;
+        AccessibilityService.syncRulesToNative(
+          maxDailyLossAmount: hardUsd,
+          maxDailyLossPct: hardPct,
+          maxTradesPerDay: (plan?['recommendedTradesPerDay'] as num?)?.toInt(),
+          killswitchDurationMinutes: 1440, // challenges: lock until midnight
+          accountNumber: accountNumber,
+        );
+        return;
+      }
+
+      // 3. No rules registered for this account — disable enforcement
+      AccessibilityService.syncRulesToNative(
+        maxDailyLossAmount: null,
+        maxDailyLossPct: null,
+        maxTradesPerDay: null,
+        killswitchDurationMinutes: 360,
+        accountNumber: accountNumber,
+      );
+    } catch (_) {}
+  }
+
+  /// Builds the full account→rules map and pushes it to native SharedPreferences
+  /// so the Kotlin service can load rules instantly on account switch without
+  /// needing to call back into Flutter.
+  ///
+  /// Call this on app start and whenever accounts or challenges change.
+  Future<void> syncAllAccountsToNative() async {
+    try {
+      final rulesMap = <String, Map<String, dynamic>>{};
+
+      // Personal accounts
+      final accounts = _ref.read(personalAccountsProvider).accounts;
+      for (final a in accounts) {
+        final num = a.accountNumber;
+        if (num == null || num.isEmpty) continue;
+        final isPct = a.maxDailyLossType == 'percent';
+        rulesMap[num] = {
+          'max_daily_loss_amount': isPct ? -1.0 : (a.maxDailyLoss ?? -1.0),
+          'max_daily_loss_pct':    isPct ? (a.maxDailyLoss ?? -1.0) : -1.0,
+          'max_trades_per_day':    a.maxTradesPerDay ?? -1,
+          'killswitch_duration_minutes': _durationMinutes(a.killswitchDuration),
+          'trading_hours_enabled': a.tradingHoursEnabled,
+          'trading_hours_start':   a.tradingHoursStart ?? '',
+          'trading_hours_end':     a.tradingHoursEnd ?? '',
+        };
+      }
+
+      // Challenges
+      final challenges = _ref.read(challengeListProvider);
+      for (final c in challenges.where((x) => x.status == 'active')) {
+        final accNum = c.accountNumber;
+        if (accNum == null || accNum.isEmpty) continue;
+        final plan = c.aiPlan;
+        final hardPct = (plan?['hardKillswitchThreshold'] as num?)?.toDouble() ?? -1.0;
+        final hardUsd = (hardPct > 0 && c.accountSize > 0)
+            ? c.accountSize * hardPct / 100
+            : -1.0;
+        rulesMap[accNum] = {
+          'max_daily_loss_amount': hardUsd,
+          'max_daily_loss_pct':    hardPct,
+          'max_trades_per_day':
+              (plan?['recommendedTradesPerDay'] as num?)?.toInt() ?? -1,
+          'killswitch_duration_minutes': 1440,
+          'trading_hours_enabled': false,
+          'trading_hours_start':   '',
+          'trading_hours_end':     '',
+        };
+      }
+
+      if (rulesMap.isNotEmpty) {
+        await AccessibilityService.syncMultiAccountRules(rulesMap);
+      }
     } catch (_) {}
   }
 

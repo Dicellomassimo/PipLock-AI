@@ -73,6 +73,15 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
       Future.delayed(const Duration(seconds: 4), () {
         if (mounted) unawaited(NotificationService.scheduleUpcomingNotifications());
       });
+
+      // Pre-populate native SharedPreferences with rules for ALL registered accounts
+      // (personal + challenge) so the Kotlin Accessibility Service can apply the
+      // correct limits immediately on account switch, even with Flutter in background.
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted) {
+          unawaited(ref.read(brokerProvider.notifier).syncAllAccountsToNative());
+        }
+      });
       // Check trading hours on first launch
       _checkTradingHours();
       // Recalculate dynamic plan on first load (also fires on resume via lifecycle observer)
