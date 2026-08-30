@@ -499,10 +499,6 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
     switch (method) {
       case BrokerConnectionMethod.ea:
         return 'EA MQL5 — Desktop/VPS';
-      case BrokerConnectionMethod.ctrader:
-        return 'cTrader Open API';
-      case BrokerConnectionMethod.oanda:
-        return 'OANDA REST API';
       case BrokerConnectionMethod.metaApi:
         return 'MetaAPI Live';
       case BrokerConnectionMethod.accessibility:
@@ -518,10 +514,6 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
     switch (method) {
       case BrokerConnectionMethod.ea:
         return 'Data incoming from EA on MT5';
-      case BrokerConnectionMethod.ctrader:
-        return 'Live data via cTrader REST API';
-      case BrokerConnectionMethod.oanda:
-        return 'Live data via OANDA REST API';
       case BrokerConnectionMethod.metaApi:
         return 'Live data via MetaAPI Cloud';
       case BrokerConnectionMethod.accessibility:
@@ -1477,8 +1469,6 @@ class _MethodBadge extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final label = switch (method) {
       BrokerConnectionMethod.ea => 'EA MQL5',
-      BrokerConnectionMethod.ctrader => 'cTrader API',
-      BrokerConnectionMethod.oanda => 'OANDA API',
       BrokerConnectionMethod.metaApi => 'MetaAPI Live',
       BrokerConnectionMethod.accessibility => 'Screen Reading',
       BrokerConnectionMethod.manual => 'Manual',
@@ -1486,8 +1476,6 @@ class _MethodBadge extends ConsumerWidget {
     };
     final icon = switch (method) {
       BrokerConnectionMethod.ea => Icons.computer_outlined,
-      BrokerConnectionMethod.ctrader => Icons.account_balance_outlined,
-      BrokerConnectionMethod.oanda => Icons.api_outlined,
       BrokerConnectionMethod.metaApi => Icons.cloud_sync_outlined,
       BrokerConnectionMethod.accessibility => Icons.phone_android_outlined,
       BrokerConnectionMethod.manual => Icons.edit_outlined,
