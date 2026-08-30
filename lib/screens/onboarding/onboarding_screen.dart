@@ -1660,7 +1660,7 @@ class _PlatformSlideState extends State<_PlatformSlide>
   @override
   void initState() {
     super.initState();
-    _cardCtrls = List.generate(5, (_) => AnimationController(
+    _cardCtrls = List.generate(4, (_) => AnimationController(
       vsync: this, duration: const Duration(milliseconds: 350)));
     _headerCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
     _headerAnim = CurvedAnimation(parent: _headerCtrl, curve: Curves.easeOut);
@@ -1764,11 +1764,7 @@ class _PlatformSlideState extends State<_PlatformSlide>
             'Prop firm challenge accounts — EA + killswitch integration.',
             'ftmo', AppColors.warning),
           const SizedBox(height: 10),
-          _card(3, Icons.candlestick_chart_outlined, 'IC Markets / cTrader',
-            'Mobile monitoring via Accessibility Service.',
-            'ctrader', AppColors.accent),
-          const SizedBox(height: 10),
-          _card(4, Icons.help_outline_rounded, 'Other / Multiple',
+          _card(3, Icons.help_outline_rounded, 'Other / Multiple',
             'Manual tracking — set limits and log trades in the app.',
             'other', AppColors.textSecondary),
           const SizedBox(height: 16),
