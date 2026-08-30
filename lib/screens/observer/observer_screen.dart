@@ -264,19 +264,19 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
                   children: [
                     Expanded(
                       child: _ObserverMetricCard(
-                        icon: Icons.visibility_outlined,
-                        label: 'Mode',
-                        value: 'Observer',
+                        icon: Icons.repeat_rounded,
+                        label: 'Sessions today',
+                        value: '${observer.sessionsToday}',
                         color: blueColor,
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: _ObserverMetricCard(
-                        icon: Icons.block_rounded,
-                        label: 'Trades',
-                        value: '0',
-                        color: AppColors.danger,
+                        icon: Icons.emoji_events_outlined,
+                        label: 'Best streak',
+                        value: '${observer.bestStreak}d',
+                        color: AppColors.warning,
                       ),
                     ),
                   ],

@@ -175,7 +175,7 @@ class NotificationService {
   static final FlutterLocalNotificationsPlugin _fln =
       FlutterLocalNotificationsPlugin();
 
-  static const _channelId   = 'piplock_alerts';
+  static const _channelId   = 'piplock_v2';
   static const _channelName = 'PipLock Alerts';
   static const _channelDesc = 'Economic news and risk management alerts';
 
@@ -222,7 +222,7 @@ class NotificationService {
         _channelId,
         _channelName,
         description: _channelDesc,
-        importance: Importance.high,
+        importance: Importance.max,
         playSound: true,
       );
       await _fln
@@ -280,16 +280,17 @@ class NotificationService {
     int? id,
   }) async {
     try {
-      const androidDetails = AndroidNotificationDetails(
+      final androidDetails = AndroidNotificationDetails(
         _channelId,
         _channelName,
         channelDescription: _channelDesc,
-        importance: Importance.high,
+        importance: Importance.max,
         priority: Priority.high,
         icon: '@mipmap/ic_launcher',
         playSound: true,
+        ticker: title,
       );
-      const details = NotificationDetails(android: androidDetails);
+      final details = NotificationDetails(android: androidDetails);
       await _fln.show(
         id ?? DateTime.now().millisecondsSinceEpoch.remainder(100000),
         title,
@@ -451,21 +452,23 @@ class NotificationService {
   }) async {
     try {
       final tzTime = tz.TZDateTime.from(scheduledTime, tz.local);
-      const androidDetails = AndroidNotificationDetails(
+      final androidDetails = AndroidNotificationDetails(
         _channelId,
         _channelName,
         channelDescription: _channelDesc,
-        importance: Importance.high,
+        importance: Importance.max,
         priority: Priority.high,
         icon: '@mipmap/ic_launcher',
         playSound: true,
+        fullScreenIntent: false,
+        ticker: title,
       );
       await _fln.zonedSchedule(
         id,
         title,
         body,
         tzTime,
-        const NotificationDetails(android: androidDetails),
+        NotificationDetails(android: androidDetails),
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
@@ -880,6 +883,42 @@ class NotificationService {
     _cachedNews = null;
     _newsCacheTime = null;
     await scheduleUpcomingNotifications();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Killswitch unlock reminder — 30 min before unlock
+  // ---------------------------------------------------------------------------
+
+  static Future<void> scheduleUnlockReminder(DateTime unlockAt) async {
+    try {
+      final tzTime = tz.TZDateTime.from(unlockAt, tz.local);
+      const androidDetails = AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: _channelDesc,
+        importance: Importance.max,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+        playSound: true,
+        ticker: 'Killswitch ending soon',
+      );
+      await _fln.zonedSchedule(
+        8002,
+        '🔓 Killswitch ending in 30 minutes',
+        'Your trading block will be lifted soon. Prepare your plan.',
+        tzTime,
+        const NotificationDetails(android: androidDetails),
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+      );
+    } catch (e) {
+      debugPrint('[NotificationService] scheduleUnlockReminder error: $e');
+    }
+  }
+
+  static Future<void> cancelUnlockReminder() async {
+    await _fln.cancel(8002);
   }
 
   // ---------------------------------------------------------------------------

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -30,6 +31,7 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
   // Step 1
   double _maxDailyLoss = 100;
   String _lossType = 'amount'; // 'amount' | 'percent'
+  String _currency = 'EUR';
 
   // Step 2
   int _maxTradesPerDay = 3;
@@ -53,6 +55,9 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
   bool _isLocked = false;
   bool _isUnlocking = false;
   static const _lockKey = 'rules_locked_until_ms';
+  int _lockedUntilMs = 0;
+  Duration _lockRemaining = Duration.zero;
+  Timer? _lockCountdownTimer;
 
   @override
   void initState() {
@@ -72,7 +77,24 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
 
     final lockedUntil = prefs.getInt(_lockKey) ?? 0;
     if (lockedUntil > DateTime.now().millisecondsSinceEpoch) {
-      if (mounted) setState(() => _isLocked = true);
+      if (mounted) {
+        setState(() {
+          _isLocked = true;
+          _lockedUntilMs = lockedUntil;
+          _lockRemaining = Duration(milliseconds: lockedUntil - DateTime.now().millisecondsSinceEpoch);
+        });
+        _lockCountdownTimer?.cancel();
+        _lockCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+          if (!mounted) return;
+          final rem = _lockedUntilMs - DateTime.now().millisecondsSinceEpoch;
+          if (rem <= 0) {
+            _lockCountdownTimer?.cancel();
+            setState(() { _isLocked = false; _lockRemaining = Duration.zero; });
+          } else {
+            setState(() => _lockRemaining = Duration(milliseconds: rem));
+          }
+        });
+      }
     } else {
       // Lock expired → clear
       await prefs.remove(_lockKey);
@@ -111,7 +133,7 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
         setState(() => _isUnlocking = false);
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text(
-            s.t('Not enough tokens. Buy extra tokens in the Token section.', 'Token insufficienti. Acquista token extra nella sezione Token.'),
+            s.t('No tokens available. You get 2 free tokens every Sunday.', 'Token esauriti. Ricevi 2 token gratuiti ogni domenica.'),
             style: GoogleFonts.manrope(),
           ),
           backgroundColor: AppColors.danger,
@@ -177,6 +199,7 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
           }
         }
         _killswitchDuration = rules.killswitchDuration;
+        _currency = rules.currency;
         if (rules.accountNumber != null) _brokerController.text = rules.accountNumber!;
       });
     } catch (_) {}
@@ -184,6 +207,7 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
 
   @override
   void dispose() {
+    _lockCountdownTimer?.cancel();
     _controller.dispose();
     _brokerController.dispose();
     super.dispose();
@@ -248,6 +272,7 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
           : null,
       killswitchDuration: _killswitchDuration,
       accountNumber: accountNum.isNotEmpty ? accountNum : null,
+      currency: _currency,
     );
     ref.read(rulesProvider.notifier).setRules(rules);
     // Clear the killswitch token bypass flag now that rules have been saved
@@ -349,6 +374,11 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
     );
   }
 
+  String _currencySymbol(String code) {
+    const map = {'EUR': '€', 'USD': '\$', 'GBP': '£', 'CHF': 'Fr', 'JPY': '¥', 'AUD': 'A\$', 'CAD': 'C\$'};
+    return map[code] ?? code;
+  }
+
   Widget _buildLockedScreen(AppStrings s) {
     final rules = ref.watch(rulesProvider).rules;
     return Scaffold(
@@ -410,7 +440,12 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  s.t('Rules locked until midnight', 'Regole bloccate fino a mezzanotte'),
+                                  _lockRemaining > Duration.zero
+                                      ? s.t(
+                                          'Rules locked — ${_lockRemaining.inHours.toString().padLeft(2, '0')}:${(_lockRemaining.inMinutes % 60).toString().padLeft(2, '0')}:${(_lockRemaining.inSeconds % 60).toString().padLeft(2, '0')} remaining',
+                                          'Regole bloccate — ${_lockRemaining.inHours.toString().padLeft(2, '0')}:${(_lockRemaining.inMinutes % 60).toString().padLeft(2, '0')}:${(_lockRemaining.inSeconds % 60).toString().padLeft(2, '0')} rimanenti',
+                                        )
+                                      : s.t('Rules locked', 'Regole bloccate'),
                                   style: GoogleFonts.manrope(
                                     color: AppColors.danger,
                                     fontWeight: FontWeight.w700,
@@ -450,7 +485,7 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
                         label: s.t('Max daily loss', 'Perdita max giornaliera'),
                         value: rules.maxDailyLossType == 'percent'
                             ? '${rules.maxDailyLoss?.round()}%'
-                            : '€${rules.maxDailyLoss?.round() ?? 0}',
+                            : '${_currencySymbol(rules.currency)}${rules.maxDailyLoss?.round() ?? 0}',
                       ),
                       _lockedRuleCard(
                         icon: Icons.swap_horiz,
@@ -613,7 +648,7 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
           const SizedBox(height: 32),
           Text(
             _lossType == 'amount'
-                ? '€${_maxDailyLoss.round()}'
+                ? '${_currencySymbol(_currency)}${_maxDailyLoss.round()}'
                 : '${_maxDailyLoss.round()}%',
             style: GoogleFonts.manrope(
               color: AppColors.accent,
@@ -643,6 +678,45 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
                 style: GoogleFonts.manrope(color: AppColors.textSecondary, fontSize: 12),
               ),
             ],
+          ),
+          const SizedBox(height: 24),
+          Text(
+            s.t('Currency', 'Valuta'),
+            style: GoogleFonts.manrope(
+              color: AppColors.textSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: ['EUR', 'USD', 'GBP', 'CHF', 'JPY', 'AUD', 'CAD'].map((c) {
+              final selected = _currency == c;
+              return GestureDetector(
+                onTap: () => setState(() => _currency = c),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: selected ? AppColors.accent.withValues(alpha: 0.15) : AppColors.cardBg,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: selected ? AppColors.accent : AppColors.divider,
+                      width: selected ? 1.5 : 1,
+                    ),
+                  ),
+                  child: Text(
+                    c,
+                    style: GoogleFonts.manrope(
+                      color: selected ? AppColors.accent : AppColors.textSecondary,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
           ),
         ],
       ),
@@ -1105,7 +1179,7 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
                 _summaryRow(
                   s.personalRulesMaxDailyLossLabel,
                   _lossType == 'amount'
-                      ? '€${_maxDailyLoss.round()}'
+                      ? '${_currencySymbol(_currency)}${_maxDailyLoss.round()}'
                       : '${_maxDailyLoss.round()}%',
                 ),
                 _summaryRow(s.personalRulesMaxTradesLabel, '$_maxTradesPerDay'),

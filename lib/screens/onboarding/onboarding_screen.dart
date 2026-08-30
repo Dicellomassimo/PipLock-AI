@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_theme.dart';
+import '../../services/accessibility_service.dart';
 import '../../widgets/premium_button.dart';
 
 class OnboardingScreen extends ConsumerStatefulWidget {
@@ -23,7 +24,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   late AnimationController _particleCtrl;
   String? _selectedPlatform;
 
-  static const int _totalSlides = 12;
+  static const int _totalSlides = 13;
 
   static const _accentColors = [
     Color(0xFFFF4455),   // 0 - hook (danger red)
@@ -37,7 +38,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
     Color(0xFF00C896),   // 8 - benefits (teal)
     Color(0xFFFFBD2E),   // 9 - savings (amber)
     Color(0xFF8B98AA),   // 10 - platform (silver dim)
-    Color(0xFFC4D0DC),   // 11 - paywall (silver chrome)
+    Color(0xFF00C896),   // 11 - permissions (teal)
+    Color(0xFFC4D0DC),   // 12 - paywall (silver chrome)
   ];
 
   @override
@@ -86,6 +88,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
       case 10:
         return _selectedPlatform != null ? 'Continue →' : 'Select platform';
       case 11:
+        return 'Continue →';
+      case 12:
         return 'Start free trial →';
       default:
         return 'Continue';
@@ -183,7 +187,8 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                           selected: _selectedPlatform,
                           onSelected: (p) => setState(() => _selectedPlatform = p),
                         );
-                        case 11: return _PaywallSlide(isActive: active, onSkip: _finish);
+                        case 11: return const _PermissionsSlide();
+                        case 12: return _PaywallSlide(isActive: active, onSkip: _finish);
                         default: return const SizedBox.shrink();
                       }
                     },
@@ -2963,4 +2968,120 @@ class _EnergyArcPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_EnergyArcPainter old) => old.progress != progress;
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// SCREEN 12 — Permissions slide (Accessibility + Overlay)
+// ══════════════════════════════════════════════════════════════════════════════
+class _PermissionsSlide extends StatelessWidget {
+  const _PermissionsSlide();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 32),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Container(
+            width: 80,
+            height: 80,
+            decoration: BoxDecoration(
+              color: AppColors.accent.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(Icons.shield_outlined, color: AppColors.accent, size: 40),
+          ),
+          const SizedBox(height: 28),
+          Text(
+            'One permission to activate the Killswitch',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.manrope(
+              color: AppColors.textPrimary,
+              fontSize: 24,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 16),
+          _permRow(
+            icon: Icons.picture_in_picture_alt,
+            title: 'Display over apps',
+            desc: 'Shows the Killswitch block screen on top of your broker app. Without this, PipLock cannot enforce the lock.',
+          ),
+          const SizedBox(height: 28),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: () async {
+                await AccessibilityService.requestOverlayPermission();
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: Text(
+                'Enable Overlay — required',
+                style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 15),
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Accessibility (for FOMO detection on mobile) can be enabled later in Settings → Permissions when needed.',
+            textAlign: TextAlign.center,
+            style: GoogleFonts.manrope(
+              color: AppColors.textTertiary,
+              fontSize: 12,
+              height: 1.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _permRow({required IconData icon, required String title, required String desc}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppColors.accent.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Icon(icon, color: AppColors.accent, size: 20),
+        ),
+        const SizedBox(width: 14),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: GoogleFonts.manrope(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                desc,
+                style: GoogleFonts.manrope(
+                  color: AppColors.textSecondary,
+                  fontSize: 12,
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
 }

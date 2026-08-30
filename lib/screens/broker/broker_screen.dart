@@ -19,6 +19,7 @@ class BrokerScreen extends ConsumerStatefulWidget {
 
 class _BrokerScreenState extends ConsumerState<BrokerScreen> {
   BrokerConnectionMethod? _selectedMethod;
+  bool _addingAnother = false;
 
   @override
   Widget build(BuildContext context) {
@@ -45,8 +46,10 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
                         padding: EdgeInsets.zero,
                         constraints: const BoxConstraints(),
                         onPressed: () {
-                          if (_selectedMethod != null && !state.hasAccount) {
+                          if (_selectedMethod != null) {
                             setState(() => _selectedMethod = null);
+                          } else if (_addingAnother) {
+                            setState(() => _addingAnother = false);
                           } else {
                             Navigator.pop(context);
                           }
@@ -82,7 +85,7 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
             Expanded(
               child: SingleChildScrollView(
                 padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
-                child: state.hasAccount
+                child: state.hasAccount && !_addingAnother
                     ? _buildConnectedView(state, s)
                     : _selectedMethod == null
                         ? _buildMethodSelection(state, s)
@@ -173,50 +176,6 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
 
         const SizedBox(height: 12),
 
-        // cTrader Open API
-        _MethodCard(
-          icon: Icons.account_balance_outlined,
-          title: 'cTrader Open API',
-          subtitle: 'Pepperstone, IC Markets, FxPro & more',
-          accuracyBadge: '99% Accurate',
-          accuracyColor: AppColors.accent,
-          description:
-              'Connect directly using your cTrader access token and account ID. No PC required — works from your phone with full equity and position data.',
-          setupGuide: const [
-            'Log into your cTrader platform (desktop or web)',
-            'Go to Settings → API → Generate Access Token',
-            'Copy your Account ID (visible in your account overview)',
-            'Paste both into PipLock below',
-            'No PC required — works directly from your phone.',
-          ],
-          onTap: () =>
-              setState(() => _selectedMethod = BrokerConnectionMethod.ctrader),
-        ),
-
-        const SizedBox(height: 12),
-
-        // OANDA REST API
-        _MethodCard(
-          icon: Icons.api_outlined,
-          title: 'OANDA REST API',
-          subtitle: 'OANDA Live & Practice accounts',
-          accuracyBadge: '99% Accurate',
-          accuracyColor: AppColors.accent,
-          description:
-              'Connect your OANDA account using a Personal Access Token. Supports both live and practice accounts. No extra software needed.',
-          setupGuide: const [
-            'Go to my.oanda.com → My Account → Manage API Access',
-            'Generate a Personal Access Token',
-            'Find your Account ID in Account Details',
-            'Select Live or Practice and paste both into PipLock',
-            'No extra software needed.',
-          ],
-          onTap: () =>
-              setState(() => _selectedMethod = BrokerConnectionMethod.oanda),
-        ),
-
-        const SizedBox(height: 12),
-
         // MetaAPI Cloud
         _MethodCard(
           icon: Icons.cloud_sync_outlined,
@@ -296,10 +255,6 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
     switch (method) {
       case BrokerConnectionMethod.ea:
         return _EaForm(state: state);
-      case BrokerConnectionMethod.ctrader:
-        return _CTraderForm(state: state);
-      case BrokerConnectionMethod.oanda:
-        return _OandaForm(state: state);
       case BrokerConnectionMethod.metaApi:
         return _MetaApiForm(state: state);
       case BrokerConnectionMethod.accessibility:
@@ -449,6 +404,41 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
 
         const SizedBox(height: 20),
 
+        // Add another account — no need to disconnect first
+        GestureDetector(
+          onTap: () => setState(() {
+            _addingAnother = true;
+            _selectedMethod = null;
+          }),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              color: AppColors.success.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: AppColors.success.withValues(alpha: 0.3),
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.add_circle_outline_rounded,
+                    color: AppColors.success, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  'Add another account',
+                  style: GoogleFonts.manrope(
+                    color: AppColors.success,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
         PremiumButton(
           label: s.brokerDisconnect,
           icon: Icons.link_off,
@@ -726,347 +716,6 @@ class _EaFormState extends ConsumerState<_EaForm> {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Form: cTrader Open API
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _CTraderForm extends ConsumerStatefulWidget {
-  final BrokerState state;
-  const _CTraderForm({required this.state});
-
-  @override
-  ConsumerState<_CTraderForm> createState() => _CTraderFormState();
-}
-
-class _CTraderFormState extends ConsumerState<_CTraderForm> {
-  final _tokenCtrl = TextEditingController();
-  final _accountIdCtrl = TextEditingController();
-  bool _obscureToken = true;
-
-  @override
-  void dispose() {
-    _tokenCtrl.dispose();
-    _accountIdCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final brokerState = ref.watch(brokerProvider);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _GuideBox(
-          icon: Icons.account_balance_outlined,
-          title: 'cTrader Open API Setup',
-          steps: const [
-            'Log into your cTrader platform (desktop or web)',
-            'Go to Settings → API → Generate Access Token',
-            'Copy your Account ID (visible in your account overview)',
-            'Paste both into PipLock below',
-            'No PC required — works directly from your phone.',
-          ],
-        ),
-
-        const SizedBox(height: 20),
-
-        Text(
-          'Access Token',
-          style: GoogleFonts.manrope(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w600,
-              fontSize: 14),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.divider),
-          ),
-          child: TextField(
-            controller: _tokenCtrl,
-            obscureText: _obscureToken,
-            style: GoogleFonts.manrope(
-                color: AppColors.textPrimary, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Paste your cTrader access token',
-              hintStyle: GoogleFonts.manrope(
-                  color: AppColors.textSecondary, fontSize: 13),
-              prefixIcon: const Icon(Icons.vpn_key_outlined,
-                  color: AppColors.textSecondary, size: 20),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscureToken ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                  color: AppColors.textSecondary,
-                  size: 20,
-                ),
-                onPressed: () => setState(() => _obscureToken = !_obscureToken),
-              ),
-              border: InputBorder.none,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 12),
-
-        Text(
-          'Account ID',
-          style: GoogleFonts.manrope(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w600,
-              fontSize: 14),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.divider),
-          ),
-          child: TextField(
-            controller: _accountIdCtrl,
-            style: GoogleFonts.manrope(
-                color: AppColors.textPrimary, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'e.g. 12345678',
-              hintStyle: GoogleFonts.manrope(
-                  color: AppColors.textSecondary, fontSize: 13),
-              prefixIcon: const Icon(Icons.numbers_outlined,
-                  color: AppColors.textSecondary, size: 20),
-              border: InputBorder.none,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 20),
-
-        if (brokerState.error != null) ...[
-          _ErrorBanner(message: brokerState.error!),
-          const SizedBox(height: 16),
-        ],
-
-        PremiumButton(
-          label: 'Connect cTrader',
-          icon: Icons.link_rounded,
-          loading: brokerState.isConnecting,
-          onTap: brokerState.isConnecting ? null : _connect,
-        ),
-
-        const SizedBox(height: 16),
-        _SecurityNote(
-            text:
-                'Your access token is stored securely on this device and never sent anywhere except to the cTrader API. PipLock never executes orders.'),
-      ],
-    );
-  }
-
-  Future<void> _connect() async {
-    final token = _tokenCtrl.text.trim();
-    final accountId = _accountIdCtrl.text.trim();
-    if (token.isEmpty || accountId.isEmpty) return;
-    await ref.read(brokerProvider.notifier).connectCTrader(token, accountId);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Form: OANDA REST API
-// ─────────────────────────────────────────────────────────────────────────────
-
-class _OandaForm extends ConsumerStatefulWidget {
-  final BrokerState state;
-  const _OandaForm({required this.state});
-
-  @override
-  ConsumerState<_OandaForm> createState() => _OandaFormState();
-}
-
-class _OandaFormState extends ConsumerState<_OandaForm> {
-  final _apiKeyCtrl = TextEditingController();
-  final _accountIdCtrl = TextEditingController();
-  bool _obscureKey = true;
-  bool _isDemo = false;
-
-  @override
-  void dispose() {
-    _apiKeyCtrl.dispose();
-    _accountIdCtrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final brokerState = ref.watch(brokerProvider);
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        _GuideBox(
-          icon: Icons.api_outlined,
-          title: 'OANDA REST API Setup',
-          steps: const [
-            'Go to my.oanda.com → My Account → Manage API Access',
-            'Generate a Personal Access Token',
-            'Find your Account ID in Account Details',
-            'Select Live or Practice and paste both into PipLock',
-            'No extra software needed.',
-          ],
-        ),
-
-        const SizedBox(height: 20),
-
-        Text(
-          'Personal Access Token',
-          style: GoogleFonts.manrope(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w600,
-              fontSize: 14),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.divider),
-          ),
-          child: TextField(
-            controller: _apiKeyCtrl,
-            obscureText: _obscureKey,
-            style: GoogleFonts.manrope(
-                color: AppColors.textPrimary, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'Paste your OANDA API key',
-              hintStyle: GoogleFonts.manrope(
-                  color: AppColors.textSecondary, fontSize: 13),
-              prefixIcon: const Icon(Icons.vpn_key_outlined,
-                  color: AppColors.textSecondary, size: 20),
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscureKey ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                  color: AppColors.textSecondary,
-                  size: 20,
-                ),
-                onPressed: () => setState(() => _obscureKey = !_obscureKey),
-              ),
-              border: InputBorder.none,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 12),
-
-        Text(
-          'Account ID',
-          style: GoogleFonts.manrope(
-              color: AppColors.textPrimary,
-              fontWeight: FontWeight.w600,
-              fontSize: 14),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.divider),
-          ),
-          child: TextField(
-            controller: _accountIdCtrl,
-            style: GoogleFonts.manrope(
-                color: AppColors.textPrimary, fontSize: 14),
-            decoration: InputDecoration(
-              hintText: 'e.g. 001-001-1234567-001',
-              hintStyle: GoogleFonts.manrope(
-                  color: AppColors.textSecondary, fontSize: 13),
-              prefixIcon: const Icon(Icons.numbers_outlined,
-                  color: AppColors.textSecondary, size: 20),
-              border: InputBorder.none,
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-            ),
-          ),
-        ),
-
-        const SizedBox(height: 16),
-
-        // Live / Practice toggle
-        Container(
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.surface,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.divider),
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      _isDemo ? 'Practice Account' : 'Live Account',
-                      style: GoogleFonts.manrope(
-                          color: AppColors.textPrimary,
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14),
-                    ),
-                    Text(
-                      _isDemo
-                          ? 'Using api-fxpractice.oanda.com'
-                          : 'Using api-fxtrade.oanda.com',
-                      style: GoogleFonts.manrope(
-                          color: AppColors.textSecondary, fontSize: 12),
-                    ),
-                  ],
-                ),
-              ),
-              Switch(
-                value: _isDemo,
-                onChanged: (v) => setState(() => _isDemo = v),
-                activeThumbColor: AppColors.accent,
-              ),
-            ],
-          ),
-        ),
-
-        const SizedBox(height: 20),
-
-        if (brokerState.error != null) ...[
-          _ErrorBanner(message: brokerState.error!),
-          const SizedBox(height: 16),
-        ],
-
-        PremiumButton(
-          label: 'Connect OANDA',
-          icon: Icons.link_rounded,
-          loading: brokerState.isConnecting,
-          onTap: brokerState.isConnecting ? null : _connect,
-        ),
-
-        const SizedBox(height: 16),
-        _SecurityNote(
-            text:
-                'Your API key is stored securely on this device and only used to call the official OANDA API. PipLock never executes orders.'),
-      ],
-    );
-  }
-
-  Future<void> _connect() async {
-    final apiKey = _apiKeyCtrl.text.trim();
-    final accountId = _accountIdCtrl.text.trim();
-    if (apiKey.isEmpty || accountId.isEmpty) return;
-    await ref
-        .read(brokerProvider.notifier)
-        .connectOanda(apiKey, accountId, isDemo: _isDemo);
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 // Form: MetaAPI
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -1208,6 +857,47 @@ class _AccessibilityFormState extends ConsumerState<_AccessibilityForm> {
     }
   }
 
+  Widget _accessStep(String number, String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            margin: const EdgeInsets.only(right: 10, top: 1),
+            decoration: BoxDecoration(
+              color: AppColors.accent.withValues(alpha: 0.12),
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.accent.withValues(alpha: 0.3)),
+            ),
+            child: Center(
+              child: Text(
+                number,
+                style: GoogleFonts.manrope(
+                  color: AppColors.accent,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              text,
+              style: GoogleFonts.manrope(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = ref.watch(appStringsProvider);
@@ -1255,6 +945,50 @@ class _AccessibilityFormState extends ConsumerState<_AccessibilityForm> {
                     style: GoogleFonts.manrope(
                         color: AppColors.warning, fontSize: 13),
                   ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // ── Guida step-by-step per abilitare l'Accessibility Service ──
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: AppColors.surface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.divider),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'How to enable — 3 steps',
+                  style: GoogleFonts.manrope(
+                    color: AppColors.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _accessStep('1', 'Tap "Open Settings" below. Your phone\'s Accessibility menu will open.'),
+                _accessStep('2', 'Scroll down and find "Installed apps" or "Downloaded apps" — look for PipLock AI.'),
+                _accessStep('3', 'Tap PipLock AI → toggle ON "Use PipLock AI" → press Allow in the confirmation dialog.'),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    const Icon(Icons.info_outline, color: AppColors.textSecondary, size: 14),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'PipLock only reads financial data (equity, balance, P&L). It never stores passwords or personal info.',
+                        style: GoogleFonts.manrope(
+                          color: AppColors.textSecondary,
+                          fontSize: 11,
+                          height: 1.4,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

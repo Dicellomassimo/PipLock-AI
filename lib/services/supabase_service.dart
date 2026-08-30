@@ -1,6 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/env_config.dart';
+import '../models/personal_account.dart';
 import '../models/personal_rules.dart';
 import '../models/challenge.dart';
 import '../models/killswitch_event.dart';
@@ -312,6 +314,19 @@ class SupabaseService {
         .eq('id', challengeId);
   }
 
+  /// Alias for updateAiPlan — used by the dynamic plan recalculation logic.
+  static Future<void> updateChallengePlan(
+      String challengeId, Map<String, dynamic> newPlan) async {
+    try {
+      await _client
+          .from('challenges')
+          .update({'ai_plan': newPlan})
+          .eq('id', challengeId);
+    } catch (e) {
+      debugPrint('[SupabaseService] updateChallengePlan error: $e');
+    }
+  }
+
   // ---- Killswitch Events ----
 
   static Future<List<KillswitchEvent>> getKillswitchHistory(
@@ -358,11 +373,12 @@ class SupabaseService {
   }
 
   static Future<void> resolveKillswitch(
-      String eventId, bool withToken) async {
+      String eventId, bool withToken, {String? overrideReason}) async {
     await _client.from('killswitch_events').update({
       'resolved_at': DateTime.now().toIso8601String(),
       'unlocked_early': true,
       'unlocked_with_token': withToken,
+      if (overrideReason != null) 'override_reason': overrideReason,
     }).eq('id', eventId);
     // Invalidate cache for current user
     final uid = currentUserId;
@@ -410,19 +426,78 @@ class SupabaseService {
         .eq('id', userId)
         .maybeSingle();
     if (existing == null) {
-      await _client.from('profiles').insert({
-        'id': userId,
-        'account_mode': 'personal',
-        'tokens_available': 2,
-        'subscription_tier': 'free',
-      });
+      // Try inserting with new columns (migration 002 applied).
+      // Fall back to base columns only if those columns don't exist yet.
+      try {
+        await _client.from('profiles').insert({
+          'id': userId,
+          'account_mode': 'personal',
+          'tokens_available': 2,
+          'tokens_weekly': 2,
+          'tokens_purchased': 0,
+          'tokens_reset_at': _nextMonday().toIso8601String(),
+          'subscription_tier': 'free',
+        });
+      } catch (_) {
+        await _client.from('profiles').insert({
+          'id': userId,
+          'account_mode': 'personal',
+          'tokens_available': 2,
+          'tokens_reset_at': _nextMonday().toIso8601String(),
+          'subscription_tier': 'free',
+        });
+      }
+    }
+  }
+
+  static DateTime _nextMonday() {
+    final now = DateTime.now();
+    final weekday = now.weekday;
+    final daysUntilNextMonday = weekday == DateTime.monday ? 7 : (DateTime.monday + 7 - weekday) % 7;
+    return DateTime(now.year, now.month, now.day + daysUntilNextMonday);
+  }
+
+  /// Controlla se i token gratuiti settimanali vanno resettati (ogni lunedì).
+  /// I token acquistati non vengono toccati — vengono preservati nel campo tokens_purchased.
+  static Future<void> checkAndResetWeeklyTokens(String userId) async {
+    try {
+      final profile = await _client
+          .from('profiles')
+          .select('tokens_available, tokens_weekly, tokens_purchased, tokens_reset_at')
+          .eq('id', userId)
+          .maybeSingle();
+      if (profile == null) return;
+
+      final resetAtRaw = profile['tokens_reset_at'] as String?;
+      final now = DateTime.now();
+      final resetAt = resetAtRaw != null ? DateTime.parse(resetAtRaw) : null;
+
+      if (resetAt != null && now.isBefore(resetAt)) return; // non ancora scaduto
+
+      // Reset scaduto (o mai impostato): calcola prossimo lunedì
+      final nextMonday = _nextMonday();
+
+      final tokensPurchased = profile['tokens_purchased'] as int? ?? 0;
+      final newTotal = tokensPurchased + 2;
+
+      await _client.from('profiles').update({
+        'tokens_available': newTotal,
+        'tokens_weekly': 2,
+        'tokens_reset_at': nextMonday.toIso8601String(),
+      }).eq('id', userId);
+
+      _logEvent('tokens_weekly_reset', {'new_total': newTotal});
+    } catch (_) {
+      // Errore silenzioso — il reset non deve bloccare il login
     }
   }
 
   static Future<Map<String, dynamic>?> getProfile(String userId) async {
+    // Use * to avoid column-not-found errors when migration 002 hasn't been applied yet.
+    // Profile.fromJson handles both old (tokens_available) and new (tokens_weekly/purchased) schemas.
     return await _client
         .from('profiles')
-        .select('id, account_mode, tokens_available, tokens_reset_at, subscription_tier, created_at')
+        .select()
         .eq('id', userId)
         .maybeSingle();
   }
@@ -464,5 +539,34 @@ class SupabaseService {
         .select()
         .eq('user_id', userId)
         .maybeSingle();
+  }
+
+  // ---- Personal Accounts ----
+
+  static Future<List<PersonalAccount>> getPersonalAccounts(String userId) async {
+    try {
+      final response = await _client
+          .from('personal_accounts')
+          .select()
+          .eq('user_id', userId)
+          .order('created_at', ascending: true);
+      return (response as List)
+          .map((e) => PersonalAccount.fromJson(Map<String, dynamic>.from(e as Map)))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  static Future<PersonalAccount> upsertPersonalAccount(PersonalAccount account) async {
+    final data = account.toJson();
+    final result = account.id.isEmpty
+        ? await _client.from('personal_accounts').insert(data).select().single()
+        : await _client.from('personal_accounts').upsert(data, onConflict: 'id').select().single();
+    return PersonalAccount.fromJson(result);
+  }
+
+  static Future<void> deletePersonalAccount(String id) async {
+    await _client.from('personal_accounts').delete().eq('id', id);
   }
 }

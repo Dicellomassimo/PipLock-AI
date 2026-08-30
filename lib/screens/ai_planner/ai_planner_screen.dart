@@ -8,7 +8,9 @@ import '../../models/chat_session.dart';
 import '../../providers/challenge_provider.dart';
 import '../../providers/chat_history_provider.dart';
 import '../../providers/pending_challenge_provider.dart';
+import '../../services/ai_service.dart';
 import '../../widgets/ambient_blobs.dart';
+import '../../widgets/candle_background.dart';
 import 'chat_session_screen.dart';
 
 class AiPlannerScreen extends ConsumerStatefulWidget {
@@ -19,10 +21,20 @@ class AiPlannerScreen extends ConsumerStatefulWidget {
 }
 
 class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
+  AiUsageInfo? _usage;
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _handlePendingChallenge());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _handlePendingChallenge();
+      _loadUsage();
+    });
+  }
+
+  Future<void> _loadUsage() async {
+    final usage = await AiService.getUsageToday();
+    if (mounted) setState(() => _usage = usage);
   }
 
   /// Se c'è una challenge in sospeso (appena creata) apre subito una nuova sessione.
@@ -30,7 +42,7 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
     final pending = ref.read(pendingChallengeProvider);
     if (pending == null) return;
     ref.read(pendingChallengeProvider.notifier).state = null;
-    ref.read(challengeListProvider.notifier).addChallenge(pending);
+    // Challenge already added to challengeListProvider by challenge_setup_screen.
     await _openNewSession(type: 'challenge', challenge: pending);
   }
 
@@ -176,32 +188,42 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
   @override
   Widget build(BuildContext context) {
     final sessions = ref.watch(chatHistoryProvider);
+    final s = ref.watch(appStringsProvider);
 
     return Scaffold(
-      backgroundColor: AppColors.background,
+      backgroundColor: const Color(0xFF0A0A0F),
       appBar: AppBar(
-        backgroundColor: AppColors.background,
+        backgroundColor: const Color(0xFF0A0A0F),
         elevation: 0,
         scrolledUnderElevation: 0,
         automaticallyImplyLeading: false,
         title: Text(
-          ref.watch(appStringsProvider).aiPlannerTitle,
+          s.aiPlannerTitle,
           style: GoogleFonts.manrope(
-            color: AppColors.textPrimary,
+            color: const Color(0xFFF0F4F8),
             fontWeight: FontWeight.bold,
             fontSize: 20,
           ),
         ),
         actions: [
+          if (_usage != null) _buildCreditsChip(_usage!),
           IconButton(
-            icon: const Icon(Icons.edit_square, color: AppColors.accent, size: 22),
-            tooltip: ref.watch(appStringsProvider).aiPlannerNewChat,
+            icon: const Icon(Icons.edit_square, color: Color(0xFFC4D0DC), size: 22),
+            tooltip: s.aiPlannerNewChat,
             onPressed: _showNewChatSheet,
           ),
         ],
       ),
       body: Stack(
         children: [
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: CandleBackground(
+                accentColor: Color(0xFF9B7EF8),
+                opacity: 0.06,
+              ),
+            ),
+          ),
           const Positioned.fill(child: IgnorePointer(child: AmbientBlobs())),
           sessions.isEmpty ? _buildEmpty() : _buildSessionList(sessions),
         ],
@@ -210,9 +232,9 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
       floatingActionButton: sessions.isEmpty
           ? null
           : Padding(
-              // Lift the FAB above the floating nav bar (64dp) + system gesture inset
+              // Lift the FAB above the floating nav bar (~88dp tall) + system inset
               padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).padding.bottom + 72,
+                bottom: MediaQuery.of(context).padding.bottom + 100,
               ),
               child: FloatingActionButton.extended(
                 onPressed: _showNewChatSheet,
@@ -223,6 +245,43 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
                     style: GoogleFonts.manrope(fontWeight: FontWeight.bold)),
               ),
             ),
+    );
+  }
+
+  Widget _buildCreditsChip(AiUsageInfo usage) {
+    final chatRemaining = usage.chatRemaining;
+    final isLow = chatRemaining <= 1;
+    final color = isLow ? const Color(0xFFFF4455) : const Color(0xFF9B7EF8);
+    return GestureDetector(
+      onTap: () => Navigator.pushNamed(context, '/paywall'),
+      child: Container(
+        margin: const EdgeInsets.only(right: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: color.withValues(alpha: 0.3)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              isLow ? Icons.warning_amber_rounded : Icons.auto_awesome_rounded,
+              size: 12,
+              color: color,
+            ),
+            const SizedBox(width: 5),
+            Text(
+              '$chatRemaining msg',
+              style: GoogleFonts.manrope(
+                color: color,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 

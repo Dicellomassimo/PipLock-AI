@@ -7,17 +7,22 @@ import 'package:google_fonts/google_fonts.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_strings.dart';
 import '../../config/app_theme.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../providers/accessibility_provider.dart';
 import '../../providers/broker_provider.dart';
+import '../../providers/challenge_provider.dart';
 import '../../providers/navigation_provider.dart';
 import '../../providers/realtime_provider.dart';
 import '../../providers/token_provider.dart';
 import '../../services/accessibility_service.dart';
+import '../../services/ai_service.dart';
 import '../../services/notification_service.dart';
+import '../../services/supabase_service.dart';
 import '../dashboard/dashboard_screen.dart';
 import '../ai_planner/ai_planner_screen.dart';
 import '../history/history_screen.dart';
 import '../settings/settings_screen.dart';
+import '../../providers/rules_provider.dart';
 
 class MainNavScreen extends ConsumerStatefulWidget {
   const MainNavScreen({super.key});
@@ -30,6 +35,7 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   int _currentIndex = 0;
   DateTime? _lastResumeRefresh;
+  bool _tradingHoursCheckDone = false;
 
   static const List<Widget> _pages = [
     DashboardScreen(),
@@ -67,6 +73,10 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
       Future.delayed(const Duration(seconds: 4), () {
         if (mounted) unawaited(NotificationService.scheduleUpcomingNotifications());
       });
+      // Check trading hours on first launch
+      _checkTradingHours();
+      // Recalculate dynamic plan on first load (also fires on resume via lifecycle observer)
+      unawaited(_checkDynamicPlan());
     });
   }
 
@@ -76,12 +86,93 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
     super.dispose();
   }
 
+  /// Check if current time is outside the configured trading hours.
+  /// If so, navigate to TradingHoursBlockScreen.
+  void _checkTradingHours() {
+    final rulesState = ref.read(rulesProvider);
+    final rules = rulesState.rules;
+    if (rules == null) return;
+    if (!rules.tradingHoursEnabled) return;
+    final startStr = rules.tradingHoursStart;
+    final endStr = rules.tradingHoursEnd;
+    if (startStr == null || endStr == null) return;
+
+    final startParts = startStr.split(':');
+    final endParts = endStr.split(':');
+    if (startParts.length < 2 || endParts.length < 2) return;
+
+    final startHour = int.tryParse(startParts[0]);
+    final startMin  = int.tryParse(startParts[1]);
+    final endHour   = int.tryParse(endParts[0]);
+    final endMin    = int.tryParse(endParts[1]);
+    if (startHour == null || startMin == null || endHour == null || endMin == null) return;
+
+    final tradingStart = TimeOfDay(hour: startHour, minute: startMin);
+    final tradingEnd   = TimeOfDay(hour: endHour,   minute: endMin);
+
+    final now = DateTime.now();
+    final nowMinutes = now.hour * 60 + now.minute;
+    final startMinutes = startHour * 60 + startMin;
+    final endMinutes   = endHour * 60 + endMin;
+
+    final isOutside = nowMinutes < startMinutes || nowMinutes >= endMinutes;
+    if (!isOutside) return;
+
+    if (!mounted) return;
+    Navigator.of(context).pushNamed(
+      '/trading_hours_block',
+      arguments: {'tradingStart': tradingStart, 'tradingEnd': tradingEnd},
+    );
+  }
+
+  /// Ricalcola dinamicamente il piano challenge se non già fatto oggi.
+  Future<void> _checkDynamicPlan() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final lastRecalc = prefs.getString('plan_last_recalc');
+      final today = DateTime.now().toIso8601String().substring(0, 10);
+      if (lastRecalc == today) return; // già ricalcolato oggi
+
+      final challenges = ref.read(challengeListProvider);
+      final active = challenges.where((c) => c.status == 'active').toList();
+      if (active.isEmpty || active.first.aiPlan == null) return;
+      final activeChallenge = active.first;
+
+      // Leggi P&L attuale da broker
+      final brokerState = ref.read(brokerProvider);
+      final currentPnl = brokerState.dailyPnl ?? 0.0;
+      final accountSize = activeChallenge.accountSize;
+      if (accountSize <= 0) return;
+
+      final daysElapsed = DateTime.now().difference(activeChallenge.startedAt).inDays;
+      final newPlan = await AiService.recalculatePlan(
+        originalPlan: activeChallenge.aiPlan!,
+        currentProfitPct: (currentPnl / accountSize) * 100,
+        targetProfitPct: activeChallenge.profitTarget,
+        daysElapsed: daysElapsed,
+        totalDays: activeChallenge.durationDays,
+        maxDailyLossPct: activeChallenge.maxDailyLoss,
+        style: activeChallenge.style,
+      );
+
+      if (newPlan != null && mounted) {
+        await SupabaseService.updateChallengePlan(activeChallenge.id, newPlan);
+        await prefs.setString('plan_last_recalc', today);
+        debugPrint('[DynamicPlan] Plan recalculated for challenge ${activeChallenge.id}');
+      }
+    } catch (e) {
+      debugPrint('[DynamicPlan] _checkDynamicPlan error: $e');
+    }
+  }
+
   /// Called automatically when the app comes back to foreground.
   /// Refreshes the economic calendar and reschedules notifications,
   /// but at most once every 30 minutes to avoid hammering the API.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
+    _checkTradingHours();
+    unawaited(_checkDynamicPlan());
     final now = DateTime.now();
     if (_lastResumeRefresh != null &&
         now.difference(_lastResumeRefresh!) < const Duration(minutes: 30)) {
@@ -107,6 +198,13 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
       if (route != null && mounted) {
         Navigator.of(context).pushNamed(route);
         ref.read(pendingNavigationProvider.notifier).state = null;
+      }
+    });
+
+    ref.listen<int?>(pendingTabIndexProvider, (_, idx) {
+      if (idx != null && mounted) {
+        setState(() => _currentIndex = idx.clamp(0, _pages.length - 1));
+        ref.read(pendingTabIndexProvider.notifier).state = null;
       }
     });
 

@@ -13,6 +13,7 @@ class PersonalRules {
   /// Numero account MT5/cTrader (6-9 cifre). Se impostato, il killswitch
   /// si attiva SOLO quando PipLock rileva questo account specifico su MT5.
   final String? accountNumber;
+  final String currency;
 
   const PersonalRules({
     required this.userId,
@@ -27,6 +28,7 @@ class PersonalRules {
     this.timezone,
     this.updatedAt,
     this.accountNumber,
+    this.currency = 'EUR',
   });
 
   factory PersonalRules.fromJson(Map<String, dynamic> json) {
@@ -42,6 +44,7 @@ class PersonalRules {
       killswitchDuration: json['killswitch_duration'] as String? ?? '6h',
       timezone: json['timezone'] as String?,
       accountNumber: json['account_number'] as String?,
+      currency: json['currency'] as String? ?? 'EUR',
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
           : null,
@@ -61,6 +64,7 @@ class PersonalRules {
       'killswitch_duration': killswitchDuration,
       'timezone': timezone,
       'account_number': accountNumber,
+      'currency': currency,
       'updated_at': updatedAt?.toIso8601String() ?? DateTime.now().toIso8601String(),
     };
   }
@@ -78,6 +82,7 @@ class PersonalRules {
     String? timezone,
     DateTime? updatedAt,
     Object? accountNumber = _sentinel,
+    String? currency,
   }) {
     return PersonalRules(
       userId: userId ?? this.userId,
@@ -91,6 +96,7 @@ class PersonalRules {
       killswitchDuration: killswitchDuration ?? this.killswitchDuration,
       timezone: timezone ?? this.timezone,
       accountNumber: accountNumber == _sentinel ? this.accountNumber : accountNumber as String?,
+      currency: currency ?? this.currency,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -108,5 +114,6 @@ class PersonalRules {
         tradingHoursEnd: '18:00',
         killswitchDuration: '6h',
         timezone: 'Europe/Rome',
+        currency: 'EUR',
       );
 }

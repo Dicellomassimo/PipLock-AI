@@ -728,6 +728,27 @@ class PipLockAccessibilityService : AccessibilityService() {
             }
         }
 
+        // ── Trading hours check ─────────────────────────────────────────────
+        if (reason == null) {
+            val tradingHoursEnabled = prefs.getBoolean("trading_hours_enabled", false)
+            if (tradingHoursEnabled) {
+                val startStr = prefs.getString("trading_hours_start", "") ?: ""
+                val endStr   = prefs.getString("trading_hours_end",   "") ?: ""
+                val startMins = parseTimeMins(startStr)
+                val endMins   = parseTimeMins(endStr)
+                if (startMins >= 0 && endMins >= 0) {
+                    val cal = java.util.Calendar.getInstance()
+                    val nowMins = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 +
+                                  cal.get(java.util.Calendar.MINUTE)
+                    val isOutside = nowMins < startMins || nowMins >= endMins
+                    // Blocca solo se ci sono posizioni aperte fuori orario
+                    if (isOutside && (data.positions ?: 0) > 0) {
+                        reason = "trading_hours"
+                    }
+                }
+            }
+        }
+
         if (reason != null) {
             Log.w(TAG, "Limite raggiunto nativamente: $reason — avvio avviso pre-Killswitch")
             KillswitchOverlayService.showWithWarning(this, durationMin, reason)
@@ -796,6 +817,12 @@ class PipLockAccessibilityService : AccessibilityService() {
                 Log.w(TAG, "Pattern FOMO rilevato: nuova posizione ${timeSinceEquityChange}ms dopo variazione equity")
                 lastFomoAlertTime = now
                 FomoGatekeeperOverlayService.show(this, "new_pos_after_move")
+                // Broadcast FOMO event to Flutter
+                val fomoIntent = Intent("com.piplock.ACTION_BROKER_DETECTED")
+                fomoIntent.setPackage(packageName)
+                fomoIntent.putExtra("event_type", "fomo_detected")
+                fomoIntent.putExtra("fomo_detected", true)
+                sendBroadcast(fomoIntent)
             }
         }
 
@@ -807,6 +834,12 @@ class PipLockAccessibilityService : AccessibilityService() {
                 Log.w(TAG, "FOMO low_readiness: score=$scoreToday")
                 lastFomoAlertTime = now
                 FomoGatekeeperOverlayService.show(this, "low_readiness")
+                // Broadcast FOMO low_readiness event to Flutter
+                val fomoIntent2 = Intent("com.piplock.ACTION_BROKER_DETECTED")
+                fomoIntent2.setPackage(packageName)
+                fomoIntent2.putExtra("event_type", "fomo_detected")
+                fomoIntent2.putExtra("fomo_detected", true)
+                sendBroadcast(fomoIntent2)
             }
         }
 
@@ -837,6 +870,12 @@ class PipLockAccessibilityService : AccessibilityService() {
                 Log.w(TAG, "Revenge trading pattern detected: new pos ${now - lastLossTime}ms after loss")
                 lastRevengeAlertTime = now
                 FomoGatekeeperOverlayService.show(this, "revenge_trading")
+                // Broadcast revenge event to Flutter
+                val intent = Intent("com.piplock.ACTION_BROKER_DETECTED")
+                intent.setPackage(packageName)
+                intent.putExtra("event_type", "revenge_detected")
+                intent.putExtra("revenge_detected", true)
+                sendBroadcast(intent)
             }
         }
         lastPositionCountForRevenge = currentPositions
@@ -867,6 +906,15 @@ class PipLockAccessibilityService : AccessibilityService() {
             lastOverleveragingAlertTime = now
             FomoGatekeeperOverlayService.show(this, "overleveraging")
         }
+    }
+
+    private fun parseTimeMins(timeStr: String): Int {
+        val parts = timeStr.trim().split(":")
+        if (parts.size < 2) return -1
+        val h = parts[0].toIntOrNull() ?: return -1
+        val m = parts[1].toIntOrNull() ?: return -1
+        if (h < 0 || h > 23 || m < 0 || m > 59) return -1
+        return h * 60 + m
     }
 
     private fun checkOvertradingSoft(data: ExtractedData) {

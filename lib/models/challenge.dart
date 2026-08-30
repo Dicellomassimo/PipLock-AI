@@ -14,6 +14,22 @@ class Challenge {
   final DateTime startedAt;
   final String? accountNumber;
 
+  // ── Challenge Protocol fields (migration 009) ──────────────────────
+  final String? propFirmPreset;       // es. 'ftmo_2phase'
+  final int phases;                   // 1 o 2
+  final String drawdownType;          // 'static' | 'trailing_eod'
+  final bool consistencyRule;
+  final double? consistencyRulePct;   // % max winning day su totale
+  final bool newsRestriction;
+  final bool overnightRestriction;
+  final double? winRate;              // 0.0–1.0
+  final double? avgRr;                // es. 2.0 per 1:2
+  final int? tradesPerDayStrategy;
+  final String riskProfile;           // 'conservative'|'balanced'|'aggressive'
+  final double? monteCarloPassPct;
+  final String? monteCarloRange;      // es. '68–76'
+  final DateTime? monteCarloUpdatedAt;
+
   const Challenge({
     required this.id,
     required this.userId,
@@ -29,6 +45,21 @@ class Challenge {
     this.aiPlan,
     required this.startedAt,
     this.accountNumber,
+    // Challenge Protocol fields
+    this.propFirmPreset,
+    this.phases = 2,
+    this.drawdownType = 'static',
+    this.consistencyRule = false,
+    this.consistencyRulePct,
+    this.newsRestriction = false,
+    this.overnightRestriction = false,
+    this.winRate,
+    this.avgRr,
+    this.tradesPerDayStrategy,
+    this.riskProfile = 'balanced',
+    this.monteCarloPassPct,
+    this.monteCarloRange,
+    this.monteCarloUpdatedAt,
   });
 
   factory Challenge.fromJson(Map<String, dynamic> json) {
@@ -49,6 +80,23 @@ class Challenge {
           ? DateTime.parse(json['started_at'] as String)
           : DateTime.now(),
       accountNumber: json['account_number'] as String?,
+      // Challenge Protocol fields
+      propFirmPreset: json['prop_firm_preset'] as String?,
+      phases: json['phases'] as int? ?? 2,
+      drawdownType: json['drawdown_type'] as String? ?? 'static',
+      consistencyRule: json['consistency_rule'] as bool? ?? false,
+      consistencyRulePct: (json['consistency_rule_pct'] as num?)?.toDouble(),
+      newsRestriction: json['news_restriction'] as bool? ?? false,
+      overnightRestriction: json['overnight_restriction'] as bool? ?? false,
+      winRate: (json['win_rate'] as num?)?.toDouble(),
+      avgRr: (json['avg_rr'] as num?)?.toDouble(),
+      tradesPerDayStrategy: json['trades_per_day_strategy'] as int?,
+      riskProfile: json['risk_profile'] as String? ?? 'balanced',
+      monteCarloPassPct: (json['monte_carlo_pass_pct'] as num?)?.toDouble(),
+      monteCarloRange: json['monte_carlo_range'] as String?,
+      monteCarloUpdatedAt: json['monte_carlo_updated_at'] != null
+          ? DateTime.parse(json['monte_carlo_updated_at'] as String)
+          : null,
     );
   }
 
@@ -68,6 +116,21 @@ class Challenge {
       'ai_plan': aiPlan,
       'started_at': startedAt.toIso8601String(),
       'account_number': accountNumber,
+      // Challenge Protocol fields
+      'prop_firm_preset': propFirmPreset,
+      'phases': phases,
+      'drawdown_type': drawdownType,
+      'consistency_rule': consistencyRule,
+      'consistency_rule_pct': consistencyRulePct,
+      'news_restriction': newsRestriction,
+      'overnight_restriction': overnightRestriction,
+      'win_rate': winRate,
+      'avg_rr': avgRr,
+      'trades_per_day_strategy': tradesPerDayStrategy,
+      'risk_profile': riskProfile,
+      'monte_carlo_pass_pct': monteCarloPassPct,
+      'monte_carlo_range': monteCarloRange,
+      'monte_carlo_updated_at': monteCarloUpdatedAt?.toIso8601String(),
     };
   }
 
@@ -86,6 +149,21 @@ class Challenge {
     Map<String, dynamic>? aiPlan,
     DateTime? startedAt,
     String? accountNumber,
+    // Challenge Protocol fields
+    String? propFirmPreset,
+    int? phases,
+    String? drawdownType,
+    bool? consistencyRule,
+    double? consistencyRulePct,
+    bool? newsRestriction,
+    bool? overnightRestriction,
+    double? winRate,
+    double? avgRr,
+    int? tradesPerDayStrategy,
+    String? riskProfile,
+    double? monteCarloPassPct,
+    String? monteCarloRange,
+    DateTime? monteCarloUpdatedAt,
   }) {
     return Challenge(
       id: id ?? this.id,
@@ -102,6 +180,20 @@ class Challenge {
       aiPlan: aiPlan ?? this.aiPlan,
       startedAt: startedAt ?? this.startedAt,
       accountNumber: accountNumber ?? this.accountNumber,
+      propFirmPreset: propFirmPreset ?? this.propFirmPreset,
+      phases: phases ?? this.phases,
+      drawdownType: drawdownType ?? this.drawdownType,
+      consistencyRule: consistencyRule ?? this.consistencyRule,
+      consistencyRulePct: consistencyRulePct ?? this.consistencyRulePct,
+      newsRestriction: newsRestriction ?? this.newsRestriction,
+      overnightRestriction: overnightRestriction ?? this.overnightRestriction,
+      winRate: winRate ?? this.winRate,
+      avgRr: avgRr ?? this.avgRr,
+      tradesPerDayStrategy: tradesPerDayStrategy ?? this.tradesPerDayStrategy,
+      riskProfile: riskProfile ?? this.riskProfile,
+      monteCarloPassPct: monteCarloPassPct ?? this.monteCarloPassPct,
+      monteCarloRange: monteCarloRange ?? this.monteCarloRange,
+      monteCarloUpdatedAt: monteCarloUpdatedAt ?? this.monteCarloUpdatedAt,
     );
   }
 

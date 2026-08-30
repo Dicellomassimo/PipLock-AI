@@ -49,6 +49,9 @@ interface EAPayload {
   secret?: string;
   account_login?: string;
   account_server?: string;
+  consecutive_losses?: number;
+  last_lot_size?: number;
+  last_trade_close_time?: string;
 }
 
 // ------------------------------------------------------------------ //
@@ -271,6 +274,16 @@ async function handleHeartbeat(
   supabase: ReturnType<typeof createClient>,
   payload: EAPayload,
 ) {
+  // Sanitize new optional fields
+  const equity = sanitizeNumber(payload.equity, -1_000_000, 10_000_000);
+  const balance = sanitizeNumber(payload.balance, -1_000_000, 10_000_000);
+  const dailyPnl = sanitizeNumber(payload.daily_pnl, -1_000_000, 10_000_000);
+  const drawdownPct = sanitizeNumber(payload.drawdown_percent, 0, 100);
+  const trades = Math.floor(sanitizeNumber(payload.trades, 0, 10_000));
+  const consecutiveLosses = Math.floor(sanitizeNumber(payload.consecutive_losses ?? 0, 0, 100));
+  const lastLotSize = sanitizeNumber(payload.last_lot_size ?? 0, 0, 10000);
+  const lastTradeCloseTime = typeof payload.last_trade_close_time === 'string' ? payload.last_trade_close_time : null;
+
   const { error } = await supabase
     .from("broker_connections")
     .upsert(
@@ -281,6 +294,21 @@ async function handleHeartbeat(
         status: "connected",
         last_sync_at: new Date().toISOString(),
         // webhook_secret is NOT touched here — only rotate_webhook_secret() can update it
+        live_data: {
+          equity,
+          balance,
+          daily_pnl: dailyPnl,
+          daily_loss_usd: Math.max(0, -dailyPnl),
+          daily_loss_pct: balance > 0 ? Math.max(0, (-dailyPnl / balance) * 100) : 0,
+          drawdown_pct: drawdownPct,
+          open_positions: 0,   // EA doesn't track open positions separately
+          trades_today: trades,
+          currency: typeof (payload as any).currency === 'string' ? (payload as any).currency : 'USD',
+          consecutive_losses: consecutiveLosses,
+          last_lot_size: lastLotSize > 0 ? lastLotSize : null,
+          last_trade_close_time: lastTradeCloseTime,
+          last_update: new Date().toISOString(),
+        },
       },
       { onConflict: "user_id", ignoreDuplicates: false },
     );

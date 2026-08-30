@@ -6,12 +6,16 @@ class ObserverState {
   final DateTime? startedAt;
   final int consecutiveDays;
   final DateTime? lastCleanDate;
+  final int sessionsToday;
+  final int bestStreak;
 
   const ObserverState({
     this.isActive = false,
     this.startedAt,
     this.consecutiveDays = 0,
     this.lastCleanDate,
+    this.sessionsToday = 0,
+    this.bestStreak = 0,
   });
 
   ObserverState copyWith({
@@ -19,12 +23,16 @@ class ObserverState {
     DateTime? startedAt,
     int? consecutiveDays,
     DateTime? lastCleanDate,
+    int? sessionsToday,
+    int? bestStreak,
   }) {
     return ObserverState(
       isActive: isActive ?? this.isActive,
       startedAt: startedAt ?? this.startedAt,
       consecutiveDays: consecutiveDays ?? this.consecutiveDays,
       lastCleanDate: lastCleanDate ?? this.lastCleanDate,
+      sessionsToday: sessionsToday ?? this.sessionsToday,
+      bestStreak: bestStreak ?? this.bestStreak,
     );
   }
 }
@@ -34,6 +42,9 @@ class ObserverNotifier extends StateNotifier<ObserverState> {
   static const _startedAtKey = 'observer_started_at';
   static const _consecutiveDaysKey = 'observer_consecutive_days';
   static const _lastDateKey = 'observer_last_date';
+  static const _sessionsTodayKey = 'observer_sessions_today';
+  static const _sessionsTodayDateKey = 'observer_sessions_today_date';
+  static const _bestStreakKey = 'observer_best_streak';
 
   ObserverNotifier() : super(const ObserverState()) {
     loadState();
@@ -45,6 +56,18 @@ class ObserverNotifier extends StateNotifier<ObserverState> {
     final startedAtMs = prefs.getInt(_startedAtKey);
     final consecutiveDays = prefs.getInt(_consecutiveDaysKey) ?? 0;
     final lastDateMs = prefs.getInt(_lastDateKey);
+    final bestStreak = prefs.getInt(_bestStreakKey) ?? 0;
+
+    // Reset sessionsToday if last session date != today
+    final sessionsTodayDate = prefs.getString(_sessionsTodayDateKey);
+    final todayStr = _dateKey(DateTime.now());
+    final sessionsToday = sessionsTodayDate == todayStr
+        ? (prefs.getInt(_sessionsTodayKey) ?? 0)
+        : 0;
+    if (sessionsTodayDate != todayStr) {
+      await prefs.setInt(_sessionsTodayKey, 0);
+      await prefs.setString(_sessionsTodayDateKey, todayStr);
+    }
 
     state = ObserverState(
       isActive: isActive,
@@ -53,12 +76,18 @@ class ObserverNotifier extends StateNotifier<ObserverState> {
       consecutiveDays: consecutiveDays,
       lastCleanDate:
           lastDateMs != null ? DateTime.fromMillisecondsSinceEpoch(lastDateMs) : null,
+      sessionsToday: sessionsToday,
+      bestStreak: bestStreak,
     );
   }
+
+  static String _dateKey(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   Future<void> activate() async {
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now();
+    final todayStr = _dateKey(now);
 
     // Calcola la streak
     int consecutive = state.consecutiveDays;
@@ -70,13 +99,23 @@ class ObserverNotifier extends StateNotifier<ObserverState> {
       if (lastDay == yesterday) {
         consecutive += 1;
       } else if (lastDay != DateTime(now.year, now.month, now.day)) {
-        // Più di un giorno fa — streak azzerata
         consecutive = 1;
       }
-      // Se è lo stesso giorno, non cambia
     } else {
       consecutive = 1;
     }
+
+    // Aggiorna sessionsToday
+    final sessionsTodayDate = prefs.getString(_sessionsTodayDateKey);
+    int sessionsToday = sessionsTodayDate == todayStr
+        ? (prefs.getInt(_sessionsTodayKey) ?? 0) + 1
+        : 1;
+    await prefs.setInt(_sessionsTodayKey, sessionsToday);
+    await prefs.setString(_sessionsTodayDateKey, todayStr);
+
+    // Aggiorna bestStreak
+    final bestStreak = consecutive > state.bestStreak ? consecutive : state.bestStreak;
+    await prefs.setInt(_bestStreakKey, bestStreak);
 
     await prefs.setBool(_activeKey, true);
     await prefs.setInt(_startedAtKey, now.millisecondsSinceEpoch);
@@ -88,6 +127,8 @@ class ObserverNotifier extends StateNotifier<ObserverState> {
       startedAt: now,
       consecutiveDays: consecutive,
       lastCleanDate: now,
+      sessionsToday: sessionsToday,
+      bestStreak: bestStreak,
     );
   }
 

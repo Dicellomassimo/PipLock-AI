@@ -31,6 +31,7 @@ class TradeLimitOverlayService : Service() {
 
     companion object {
         private const val CHANNEL_ID = "piplock_trade_limit"
+        // Channel name shown in Android Settings → App Notifications
         private const val NOTIF_ID   = 1002
         const val EXTRA_CURRENT_TRADES = "current_trades"
         const val EXTRA_MAX_TRADES     = "max_trades"
@@ -118,14 +119,14 @@ class TradeLimitOverlayService : Service() {
         }
 
         val title = TextView(ctx).apply {
-            text      = "Limite trade raggiunto ($current/$max)"
+            text      = "Trade limit reached ($current/$max)"
             textSize  = 13f
             setTextColor(Color.WHITE)
             setTypeface(null, Typeface.BOLD)
         }
 
         val sub = TextView(ctx).apply {
-            text     = "Gestisci le posizioni aperte. Vai su PipLock per modificare i limiti."
+            text     = "Manage your open positions. Open PipLock to adjust your limits."
             textSize = 11f
             setTextColor(Color.parseColor("#FFDDBB"))
         }
@@ -181,7 +182,7 @@ class TradeLimitOverlayService : Service() {
 
     private fun createNotificationChannel() {
         val channel = NotificationChannel(
-            CHANNEL_ID, "PipLock Trade Limit", NotificationManager.IMPORTANCE_LOW
+            CHANNEL_ID, "PipLock — Trade Limit", NotificationManager.IMPORTANCE_LOW
         )
         (getSystemService(NOTIFICATION_SERVICE) as NotificationManager)
             .createNotificationChannel(channel)
@@ -189,8 +190,8 @@ class TradeLimitOverlayService : Service() {
 
     private fun buildNotification(current: Int, max: Int): Notification {
         return Notification.Builder(this, CHANNEL_ID)
-            .setContentTitle("PipLock — Limite trade")
-            .setContentText("Hai raggiunto il limite ($current/$max). Vai su PipLock per modificare.")
+            .setContentTitle("PipLock — Trade limit reached")
+            .setContentText("You reached the limit ($current/$max). Open PipLock to adjust.")
             .setSmallIcon(android.R.drawable.ic_dialog_alert)
             .setOngoing(true)
             .build()

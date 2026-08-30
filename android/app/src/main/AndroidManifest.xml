@@ -13,6 +13,10 @@
         tools:ignore="ExactAlarm" />
     <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
 
+    <!-- Biometric authentication -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.USE_FINGERPRINT" />
+
     <!-- Accessibility Service (per rilevamento app broker) -->
     <uses-permission android:name="android.permission.BIND_ACCESSIBILITY_SERVICE"
         tools:ignore="ProtectedPermissions" />

@@ -1,7 +1,8 @@
 class Profile {
   final String id;
   final String accountMode; // 'personal' | 'challenge'
-  final int tokensAvailable;
+  final int tokensWeekly;   // free tokens that reset every Sunday
+  final int tokensPurchased; // purchased tokens that never reset
   final DateTime? tokensResetAt;
   final String subscriptionTier; // 'free' | 'pro'
   final DateTime createdAt;
@@ -9,17 +10,27 @@ class Profile {
   const Profile({
     required this.id,
     required this.accountMode,
-    required this.tokensAvailable,
+    this.tokensWeekly = 2,
+    this.tokensPurchased = 0,
     this.tokensResetAt,
     required this.subscriptionTier,
     required this.createdAt,
   });
 
+  /// Total tokens available = weekly free + purchased
+  int get tokensAvailable => tokensWeekly + tokensPurchased;
+
   factory Profile.fromJson(Map<String, dynamic> json) {
+    // Support both old schema (tokens_available) and new split schema
+    final rawWeekly = json['tokens_weekly'] as int?;
+    final rawPurchased = json['tokens_purchased'] as int? ?? 0;
+    final rawAvailable = json['tokens_available'] as int? ?? 2;
+    final tokensWeekly = rawWeekly ?? (rawAvailable > rawPurchased ? rawAvailable - rawPurchased : rawAvailable).clamp(0, 2);
     return Profile(
       id: json['id'] as String,
       accountMode: json['account_mode'] as String? ?? 'personal',
-      tokensAvailable: json['tokens_available'] as int? ?? 2,
+      tokensWeekly: tokensWeekly,
+      tokensPurchased: rawPurchased,
       tokensResetAt: json['tokens_reset_at'] != null
           ? DateTime.parse(json['tokens_reset_at'] as String)
           : null,
@@ -34,6 +45,8 @@ class Profile {
     return {
       'id': id,
       'account_mode': accountMode,
+      'tokens_weekly': tokensWeekly,
+      'tokens_purchased': tokensPurchased,
       'tokens_available': tokensAvailable,
       'tokens_reset_at': tokensResetAt?.toIso8601String(),
       'subscription_tier': subscriptionTier,
@@ -44,7 +57,8 @@ class Profile {
   Profile copyWith({
     String? id,
     String? accountMode,
-    int? tokensAvailable,
+    int? tokensWeekly,
+    int? tokensPurchased,
     DateTime? tokensResetAt,
     String? subscriptionTier,
     DateTime? createdAt,
@@ -52,7 +66,8 @@ class Profile {
     return Profile(
       id: id ?? this.id,
       accountMode: accountMode ?? this.accountMode,
-      tokensAvailable: tokensAvailable ?? this.tokensAvailable,
+      tokensWeekly: tokensWeekly ?? this.tokensWeekly,
+      tokensPurchased: tokensPurchased ?? this.tokensPurchased,
       tokensResetAt: tokensResetAt ?? this.tokensResetAt,
       subscriptionTier: subscriptionTier ?? this.subscriptionTier,
       createdAt: createdAt ?? this.createdAt,
@@ -62,7 +77,8 @@ class Profile {
   static Profile get mock => Profile(
         id: 'test-user-001',
         accountMode: 'personal',
-        tokensAvailable: 2,
+        tokensWeekly: 2,
+        tokensPurchased: 0,
         tokensResetAt: DateTime.now().add(const Duration(days: 3)),
         subscriptionTier: 'free',
         createdAt: DateTime.now().subtract(const Duration(days: 10)),

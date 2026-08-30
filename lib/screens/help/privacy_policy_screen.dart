@@ -840,7 +840,7 @@ class _PrivacyPolicyScreenState extends ConsumerState<PrivacyPolicyScreen>
           Divider(height: 1, thickness: 1, color: AppColors.divider),
           _priceRow(
             s.t('Pro — monthly', 'Pro — mensile'),
-            s.t('Full AI Planner + unlimited tokens + 7-day trial', 'AI Planner completo + token illimitati + 7 giorni di prova'),
+            s.t('Full AI Planner + advanced analytics + 7-day trial', 'AI Planner completo + analytics avanzate + 7 giorni di prova'),
             '€19.99',
             AppColors.accent,
           ),

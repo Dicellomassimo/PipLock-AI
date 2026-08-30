@@ -165,4 +165,27 @@ class AppColors {
   static const Color lightTextTertiary  = Color(0xFF9EA8BC);
   static const Color lightDivider       = Color(0xFFE3E6EE);
   static const Color lightBorder        = Color(0xFFD8DCE9);
+
+  // ── Per-page accent tints (background gradient overlay, very subtle) ──────
+  // Dashboard: default background — no override
+  // AI Planner: indigo/purple tint (intelligence, AI)
+  static const Color pageAiTint      = Color(0xFF1A1035); // deep indigo bg overlay
+  static const LinearGradient pageAiGradient = LinearGradient(
+    colors: [Color(0xFF13102A), Color(0xFF0A0A0F)],
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+  );
+  static const Color pageAiAccent    = Color(0xFF9B7EF8); // soft violet
+
+  // History/Stats: teal/emerald tint (growth, profit)
+  static const Color pageHistoryTint = Color(0xFF0A1F1A);
+  static const LinearGradient pageHistoryGradient = LinearGradient(
+    colors: [Color(0xFF0D1F1A), Color(0xFF0A0A0F)],
+    begin: Alignment.topCenter,
+    end: Alignment.bottomCenter,
+  );
+  static const Color pageHistoryAccent = Color(0xFF00C896); // teal-mint
+
+  // Settings: neutral charcoal — no accent override, same as default
+  static const Color pageSettingsTint = Color(0xFF0F0F14);
 }

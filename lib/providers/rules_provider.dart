@@ -1,20 +1,28 @@
+import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import '../models/personal_rules.dart';
 import '../services/accessibility_service.dart';
 import '../services/supabase_service.dart';
+import '../config/constants.dart';
 import 'auth_provider.dart';
+import 'personal_accounts_provider.dart';
 
 class RulesState {
   final PersonalRules? rules;
   final int tradesToday;
   final double lossToday;
   final bool isLoading;
+  /// Score del check-in giornaliero (0 = non ancora fatto, 1-5 = punteggio)
+  final int checkinScore;
 
   const RulesState({
     this.rules,
     this.tradesToday = 0,
     this.lossToday = 0.0,
     this.isLoading = false,
+    this.checkinScore = 0,
   });
 
   RulesState copyWith({
@@ -22,13 +30,25 @@ class RulesState {
     int? tradesToday,
     double? lossToday,
     bool? isLoading,
+    int? checkinScore,
   }) {
     return RulesState(
       rules: rules ?? this.rules,
       tradesToday: tradesToday ?? this.tradesToday,
       lossToday: lossToday ?? this.lossToday,
       isLoading: isLoading ?? this.isLoading,
+      checkinScore: checkinScore ?? this.checkinScore,
     );
+  }
+
+  /// Limite trades effettivo per oggi, considerando lo score check-in.
+  /// Se score è basso (1-4), riduce il limite del 30%.
+  int get effectiveMaxTrades {
+    final base = rules?.maxTradesPerDay ?? 3;
+    if (checkinScore > 0 && checkinScore < 5) {
+      return (base * 0.7).round().clamp(1, base);
+    }
+    return base;
   }
 
   /// Percentuale utilizzo trade oggi (0.0 - 1.0)
@@ -71,17 +91,34 @@ class RulesNotifier extends StateNotifier<RulesState> {
   final Ref _ref;
   bool _disposed = false;
 
+  // ── Daily-counter persistence keys ─────────────────────────────────────────
+  static String _todayKey() {
+    final n = DateTime.now();
+    return '${n.year}-${n.month.toString().padLeft(2, '0')}-${n.day.toString().padLeft(2, '0')}';
+  }
+
+  static const _kDate   = 'daily_counters_date';
+  static const _kTrades = 'daily_trades_count';
+  static const _kLoss   = 'daily_loss_amount';
+
   RulesNotifier(this._ref) : super(const RulesState()) {
     _loadRules();
-    // Ricarica le regole quando l'autenticazione si risolve.
-    // rulesProvider viene creato prima che authProvider finisca di caricare
-    // il profilo → userId è vuoto al primo _loadRules() → regole mai caricate.
+    // Reload rules when the authenticated user changes
     _ref.listen<AuthState>(authProvider, (prev, next) {
       final prevId = prev?.profile?.id ?? '';
       final nextId = next.profile?.id ?? '';
       if (nextId.isNotEmpty && nextId != prevId) {
         _loadRules();
       }
+    });
+    // When the active personal account changes, update rules without resetting counters
+    _ref.listen<PersonalAccountsState>(personalAccountsProvider, (_, next) {
+      if (_disposed) return;
+      final active = next.activeAccount;
+      if (active == null) return;
+      final rules = active.toPersonalRules();
+      state = state.copyWith(rules: rules);
+      _syncToNative(rules);
     });
   }
 
@@ -96,11 +133,14 @@ class RulesNotifier extends StateNotifier<RulesState> {
         return;
       }
       final rules = await SupabaseService.getPersonalRules(userId);
+      final (trades, loss) = await _loadDailyCounters(userId);
+      final checkinScore = await _loadTodayCheckinScore();
       if (_disposed) return;
       state = RulesState(
         rules: rules,
-        tradesToday: 0,
-        lossToday: 0.0,
+        tradesToday: trades,
+        lossToday: loss,
+        checkinScore: checkinScore,
       );
       // Sincronizza le regole alle SharedPreferences native
       // così PipLockAccessibilityService può triggerare il killswitch
@@ -117,6 +157,68 @@ class RulesNotifier extends StateNotifier<RulesState> {
       }
     }
   }
+
+  Future<int> _loadTodayCheckinScore() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getInt('checkin_score_today') ?? 0;
+  }
+
+  /// Aggiorna lo score check-in e ricalcola effectiveMaxTrades.
+  void updateCheckinScore(int score) {
+    state = state.copyWith(checkinScore: score);
+  }
+
+  // ── Daily counter helpers ───────────────────────────────────────────────────
+
+  Future<(int, double)> _loadDailyCounters(String userId) async {
+    final today = _todayKey();
+    final prefs = await SharedPreferences.getInstance();
+
+    if (prefs.getString(_kDate) == today) {
+      return (prefs.getInt(_kTrades) ?? 0, prefs.getDouble(_kLoss) ?? 0.0);
+    }
+
+    // New day — query today's journal entries to reconstruct counters
+    if (!kDevMode && userId.isNotEmpty) {
+      try {
+        final now = DateTime.now();
+        final dayStart = DateTime(now.year, now.month, now.day);
+        final response = await Supabase.instance.client
+            .from('journal_entries')
+            .select('pnl')
+            .eq('user_id', userId)
+            .gte('date', dayStart.toIso8601String())
+            .lt('date', dayStart.add(const Duration(days: 1)).toIso8601String());
+
+        final entries = response as List;
+        int trades = entries.length;
+        double loss = 0.0;
+        for (final e in entries) {
+          final pnl = (e['pnl'] as num?)?.toDouble() ?? 0.0;
+          if (pnl < 0) loss += pnl.abs();
+        }
+        await _writeCounters(prefs, today, trades, loss);
+        return (trades, loss);
+      } catch (_) {}
+    }
+
+    await _writeCounters(prefs, today, 0, 0.0);
+    return (0, 0.0);
+  }
+
+  Future<void> _writeCounters(
+      SharedPreferences prefs, String date, int trades, double loss) async {
+    await prefs.setString(_kDate, date);
+    await prefs.setInt(_kTrades, trades);
+    await prefs.setDouble(_kLoss, loss);
+  }
+
+  Future<void> _persistCounters(int trades, double loss) async {
+    final prefs = await SharedPreferences.getInstance();
+    await _writeCounters(prefs, _todayKey(), trades, loss);
+  }
+
+  // ── Public methods ─────────────────────────────────────────────────────────
 
   @override
   void dispose() {
@@ -156,15 +258,20 @@ class RulesNotifier extends StateNotifier<RulesState> {
   }
 
   void trackTrade() {
-    state = state.copyWith(tradesToday: state.tradesToday + 1);
+    final n = state.tradesToday + 1;
+    state = state.copyWith(tradesToday: n);
+    _persistCounters(n, state.lossToday);
   }
 
   void trackLoss(double amount) {
-    state = state.copyWith(lossToday: state.lossToday + amount);
+    final l = state.lossToday + amount;
+    state = state.copyWith(lossToday: l);
+    _persistCounters(state.tradesToday, l);
   }
 
   void resetDay() {
     state = state.copyWith(tradesToday: 0, lossToday: 0.0);
+    _persistCounters(0, 0.0);
   }
 
   bool isKillswitchTriggered() => state.isKillswitchTriggered;

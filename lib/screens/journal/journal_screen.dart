@@ -8,12 +8,29 @@ import '../../models/journal_entry.dart';
 import '../../providers/journal_provider.dart';
 import '../../providers/locale_provider.dart';
 import '../../services/share_service.dart';
+import '../dashboard/dashboard_screen.dart' show QuickLogSheet;
 
-class JournalScreen extends ConsumerWidget {
+class JournalScreen extends ConsumerStatefulWidget {
   const JournalScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<JournalScreen> createState() => _JournalScreenState();
+}
+
+class _JournalScreenState extends ConsumerState<JournalScreen> {
+  void _showQuickLog() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => QuickLogSheet(
+        onSubmit: (entry) => ref.read(journalProvider.notifier).addEntry(entry),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final state = ref.watch(journalProvider);
     final s = ref.watch(appStringsProvider);
 
@@ -31,6 +48,11 @@ class JournalScreen extends ConsumerWidget {
         backgroundColor: AppColors.background,
         elevation: 0,
         actions: [
+          IconButton(
+            icon: const Icon(Icons.flash_on_outlined, color: AppColors.textSecondary),
+            tooltip: s.t('Quick log', 'Log rapido'),
+            onPressed: _showQuickLog,
+          ),
           IconButton(
             icon: const Icon(Icons.share_outlined, color: AppColors.textSecondary),
             tooltip: s.t('Share stats', 'Condividi statistiche'),
@@ -239,7 +261,7 @@ class _JournalContent extends ConsumerWidget {
         ] else ...[
           _AnalyzeButton(
             onTap: () => ref.read(journalProvider.notifier).analyzeWithAI(),
-            isLoading: state.isLoading,
+            isLoading: state.isSaving,
           ),
           const SizedBox(height: 12),
         ],

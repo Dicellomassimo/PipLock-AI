@@ -22,11 +22,12 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
 
   void _startTrial() {
     final s = ref.read(appStringsProvider);
+    final isAnnual = _selectedPlan == 1;
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _RegistrationSheet(s: s),
+      builder: (_) => _RegistrationSheet(s: s, isAnnual: isAnnual),
     );
   }
 
@@ -365,14 +366,13 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
       (s.t('Killswitch', 'Killswitch'), true, true),
       (s.t('Manual rule setup', 'Regole manuali'), true, true),
       (s.t('2 unlock tokens/week', '2 token sblocco/settimana'), true, true),
-      (s.t('Extra tokens purchasable', 'Token extra acquistabili'), true, true),
+      (s.t('2 unlock tokens/week (fixed)', '2 token sblocco/sett. (fissi)'), true, true),
       (s.t('AI Planner for challenges', 'AI Planner per challenge'), false, true),
       (s.t('MT5 EA integration', 'Integrazione EA MT5'), false, true),
       (s.t('Pre-session check-in', 'Check-in pre-sessione'), false, true),
       (s.t('FOMO Gatekeeper alerts', 'Alert Gatekeeper FOMO'), false, true),
       (s.t('Advanced statistics', 'Statistiche avanzate'), false, true),
       (s.t('Trade Journal + AI insights', 'Diario + AI insights'), false, true),
-      (s.t('Biometric unlock', 'Sblocco biometrico'), false, true),
       (s.t('1-year history', 'Storico 1 anno'), false, true),
     ];
 
@@ -587,7 +587,8 @@ class _PlanTab extends StatelessWidget {
 // ── Registration bottom sheet ─────────────────────────────────────────────────
 class _RegistrationSheet extends StatefulWidget {
   final AppStrings s;
-  const _RegistrationSheet({required this.s});
+  final bool isAnnual;
+  const _RegistrationSheet({required this.s, this.isAnnual = true});
 
   @override
   State<_RegistrationSheet> createState() => _RegistrationSheetState();
@@ -719,10 +720,15 @@ class _RegistrationSheetState extends State<_RegistrationSheet> {
             ),
             const SizedBox(height: 4),
             Text(
-              widget.s.t(
-                '7 days free, then €19.99/month',
-                '7 giorni gratis, poi €19.99/mese',
-              ),
+              widget.isAnnual
+                  ? widget.s.t(
+                      '7 days free, then €13.99/mo (billed annually)',
+                      '7 giorni gratis, poi €13.99/mese (annuale)',
+                    )
+                  : widget.s.t(
+                      '7 days free, then €19.99/month',
+                      '7 giorni gratis, poi €19.99/mese',
+                    ),
               style: GoogleFonts.manrope(
                 color: AppColors.textSecondary,
                 fontSize: 13,

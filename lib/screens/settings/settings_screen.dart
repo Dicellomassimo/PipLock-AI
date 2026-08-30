@@ -6,8 +6,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_strings.dart';
+import '../../models/personal_account.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/locale_provider.dart';
+import '../../providers/personal_accounts_provider.dart';
 import '../../widgets/ambient_blobs.dart';
 import '../help/help_faq_screen.dart';
 import '../help/privacy_policy_screen.dart';
@@ -165,6 +167,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final displayName = email.contains('@') ? email.split('@').first : email;
     final isPro = profile?.subscriptionTier == 'pro';
     final joinYear = profile?.createdAt.year ?? DateTime.now().year;
+    final accountsState = ref.watch(personalAccountsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
@@ -179,6 +182,12 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // ── Hero header ────────────────────────────────────────────────────
           _buildHeroHeader(displayName, email, isPro, joinYear, profile?.tokensAvailable ?? 0, s),
           const SizedBox(height: 28),
+
+          // ── Sezione My Accounts ───────────────────────────────────────────
+          _sectionLabel('My Accounts'),
+          const SizedBox(height: 10),
+          _buildAccountsSection(context, accountsState),
+          const SizedBox(height: 24),
 
           // ── Sezione Configurazione ─────────────────────────────────────────
           _sectionLabel(s.settingsSectionGeneral),
@@ -221,6 +230,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           // ── Sezione Account ────────────────────────────────────────────────
           _sectionLabel(s.settingsSectionAccount),
           const SizedBox(height: 10),
+          // Token balance card — inline, zero extra taps
+          _TokenBalanceCard(
+            tokensWeekly: profile?.tokensWeekly ?? 0,
+          ),
+          const SizedBox(height: 10),
           _sectionCard([
             _SettingRow(
               icon: Icons.diamond_rounded,
@@ -228,7 +242,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               title: s.settingsTileSubscription,
               subtitle: isPro ? s.settingsProActive : s.settingsUpgradePro,
               subtitleColor: isPro ? AppColors.accent : null,
-              onTap: () => Navigator.pushNamed(context, '/tokens'),
+              onTap: () => Navigator.pushNamed(context, '/paywall'),
             ),
             _SettingRow(
               icon: Icons.shield_rounded,
@@ -348,6 +362,238 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         ],
       ),
     );
+  }
+
+  // ── My Accounts Section ────────────────────────────────────────────────────
+
+  Widget _buildAccountsSection(
+      BuildContext context, PersonalAccountsState accountsState) {
+    final accounts = accountsState.accounts;
+    final activeId = accountsState.activeAccount?.id;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        decoration: BoxDecoration(
+          color: AppColors.cardBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Column(
+          children: [
+            // Account rows
+            for (int i = 0; i < accounts.length; i++) ...[
+              _buildAccountRow(context, accounts[i], activeId, i, accounts.length),
+              if (i < accounts.length - 1)
+                const Divider(height: 1, color: AppColors.border, indent: 56),
+            ],
+
+            // Divider before Add row (only when there are existing accounts)
+            if (accounts.isNotEmpty)
+              const Divider(height: 1, color: AppColors.border, indent: 56),
+
+            // Add account row
+            _PressableRow(
+              onTap: () => Navigator.pushNamed(context, '/broker'),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(Icons.add_rounded,
+                          color: AppColors.success, size: 17),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: Text(
+                        'Add account',
+                        style: GoogleFonts.manrope(
+                          color: AppColors.success,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right_rounded,
+                        color: AppColors.textTertiary, size: 18),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAccountRow(
+    BuildContext context,
+    PersonalAccount account,
+    String? activeId,
+    int index,
+    int total,
+  ) {
+    final isActive = account.id == activeId;
+    final connectionBadgeColor = _connectionColor(account.connectionMethod);
+
+    return Dismissible(
+      key: ValueKey(account.id),
+      direction: isActive ? DismissDirection.none : DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        decoration: BoxDecoration(
+          color: AppColors.danger.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(0),
+        ),
+        child: const Icon(Icons.delete_rounded, color: AppColors.danger, size: 20),
+      ),
+      confirmDismiss: (_) async {
+        if (isActive) return false;
+        return await showDialog<bool>(
+          context: context,
+          builder: (_) => AlertDialog(
+            backgroundColor: AppColors.cardBg,
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+            title: Text(
+              'Delete account?',
+              style: GoogleFonts.manrope(
+                  color: AppColors.textPrimary, fontWeight: FontWeight.w700),
+            ),
+            content: Text(
+              'This will remove "${account.name}" and all its rules. This cannot be undone.',
+              style: GoogleFonts.manrope(color: AppColors.textSecondary),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text('Cancel',
+                    style: GoogleFonts.manrope(
+                        color: AppColors.textSecondary)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text('Delete',
+                    style: GoogleFonts.manrope(
+                        color: AppColors.danger,
+                        fontWeight: FontWeight.w700)),
+              ),
+            ],
+          ),
+        );
+      },
+      onDismissed: (_) {
+        ref.read(personalAccountsProvider.notifier).deleteAccount(account.id);
+      },
+      child: _PressableRow(
+        onTap: () => ref
+            .read(personalAccountsProvider.notifier)
+            .setActiveAccount(account.id),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: isActive
+                      ? AppColors.accent.withValues(alpha: 0.15)
+                      : AppColors.cardBg2,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isActive
+                        ? AppColors.accent.withValues(alpha: 0.4)
+                        : Colors.transparent,
+                  ),
+                ),
+                child: Icon(
+                  Icons.account_balance_wallet_rounded,
+                  color: isActive ? AppColors.accent : AppColors.textSecondary,
+                  size: 16,
+                ),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      account.name,
+                      style: GoogleFonts.manrope(
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 6, vertical: 1),
+                          decoration: BoxDecoration(
+                            color: connectionBadgeColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            account.connectionMethod,
+                            style: GoogleFonts.manrope(
+                              color: connectionBadgeColor,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        if (account.accountNumber != null &&
+                            account.accountNumber!.isNotEmpty) ...[
+                          const SizedBox(width: 6),
+                          Text(
+                            '#${account.accountNumber}',
+                            style: GoogleFonts.manrope(
+                              color: AppColors.textTertiary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              if (isActive)
+                const Icon(Icons.check_circle_rounded,
+                    color: AppColors.accent, size: 18)
+              else
+                const Icon(Icons.chevron_right_rounded,
+                    color: AppColors.textTertiary, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Color _connectionColor(String method) {
+    switch (method) {
+      case 'ea':
+        return AppColors.success;
+      case 'accessibility':
+        return AppColors.warning;
+      case 'metaapi':
+      case 'ctrader':
+      case 'oanda':
+        return const Color(0xFF4A90E2);
+      default:
+        return AppColors.textSecondary;
+    }
   }
 
   // ── Hero Header ────────────────────────────────────────────────────────────
@@ -673,4 +919,110 @@ class _SettingRow {
     this.subtitleColor,
     required this.onTap,
   });
+}
+
+/// Inline token balance card shown in the Account section.
+/// Shows weekly token count only — no purchases, by design.
+class _TokenBalanceCard extends StatelessWidget {
+  final int tokensWeekly;
+
+  const _TokenBalanceCard({
+    required this.tokensWeekly,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final isLow = tokensWeekly == 0;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+        decoration: BoxDecoration(
+          color: AppColors.cardBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isLow
+                ? AppColors.warning.withValues(alpha: 0.3)
+                : AppColors.border,
+          ),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: AppColors.accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: const Icon(Icons.toll_rounded, color: AppColors.accent, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Killswitch Tokens',
+                    style: GoogleFonts.manrope(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 14,
+                      letterSpacing: -0.2,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    isLow ? 'Resets Sunday midnight' : '$tokensWeekly / 2 this week',
+                    style: GoogleFonts.manrope(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: isLow
+                    ? AppColors.warning.withValues(alpha: 0.12)
+                    : AppColors.accent.withValues(alpha: 0.10),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isLow
+                      ? AppColors.warning.withValues(alpha: 0.3)
+                      : AppColors.accent.withValues(alpha: 0.25),
+                ),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$tokensWeekly',
+                    style: GoogleFonts.manrope(
+                      color: isLow ? AppColors.warning : AppColors.accent,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    'tokens',
+                    style: GoogleFonts.manrope(
+                      color: isLow ? AppColors.warning : AppColors.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

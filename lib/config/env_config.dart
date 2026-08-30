@@ -30,7 +30,14 @@ class EnvConfig {
   static const googleWebClientId =
       String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
 
-  static const revenueCatApiKey =
+  /// Public API key per l'SDK RevenueCat (formato goog_xxxx).
+  /// Recuperalo da RevenueCat dashboard → Apps → [tua app Android] → Public API key.
+  static const revenueCatPublicKey =
+      String.fromEnvironment('REVENUECAT_PUBLIC_KEY');
+
+  /// Secret API key server-side (sk_...). NON va nell'app — usarla solo
+  /// in Supabase Edge Functions per validare i webhook RevenueCat.
+  static const revenueCatSecretKey =
       String.fromEnvironment('REVENUECAT_API_KEY');
 
   /// True when the minimum required configuration is present.

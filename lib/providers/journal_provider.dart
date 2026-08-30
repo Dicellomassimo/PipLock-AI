@@ -4,16 +4,20 @@ import '../models/journal_entry.dart';
 import '../config/constants.dart';
 import '../services/ai_service.dart';
 import 'auth_provider.dart';
+import 'killswitch_provider.dart';
+import 'rules_provider.dart';
 
 class JournalState {
   final List<JournalEntry> entries;
-  final bool isLoading;
+  final bool isLoading;  // initial load (no entries shown yet)
+  final bool isSaving;   // saving/deleting a single entry (entries remain visible)
   final String? error;
   final String? aiInsights;
 
   const JournalState({
     this.entries = const [],
     this.isLoading = false,
+    this.isSaving = false,
     this.error,
     this.aiInsights,
   });
@@ -21,6 +25,7 @@ class JournalState {
   JournalState copyWith({
     List<JournalEntry>? entries,
     bool? isLoading,
+    bool? isSaving,
     String? error,
     String? aiInsights,
     bool clearError = false,
@@ -29,6 +34,7 @@ class JournalState {
     return JournalState(
       entries: entries ?? this.entries,
       isLoading: isLoading ?? this.isLoading,
+      isSaving: isSaving ?? this.isSaving,
       error: clearError ? null : error ?? this.error,
       aiInsights: clearInsights ? null : aiInsights ?? this.aiInsights,
     );
@@ -91,6 +97,38 @@ class JournalNotifier extends StateNotifier<JournalState> {
       }
       final updated = [entry, ...state.entries];
       state = state.copyWith(entries: updated, clearInsights: true);
+
+      // Aggiorna RulesProvider così il killswitch funziona anche in modalità manuale.
+      _ref.read(rulesProvider.notifier).trackTrade();
+      final pnl = entry.pnl;
+      if (pnl != null && pnl < 0) {
+        _ref.read(rulesProvider.notifier).trackLoss(-pnl);
+      }
+      // Controlla se i limiti sono stati superati e attiva il killswitch
+      final rulesState = _ref.read(rulesProvider);
+      if (rulesState.isKillswitchTriggered) {
+        try {
+          final ks = _ref.read(killswitchProvider);
+          if (!ks.isActive) {
+            final userId = _userId;
+            final rules = rulesState.rules;
+            final reason = rulesState.killswitchReason ?? 'daily_loss';
+            final durationStr = rules?.killswitchDuration ?? '6h';
+            final durationMin = switch (durationStr) {
+              '2h' => 120,
+              '6h' => 360,
+              '24h' => 1440,
+              _ => () {
+                  final now = DateTime.now();
+                  return DateTime(now.year, now.month, now.day + 1).difference(now).inMinutes;
+                }(),
+            };
+            _ref.read(killswitchProvider.notifier).activateAndSave(
+              reason, durationMin, userId, 'personal',
+            );
+          }
+        } catch (_) {}
+      }
     } catch (e) {
       state = state.copyWith(error: 'Errore nel salvataggio: $e');
     }
@@ -113,18 +151,18 @@ class JournalNotifier extends StateNotifier<JournalState> {
 
   Future<void> analyzeWithAI() async {
     if (state.entries.isEmpty) return;
-    state = state.copyWith(isLoading: true);
+    state = state.copyWith(isSaving: true);
     try {
       final entriesMaps = state.entries
           .take(20)
           .map((e) => e.toJson())
           .toList();
       final insights = await AiService.analyzeJournal(entriesMaps);
-      state = state.copyWith(aiInsights: insights, isLoading: false);
+      state = state.copyWith(aiInsights: insights, isSaving: false);
     } catch (e) {
       // Fallback to local insights on error
       final insights = _generateLocalInsights();
-      state = state.copyWith(aiInsights: insights, isLoading: false);
+      state = state.copyWith(aiInsights: insights, isSaving: false);
     }
   }
 

@@ -386,7 +386,11 @@ class AppStrings {
   String notifSettingsTomorrow(String time) => _t('Tomorrow $time', 'Domani $time');
 
   // ── Tokens screen ────────────────────────────────────────────────────────
-  String get tokensTitle => _t('Tokens & Pro', 'Token & Pro');
+  String get tokensTitle => _t('Tokens', 'Token');
+  String get buyTokensTitle => _t('Buy Tokens', 'Acquista Token');
+  String get buyTokensSubtitle => _t('Unlock early when you need it most', 'Sblocca prima quando ne hai più bisogno');
+  String get buyTokensBuy => _t('Buy', 'Acquista');
+  String get buyTokensNoProducts => _t('Products unavailable. Check your connection.', 'Prodotti non disponibili. Controlla la connessione.');
   String tokensAvailable(int n) => _t('$n / 2 tokens available', '$n / 2 token disponibili');
   String get tokensRenew => _t('Renew in 3 days', 'Si rinnovano tra 3 giorni');
   String get tokensBuyExtra => _t('BUY EXTRA TOKENS', 'ACQUISTA TOKEN EXTRA');
@@ -415,7 +419,7 @@ class AppStrings {
   String get settingsTileBroker => _t('Connected brokers', 'Broker collegati');
   String get settingsTileChallenges => _t('Connected prop challenges', 'Challenge Prop collegate');
   String get settingsTileNotifications => _t('Notifications', 'Notifiche');
-  String get settingsTileSubscription => _t('Purchase Tokens', 'Acquista Token');
+  String get settingsTileSubscription => _t('Pro Plan', 'Piano Pro');
   String get settingsTilePermissions => _t('App permissions', 'Permessi app');
   String get settingsTileHelp => _t('Help & FAQ', 'Aiuto & FAQ');
   String get settingsTilePrivacy => _t('Privacy Policy & ToS', 'Privacy Policy & ToS');

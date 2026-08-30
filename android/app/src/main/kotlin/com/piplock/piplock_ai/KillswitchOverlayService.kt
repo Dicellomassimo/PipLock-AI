@@ -260,10 +260,10 @@ class KillswitchOverlayService : Service() {
 
             Phase.LOCKDOWN -> WindowManager.LayoutParams(
                 WindowManager.LayoutParams.MATCH_PARENT,
-                WindowManager.LayoutParams.MATCH_PARENT,   // FULL SCREEN
+                WindowManager.LayoutParams.MATCH_PARENT,
                 WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                // Senza FLAG_NOT_TOUCH_MODAL → blocca tutti i tocchi verso MT5
                 WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                        WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or
                         WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
                         WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON,
                 PixelFormat.TRANSLUCENT
@@ -378,17 +378,40 @@ class KillswitchOverlayService : Service() {
         val density = resources.displayMetrics.density
         fun dp(v: Int) = (v * density).toInt()
 
+        // Root is TRANSPARENT — topSpacer lets the MT5 account switcher show through
         val root = LinearLayout(ctx).apply {
             orientation  = LinearLayout.VERTICAL
-            gravity      = Gravity.CENTER_HORIZONTAL
-            background   = android.graphics.drawable.GradientDrawable(
+            setBackgroundColor(Color.TRANSPARENT)
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT
+            )
+        }
+
+        // Transparent spacer at top — account switcher area in MT5 stays reachable
+        val topSpacer = View(ctx).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+            isClickable  = false
+            isFocusable  = false
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(80)
+            )
+        }
+
+        // Content area carries the gradient background and all visible UI
+        val contentLayout = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity     = Gravity.CENTER_HORIZONTAL
+            background  = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
                 intArrayOf(Color.parseColor("#0D0000"), Color.parseColor("#1A0000"))
             )
             setPadding(dp(28), 0, dp(28), 0)
             layoutParams = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
-                LinearLayout.LayoutParams.MATCH_PARENT
+                0,
+                1f
             )
         }
 
@@ -402,17 +425,17 @@ class KillswitchOverlayService : Service() {
             ).also { it.topMargin = dp(20); it.bottomMargin = dp(20) }
         }
 
-        root.addView(spacer(1f))
+        contentLayout.addView(spacer(1f))
 
         // ── Lock icon ─────────────────────────────────────────────────────────
-        root.addView(TextView(ctx).apply {
+        contentLayout.addView(TextView(ctx).apply {
             text    = "🔒"
             textSize = 48f
             gravity = Gravity.CENTER_HORIZONTAL
         })
 
         // ── Title ─────────────────────────────────────────────────────────────
-        root.addView(TextView(ctx).apply {
+        contentLayout.addView(TextView(ctx).apply {
             text          = "KILLSWITCH ACTIVE"
             textSize      = 20f
             setTextColor(Color.WHITE)
@@ -423,7 +446,7 @@ class KillswitchOverlayService : Service() {
         })
 
         // ── Reason pill ───────────────────────────────────────────────────────
-        root.addView(LinearLayout(ctx).apply {
+        contentLayout.addView(LinearLayout(ctx).apply {
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(0, dp(10), 0, 0)
             addView(TextView(ctx).apply {
@@ -442,7 +465,7 @@ class KillswitchOverlayService : Service() {
             })
         })
 
-        root.addView(hairline())
+        contentLayout.addView(hairline())
 
         // ── Countdown block ───────────────────────────────────────────────────
         val countdownBlock = LinearLayout(ctx).apply {
@@ -478,10 +501,10 @@ class KillswitchOverlayService : Service() {
         }
         countdownBlock.addView(countdownTv)
         countdownTextView = countdownTv
-        root.addView(countdownBlock)
+        contentLayout.addView(countdownBlock)
 
         // ── Info text ─────────────────────────────────────────────────────────
-        root.addView(TextView(ctx).apply {
+        contentLayout.addView(TextView(ctx).apply {
             text     = "Hold the button below to unlock early with a token."
             textSize = 12f
             setTextColor(Color.parseColor("#AAFFFFFF"))
@@ -509,13 +532,13 @@ class KillswitchOverlayService : Service() {
                 )
             )).also { it.setId(0, android.R.id.background); it.setId(1, android.R.id.progress) }
         }
-        root.addView(holdProgress)
+        contentLayout.addView(holdProgress)
 
         // ── Token button ──────────────────────────────────────────────────────
         val hasTokens = getTokensAvailable() > 0
         val tokenBtn = Button(ctx).apply {
             text = if (hasTokens) "🔑   USE TOKEN — HOLD TO UNLOCK"
-                   else           "❌   NO TOKENS — BUY MORE IN PIPLOCK"
+                   else           "❌   NO TOKENS — Wait for Sunday reset (2/week)"
             textSize      = 13f
             setTextColor(if (hasTokens) Color.parseColor("#0D0D0D") else Color.parseColor("#CCFFFFFF"))
             background    = android.graphics.drawable.GradientDrawable().apply {
@@ -562,10 +585,10 @@ class KillswitchOverlayService : Service() {
             }
             true
         }
-        root.addView(tokenBtn)
+        contentLayout.addView(tokenBtn)
 
         // ── Exit MT5 button ───────────────────────────────────────────────────
-        root.addView(Button(ctx).apply {
+        contentLayout.addView(Button(ctx).apply {
             text          = "↩   EXIT MT5"
             textSize      = 13f
             setTextColor(Color.parseColor("#CCFFFFFF"))
@@ -599,7 +622,11 @@ class KillswitchOverlayService : Service() {
             }
         })
 
-        root.addView(spacer(1.2f))
+        contentLayout.addView(spacer(1.2f))
+
+        // Assemble: transparent spacer on top, content below
+        root.addView(topSpacer)
+        root.addView(contentLayout)
         return root
     }
 

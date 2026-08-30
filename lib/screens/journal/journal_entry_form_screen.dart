@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:uuid/uuid.dart';
 import '../../config/app_colors.dart';
+import '../../config/app_strings.dart';
 import '../../models/journal_entry.dart';
 import '../../providers/journal_provider.dart';
 import '../../providers/auth_provider.dart';
@@ -18,10 +19,10 @@ const _quickSymbols = [
 ];
 
 const _emotions = [
-  ('calm', '😌', 'Calmo'),
-  ('confident', '🦁', 'Fiducioso'),
-  ('anxious', '😰', 'Ansioso'),
-  ('frustrated', '😤', 'Frustrato'),
+  ('calm', '😌', 'Calm'),
+  ('confident', '🦁', 'Confident'),
+  ('anxious', '😰', 'Anxious'),
+  ('frustrated', '😤', 'Frustrated'),
   ('fomo', '😱', 'FOMO'),
   ('revenge', '🔥', 'Revenge'),
 ];
@@ -111,9 +112,6 @@ class _JournalEntryFormScreenState
       createdAt: _editEntry?.createdAt ?? DateTime.now(),
     );
 
-    if (_editEntry != null) {
-      await ref.read(journalProvider.notifier).deleteEntry(_editEntry!.id);
-    }
     await ref.read(journalProvider.notifier).addEntry(entry);
 
     if (mounted) Navigator.pop(context);
@@ -122,12 +120,13 @@ class _JournalEntryFormScreenState
   @override
   Widget build(BuildContext context) {
     final isEdit = _editEntry != null;
+    final s = ref.watch(appStringsProvider);
 
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
         title: Text(
-          isEdit ? 'Modifica Trade' : 'Nuovo Trade',
+          isEdit ? s.t('Edit Trade', 'Modifica Trade') : s.t('New Trade', 'Nuovo Trade'),
           style: GoogleFonts.manrope(
             color: AppColors.textPrimary,
             fontWeight: FontWeight.bold,
@@ -147,14 +146,14 @@ class _JournalEntryFormScreenState
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
           children: [
             // ── Symbol ──────────────────────────────────────────────────────
-            _SectionLabel('Strumento'),
+            _SectionLabel(s.t('Instrument', 'Strumento')),
             TextFormField(
               controller: _symbolController,
               style: GoogleFonts.manrope(color: AppColors.textPrimary),
-              decoration: _inputDecoration('Es. EURUSD, XAUUSD'),
+              decoration: _inputDecoration(s.t('e.g. EURUSD, XAUUSD', 'Es. EURUSD, XAUUSD')),
               textCapitalization: TextCapitalization.characters,
               validator: (v) =>
-                  (v == null || v.trim().isEmpty) ? 'Inserisci il simbolo' : null,
+                  (v == null || v.trim().isEmpty) ? s.t('Enter the symbol', 'Inserisci il simbolo') : null,
             ),
             const SizedBox(height: 10),
 
@@ -197,7 +196,7 @@ class _JournalEntryFormScreenState
             const SizedBox(height: 20),
 
             // ── Direction ────────────────────────────────────────────────────
-            _SectionLabel('Direzione'),
+            _SectionLabel(s.t('Direction', 'Direzione')),
             Row(
               children: [
                 Expanded(
@@ -223,19 +222,19 @@ class _JournalEntryFormScreenState
             const SizedBox(height: 20),
 
             // ── P&L ─────────────────────────────────────────────────────────
-            _SectionLabel('P&L (opzionale)'),
+            _SectionLabel(s.t('P&L (optional)', 'P&L (opzionale)')),
             TextFormField(
               controller: _pnlController,
               style: GoogleFonts.manrope(color: AppColors.textPrimary),
               keyboardType:
                   const TextInputType.numberWithOptions(signed: true, decimal: true),
-              decoration: _inputDecoration('Es. +142.50 o -87.00'),
+              decoration: _inputDecoration(s.t('e.g. +142.50 or -87.00', 'Es. +142.50 o -87.00')),
             ),
 
             const SizedBox(height: 20),
 
             // ── Emotion picker ───────────────────────────────────────────────
-            _SectionLabel('Stato emotivo'),
+            _SectionLabel(s.t('Emotional state', 'Stato emotivo')),
             GridView.count(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
@@ -289,7 +288,7 @@ class _JournalEntryFormScreenState
             const SizedBox(height: 20),
 
             // ── Emotion score ────────────────────────────────────────────────
-            _SectionLabel('Intensità emotiva'),
+            _SectionLabel(s.t('Emotional intensity', 'Intensità emotiva')),
             Row(
               children: [
                 const Text('😶', style: TextStyle(fontSize: 16)),
@@ -328,7 +327,7 @@ class _JournalEntryFormScreenState
               child: Row(
                 children: [
                   Text(
-                    'Era nel piano?',
+                    s.t('Was it planned?', 'Era nel piano?'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textPrimary,
                       fontWeight: FontWeight.w600,
@@ -346,36 +345,34 @@ class _JournalEntryFormScreenState
             const SizedBox(height: 20),
 
             // ── Setup description ─────────────────────────────────────────────
-            _SectionLabel('Descrizione setup'),
+            _SectionLabel(s.t('Setup description', 'Descrizione setup')),
             TextFormField(
               controller: _setupController,
               style: GoogleFonts.manrope(color: AppColors.textPrimary),
               maxLines: 3,
-              decoration:
-                  _inputDecoration('Descrivi il setup che hai visto...'),
+              decoration: _inputDecoration(s.t('Describe the setup you saw...', 'Descrivi il setup che hai visto...')),
             ),
 
             const SizedBox(height: 16),
 
             // ── Mistakes ─────────────────────────────────────────────────────
-            _SectionLabel('Errori commessi'),
+            _SectionLabel(s.t('Mistakes made', 'Errori commessi')),
             TextFormField(
               controller: _mistakesController,
               style: GoogleFonts.manrope(color: AppColors.textPrimary),
               maxLines: 3,
-              decoration: _inputDecoration(
-                  'Cosa avresti fatto diversamente?'),
+              decoration: _inputDecoration(s.t('What would you have done differently?', 'Cosa avresti fatto diversamente?')),
             ),
 
             const SizedBox(height: 16),
 
             // ── Lessons ──────────────────────────────────────────────────────
-            _SectionLabel('Lezioni apprese'),
+            _SectionLabel(s.t('Lessons learned', 'Lezioni apprese')),
             TextFormField(
               controller: _lessonsController,
               style: GoogleFonts.manrope(color: AppColors.textPrimary),
               maxLines: 3,
-              decoration: _inputDecoration('Cosa hai imparato?'),
+              decoration: _inputDecoration(s.t('What did you learn?', 'Cosa hai imparato?')),
             ),
 
             const SizedBox(height: 32),
@@ -403,7 +400,7 @@ class _JournalEntryFormScreenState
                         ),
                       )
                     : Text(
-                        isEdit ? 'Salva modifiche' : 'Salva trade',
+                        isEdit ? s.t('Save changes', 'Salva modifiche') : s.t('Save trade', 'Salva trade'),
                         style: GoogleFonts.manrope(
                           fontWeight: FontWeight.bold,
                           fontSize: 16,
@@ -452,15 +449,15 @@ class _JournalEntryFormScreenState
   String _scoreLabel(int score) {
     switch (score) {
       case 1:
-        return 'Molto bassa';
+        return 'Very low';
       case 2:
-        return 'Bassa';
+        return 'Low';
       case 3:
-        return 'Media';
+        return 'Medium';
       case 4:
-        return 'Alta';
+        return 'High';
       case 5:
-        return 'Molto alta';
+        return 'Very high';
       default:
         return '';
     }

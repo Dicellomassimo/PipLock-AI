@@ -122,9 +122,43 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
   }
 
   Future<void> _generateChallengePlan(Challenge challenge) async {
+    // Se il piano è già stato generato nel challenge setup, usalo direttamente
+    if (challenge.aiPlan != null) {
+      setState(() {
+        _plan = challenge.aiPlan;
+        _isLoadingPlan = false;
+      });
+      final plan = challenge.aiPlan!;
+      final capitalAtRisk = (challenge.accountSize * (plan['riskPerTrade'] as num? ?? 0.5) / 100).toStringAsFixed(0);
+      final maxLosses = ((challenge.maxTotalDrawdown) / (plan['riskPerTrade'] as num? ?? 0.5)).round();
+      final s = ref.read(appStringsProvider);
+      _addBotMessage(
+        s.t(
+          'Challenge plan for ${challenge.propFirmName ?? "the challenge"} loaded!\n\n'
+          '• Success probability: ${plan['successPercentage']}%\n'
+          '• Lot size: ${plan['recommendedLotSize']}\n'
+          '• Trades/day: ${plan['recommendedTradesPerDay']}\n'
+          '• Risk/trade: ${plan['riskPerTrade']}% (\$$capitalAtRisk)\n'
+          '• Max consecutive losses before drawdown: $maxLosses\n\n'
+          '⚠️ These are your active rules. The killswitch will trigger if you exceed them.\n\n'
+          'Ask me anything about the plan or about discipline.',
+          'Piano challenge per ${challenge.propFirmName ?? "la challenge"} caricato!\n\n'
+          '• Probabilità di successo: ${plan['successPercentage']}%\n'
+          '• Lot size: ${plan['recommendedLotSize']}\n'
+          '• Trade/giorno: ${plan['recommendedTradesPerDay']}\n'
+          '• Rischio/trade: ${plan['riskPerTrade']}% (\$$capitalAtRisk)\n'
+          '• Max perdite di fila prima del drawdown: $maxLosses\n\n'
+          '⚠️ Queste sono le tue regole attive. Il Killswitch scatterà se le superi.\n\n'
+          'Chiedimi qualsiasi cosa sul piano o sulla disciplina.',
+        ),
+      );
+      await _saveSession();
+      return;
+    }
+
     setState(() { _isLoadingPlan = true; _isPersonalMode = false; });
     try {
-      final plan = await AiService.generateChallengePlan(challenge);
+      final plan = await AiService.generatePlan(challenge);
       if (!mounted) return;
       setState(() => _plan = plan);
 
@@ -262,6 +296,9 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
               'positions': brokerState.data.openPositions,
             }
           : null;
+      final challengeIsLocked = _challenge != null &&
+          _challenge!.status == 'active' &&
+          _challenge!.aiPlan != null;
       final response = await AiService.chat(
         text,
         _plan,
@@ -269,6 +306,7 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
         brokerData: brokerContext,
         isPersonalMode: _isPersonalMode,
         locale: ref.read(localeProvider).languageCode,
+        challengeIsLocked: challengeIsLocked,
       );
       if (mounted) {
         final botMsg = ChatMessage(text: response, isUser: false, timestamp: DateTime.now());

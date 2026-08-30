@@ -5,10 +5,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import '../config/constants.dart';
 import '../models/broker_data.dart';
+import '../models/challenge.dart';
 import '../services/accessibility_service.dart';
-import '../services/ctrader_service.dart';
+import '../services/notification_service.dart';
+import '../services/supabase_service.dart';
+import '../services/fomo_detection_service.dart';
 import '../services/metaapi_service.dart';
-import '../services/oanda_service.dart';
 import 'challenge_provider.dart';
 import 'killswitch_provider.dart';
 import 'navigation_provider.dart';
@@ -31,9 +33,6 @@ class BrokerState {
   /// Segreto webhook usato dall'EA MQL5 per autenticarsi (metodo EA)
   final String? webhookSecret;
 
-  /// ID account cTrader (metodo cTrader)
-  final String? ctraderId;
-
   /// Nome app broker rilevata dall'Accessibility Service (es. "MetaTrader 5")
   final String? detectedAppName;
 
@@ -43,11 +42,8 @@ class BrokerState {
   /// Numero account rilevato attualmente su MT5 dallo schermo
   final String? detectedAccountNumber;
 
-  /// OANDA account ID
-  final String? oandaAccountId;
-
-  /// cTrader access token
-  final String? ctraderAccessToken;
+  /// Segnale FOMO rilevato sull'ultimo trade aperto (null = nessun segnale)
+  final FomoSignal? fomoSignal;
 
   const BrokerState({
     this.method = BrokerConnectionMethod.none,
@@ -56,12 +52,10 @@ class BrokerState {
     this.error,
     this.statusMessage,
     this.webhookSecret,
-    this.ctraderId,
     this.detectedAppName,
     this.metaApiAccountId,
     this.detectedAccountNumber,
-    this.oandaAccountId,
-    this.ctraderAccessToken,
+    this.fomoSignal,
   });
 
   bool get isConnected => status == BrokerConnectionStatus.connected;
@@ -87,12 +81,10 @@ class BrokerState {
     Object? error = _sentinel,
     Object? statusMessage = _sentinel,
     Object? webhookSecret = _sentinel,
-    Object? ctraderId = _sentinel,
     Object? detectedAppName = _sentinel,
     Object? metaApiAccountId = _sentinel,
     Object? detectedAccountNumber = _sentinel,
-    Object? oandaAccountId = _sentinel,
-    Object? ctraderAccessToken = _sentinel,
+    Object? fomoSignal = _sentinel,
   }) {
     return BrokerState(
       method: method ?? this.method,
@@ -101,12 +93,10 @@ class BrokerState {
       error: error == _sentinel ? this.error : error as String?,
       statusMessage: statusMessage == _sentinel ? this.statusMessage : statusMessage as String?,
       webhookSecret: webhookSecret == _sentinel ? this.webhookSecret : webhookSecret as String?,
-      ctraderId: ctraderId == _sentinel ? this.ctraderId : ctraderId as String?,
       detectedAppName: detectedAppName == _sentinel ? this.detectedAppName : detectedAppName as String?,
       metaApiAccountId: metaApiAccountId == _sentinel ? this.metaApiAccountId : metaApiAccountId as String?,
       detectedAccountNumber: detectedAccountNumber == _sentinel ? this.detectedAccountNumber : detectedAccountNumber as String?,
-      oandaAccountId: oandaAccountId == _sentinel ? this.oandaAccountId : oandaAccountId as String?,
-      ctraderAccessToken: ctraderAccessToken == _sentinel ? this.ctraderAccessToken : ctraderAccessToken as String?,
+      fomoSignal: fomoSignal == _sentinel ? this.fomoSignal : fomoSignal as FomoSignal?,
     );
   }
 
@@ -123,8 +113,6 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
   StreamSubscription? _accessibilitySub;
   Timer? _accessibilityTimer;
   Timer? _metaApiTimer;
-  Timer? _ctraderTimer;
-  Timer? _oandaTimer;
 
   DateTime? _lastResetDate;
   Timer? _midnightTimer;
@@ -132,6 +120,19 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
   bool _positionsBaselineSet = false;
   int _lastNonZeroPositions = 0;
   bool _positionsDroppedToZero = false;
+  bool _soft80AlertSent = false;
+
+  // ── Detection state per nuovi rilevamenti ─────────────────────────────
+  int _prevTradesToday = 0;
+  double? _prevDailyPnl;
+  int _consecutiveLossesLocal = 0; // tracciato in Flutter (fallback quando EA non invia il campo)
+  bool _consecutiveLossAlertSent = false;
+  double? _baselineLotSizeToday; // primo lot size del giorno (per anomalia size)
+  bool _lotSizeAlertSent = false;
+  bool _planViolationAlertSent = false;
+  int _prevOpenPositions = -1;
+  DateTime? _lastPositionCloseTime;
+  bool _fastReentryAlertSent = false;
 
   BrokerNotifier(this._ref) : super(const BrokerState()) {
     _loadPersistedConnection();
@@ -156,6 +157,17 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     if (_lastResetDate!.isBefore(today)) {
       _lastResetDate = today;
       // Reset daily fields in broker data
+      _soft80AlertSent = false;
+      _prevTradesToday = 0;
+      _prevDailyPnl = null;
+      _consecutiveLossesLocal = 0;
+      _consecutiveLossAlertSent = false;
+      _baselineLotSizeToday = null;
+      _lotSizeAlertSent = false;
+      _planViolationAlertSent = false;
+      _prevOpenPositions = -1;
+      _lastPositionCloseTime = null;
+      _fastReentryAlertSent = false;
       state = state.copyWith(
         data: state.data.copyWith(
           dailyPnl: null,
@@ -224,27 +236,8 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         }
       }
 
-      // 2. Check persisted cTrader credentials
+      // 2. Se nessun EA, controlla se l'Accessibility Service è già abilitato
       final prefs = await SharedPreferences.getInstance();
-      final ctraderToken = prefs.getString('ctrader_access_token');
-      final ctraderId = prefs.getString('ctrader_account_id');
-      if (ctraderToken != null && ctraderId != null) {
-        await connectCTrader(ctraderToken, ctraderId);
-        _scheduleMidnightReset();
-        return;
-      }
-
-      // 3. Check persisted OANDA credentials
-      final oandaKey = prefs.getString('oanda_api_key');
-      final oandaId = prefs.getString('oanda_account_id');
-      if (oandaKey != null && oandaId != null) {
-        final isDemo = prefs.getBool('oanda_is_demo') ?? false;
-        await connectOanda(oandaKey, oandaId, isDemo: isDemo);
-        _scheduleMidnightReset();
-        return;
-      }
-
-      // 4. Se nessun EA/cTrader/OANDA, controlla se l'Accessibility Service è già abilitato
       // Controlliamo sia il flag salvato che lo stato reale del sistema (ridondanza)
       final savedMethod = prefs.getString('connection_method');
       final isEnabled = await AccessibilityService.isEnabled();
@@ -392,8 +385,6 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     }
   }
 
-  // ── Connessione cTrader ─────────────────────────────────────────────────────
-
   // ── Connessione Accessibility Service (mobile) ──────────────────────────────
 
   /// Attiva il monitoraggio via Accessibility Service.
@@ -483,6 +474,21 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           profit:    (profitRaw    != null && !profitRaw.isNaN)   ? profitRaw    : null,
           positions: (positionsRaw != null && positionsRaw >= 0)  ? positionsRaw : null,
         );
+      } else if (eventType == 'revenge_detected') {
+        if (event['revenge_detected'] == true) {
+          try {
+            _ref.read(killswitchProvider.notifier).activateWithDurationString('revenge_pattern', 'midnight');
+          } catch (_) {}
+        }
+      } else if (eventType == 'fomo_detected') {
+        if (event['fomo_detected'] == true) {
+          try {
+            await AccessibilityService.showFomoOverlay();
+          } catch (_) {}
+          try {
+            _ref.read(gatekeeperActiveProvider.notifier).state = true;
+          } catch (_) {}
+        }
       } else if (eventType == 'killswitch_native_active') {
         final reason = event['reason'] as String? ?? 'daily_loss';
         final remainingMin = event['remaining_minutes'] as int? ?? 360;
@@ -580,199 +586,6 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     final openPositions = data['openPositions'] as int?;
     final currency = data['currency'] as String?;
 
-    final lossUsd = dailyPnl != null && dailyPnl < 0 ? dailyPnl.abs() : null;
-    final lossPct = (lossUsd != null && balance != null && balance > 0)
-        ? lossUsd / balance * 100
-        : null;
-    final drawdownPct = (equity != null && balance != null && balance > 0 && equity < balance)
-        ? (balance - equity) / balance * 100
-        : null;
-
-    return BrokerData(
-      equity: equity,
-      balance: balance,
-      dailyPnl: dailyPnl,
-      dailyLossUsd: lossUsd,
-      dailyLossPct: lossPct,
-      drawdownPct: drawdownPct,
-      openPositions: openPositions,
-      currency: currency,
-      lastUpdate: DateTime.now(),
-    );
-  }
-
-  /// Connect via cTrader REST API using an access token + account ID.
-  /// Persists credentials to SharedPreferences and polls every 5 seconds.
-  Future<void> connectCTrader(String accessToken, String accountId) async {
-    if (accessToken.isEmpty || accountId.isEmpty) return;
-
-    _ctraderTimer?.cancel();
-    state = BrokerState(
-      method: BrokerConnectionMethod.ctrader,
-      status: BrokerConnectionStatus.connecting,
-      ctraderId: accountId,
-      ctraderAccessToken: accessToken,
-      statusMessage: 'Connecting to cTrader...',
-    );
-
-    CTraderService.configure(accessToken, accountId);
-
-    // Immediate first fetch
-    final data = await CTraderService.fetchAccountData();
-    if (!mounted) return;
-
-    if (data == null) {
-      state = state.copyWith(
-        status: BrokerConnectionStatus.error,
-        error: 'Unable to connect to cTrader. Check your access token and account ID.',
-      );
-      return;
-    }
-
-    final newData = _brokerDataFromCTrader(data);
-    state = state.copyWith(
-      status: BrokerConnectionStatus.connected,
-      data: newData,
-      error: null,
-      statusMessage: null,
-    );
-    _checkLimits(newData);
-
-    // Persist credentials
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('ctrader_access_token', accessToken);
-      await prefs.setString('ctrader_account_id', accountId);
-    } catch (_) {}
-
-    // Poll every 5 seconds
-    _ctraderTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (mounted) _pollCTrader();
-    });
-  }
-
-  Future<void> _pollCTrader() async {
-    final data = await CTraderService.fetchAccountData();
-    if (!mounted) return;
-    if (data == null) return;
-
-    final newData = _brokerDataFromCTrader(data);
-    state = state.copyWith(
-      status: BrokerConnectionStatus.connected,
-      data: newData,
-      error: null,
-      statusMessage: null,
-    );
-    _checkLimits(newData);
-  }
-
-  BrokerData _brokerDataFromCTrader(Map<String, dynamic> data) {
-    final equity = data['equity'] as double?;
-    final balance = data['balance'] as double?;
-    final unrealizedPL = data['unrealizedPL'] as double?;
-    final openPositions = data['openPositions'] as int?;
-    final currency = data['currency'] as String?;
-
-    // Use unrealizedPL as dailyPnl approximation
-    final dailyPnl = unrealizedPL;
-    final lossUsd = dailyPnl != null && dailyPnl < 0 ? dailyPnl.abs() : null;
-    final lossPct = (lossUsd != null && balance != null && balance > 0)
-        ? lossUsd / balance * 100
-        : null;
-    final drawdownPct = (equity != null && balance != null && balance > 0 && equity < balance)
-        ? (balance - equity) / balance * 100
-        : null;
-
-    return BrokerData(
-      equity: equity,
-      balance: balance,
-      dailyPnl: dailyPnl,
-      dailyLossUsd: lossUsd,
-      dailyLossPct: lossPct,
-      drawdownPct: drawdownPct,
-      openPositions: openPositions,
-      currency: currency,
-      lastUpdate: DateTime.now(),
-    );
-  }
-
-  /// Connect via OANDA REST API using an API key + account ID.
-  /// Persists credentials to SharedPreferences and polls every 5 seconds.
-  Future<void> connectOanda(
-    String apiKey,
-    String accountId, {
-    bool isDemo = false,
-  }) async {
-    if (apiKey.isEmpty || accountId.isEmpty) return;
-
-    _oandaTimer?.cancel();
-    state = BrokerState(
-      method: BrokerConnectionMethod.oanda,
-      status: BrokerConnectionStatus.connecting,
-      oandaAccountId: accountId,
-      statusMessage: 'Connecting to OANDA...',
-    );
-
-    OandaService.configure(apiKey, accountId, isDemo: isDemo);
-
-    // Immediate first fetch
-    final data = await OandaService.fetchAccountSummary();
-    if (!mounted) return;
-
-    if (data == null) {
-      state = state.copyWith(
-        status: BrokerConnectionStatus.error,
-        error: 'Unable to connect to OANDA. Check your API key and account ID.',
-      );
-      return;
-    }
-
-    final newData = _brokerDataFromOanda(data);
-    state = state.copyWith(
-      status: BrokerConnectionStatus.connected,
-      data: newData,
-      error: null,
-      statusMessage: null,
-    );
-    _checkLimits(newData);
-
-    // Persist credentials
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('oanda_api_key', apiKey);
-      await prefs.setString('oanda_account_id', accountId);
-      await prefs.setBool('oanda_is_demo', isDemo);
-    } catch (_) {}
-
-    // Poll every 5 seconds
-    _oandaTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (mounted) _pollOanda();
-    });
-  }
-
-  Future<void> _pollOanda() async {
-    final data = await OandaService.fetchAccountSummary();
-    if (!mounted) return;
-    if (data == null) return;
-
-    final newData = _brokerDataFromOanda(data);
-    state = state.copyWith(
-      status: BrokerConnectionStatus.connected,
-      data: newData,
-      error: null,
-      statusMessage: null,
-    );
-    _checkLimits(newData);
-  }
-
-  BrokerData _brokerDataFromOanda(Map<String, dynamic> data) {
-    final equity = data['equity'] as double?;
-    final balance = data['balance'] as double?;
-    final unrealizedPL = data['unrealizedPL'] as double?;
-    final openPositions = data['openPositionCount'] as int?;
-    final currency = data['currency'] as String?;
-
-    final dailyPnl = unrealizedPL;
     final lossUsd = dailyPnl != null && dailyPnl < 0 ? dailyPnl.abs() : null;
     final lossPct = (lossUsd != null && balance != null && balance > 0)
         ? lossUsd / balance * 100
@@ -892,13 +705,10 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           _lastNonZeroPositions = prevPositions;
           _positionsDroppedToZero = true;
         }
-      } else if (_positionsDroppedToZero && validPositions <= _lastNonZeroPositions) {
-        // Came back from zero with same or fewer positions — same trades, not new
+      } else if (_positionsDroppedToZero) {
+        // Posizioni tornate da zero: sono SEMPRE nuovi trade (i precedenti erano stati chiusi)
         _positionsDroppedToZero = false;
-      } else if (_positionsDroppedToZero && validPositions > _lastNonZeroPositions) {
-        // Came back from zero with MORE positions — only count the genuine new ones
-        _positionsDroppedToZero = false;
-        final newlyOpened = validPositions - _lastNonZeroPositions;
+        final newlyOpened = validPositions;
         newTradesToday = (state.data.tradesToday ?? 0) + newlyOpened;
         _lastNonZeroPositions = validPositions;
         for (var i = 0; i < newlyOpened; i++) {
@@ -906,14 +716,16 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         }
       } else if (validPositions > _lastNonZeroPositions) {
         // Normal case: new positions opened while MT5 was open.
-        // Compares against _lastNonZeroPositions (not prevPositions) so that the
-        // very first trade is counted even when baseline was 0.
         final newlyOpened = validPositions - _lastNonZeroPositions;
         newTradesToday = (state.data.tradesToday ?? 0) + newlyOpened;
         _lastNonZeroPositions = validPositions;
         for (var i = 0; i < newlyOpened; i++) {
           try { _ref.read(rulesProvider.notifier).trackTrade(); } catch (_) {}
         }
+        // FOMO detection: check for price spike on the detected instrument
+        // The symbol is not available from Accessibility Service directly,
+        // so we trigger a generic check that the UI can surface if a signal is found.
+        _checkFomoOnNewPosition(null);
       } else if (validPositions > 0) {
         _lastNonZeroPositions = validPositions;
       }
@@ -956,19 +768,9 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     _accessibilitySub = null;
     _metaApiTimer?.cancel();
     _metaApiTimer = null;
-    _ctraderTimer?.cancel();
-    _ctraderTimer = null;
-    _oandaTimer?.cancel();
-    _oandaTimer = null;
 
-    // Clear ALL persisted connection data
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.remove('ctrader_access_token');
-      await prefs.remove('ctrader_account_id');
-      await prefs.remove('oanda_api_key');
-      await prefs.remove('oanda_account_id');
-      await prefs.remove('oanda_is_demo');
       await prefs.remove('connection_method');
     } catch (_) {}
 
@@ -993,7 +795,40 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     // Questo metodo esiste per compatibilità con la dashboard (bottone refresh).
   }
 
+  // ── FOMO detection ─────────────────────────────────────────────────────────
+
+  /// Checks Finnhub for a price spike on [symbol] when a new position is opened.
+  /// If [symbol] is null, no Finnhub call is made (Accessibility Service limitation).
+  /// The result is stored in [BrokerState.fomoSignal] for the UI to display.
+  Future<void> _checkFomoOnNewPosition(String? symbol) async {
+    if (symbol == null || symbol.isEmpty) return;
+    try {
+      final signal = await FomoDetectionService.checkSpike(symbol);
+      if (!mounted || signal == null) return;
+      state = state.copyWith(fomoSignal: signal);
+      // Also surface as a local notification
+      NotificationService.showLocalNotification(
+        title: '⚠️ FOMO Alert — $symbol',
+        body: signal.alertMessage,
+        id: 8010,
+      );
+    } catch (_) {}
+  }
+
   // ── Controllo limiti → killswitch ───────────────────────────────────────────
+
+  /// Filtra le challenge attive per l'account attualmente rilevato su MT5.
+  /// Se non c'è account number rilevato, restituisce tutte le challenge attive.
+  List<Challenge> _challengesForCurrentAccount(List<Challenge> challenges) {
+    final detected = state.detectedAccountNumber;
+    final active = challenges.where((c) => c.status == 'active').toList();
+    if (detected == null || detected.isEmpty) return active;
+    final matched = active.where((c) =>
+      c.accountNumber != null && c.accountNumber!.isNotEmpty &&
+      c.accountNumber == detected
+    ).toList();
+    return matched.isNotEmpty ? matched : active;
+  }
 
   void _checkLimits(BrokerData data) {
     _checkAndResetDailyIfNeeded();
@@ -1006,6 +841,90 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     final dayLossUsd = data.dailyLossUsd ?? 0.0;
     final dayLossPct = data.dailyLossPct ?? 0.0;
     final tradesToday = data.tradesToday ?? 0;
+
+    // ── 1. Perdite consecutive ────────────────────────────────────────────
+    // Usa il valore dell'EA se disponibile, altrimenti traccia in Flutter
+    final consecutiveLossesFromEa = data.consecutiveLosses;
+    if (consecutiveLossesFromEa != null) {
+      _consecutiveLossesLocal = consecutiveLossesFromEa;
+    } else {
+      // Flutter-side tracking: rileva quando tradesToday aumenta e confronta daily PnL
+      final currentTrades = data.tradesToday ?? 0;
+      if (currentTrades > _prevTradesToday && _prevTradesToday >= 0) {
+        final currPnl = data.dailyPnl ?? 0.0;
+        final prevPnl = _prevDailyPnl ?? currPnl;
+        if (currPnl < prevPnl) {
+          _consecutiveLossesLocal++;
+        } else {
+          _consecutiveLossesLocal = 0;
+        }
+        _prevTradesToday = currentTrades;
+        _prevDailyPnl = data.dailyPnl;
+      }
+    }
+    // Alert a 3 perdite consecutive
+    if (_consecutiveLossesLocal >= 3 && !_consecutiveLossAlertSent) {
+      _consecutiveLossAlertSent = true;
+      NotificationService.showLocalNotification(
+        title: '⚠️ $_consecutiveLossesLocal consecutive losses',
+        body: 'You have lost $_consecutiveLossesLocal trades in a row. Consider stepping back.',
+        id: 8006,
+      );
+    }
+
+    // ── 2. Aumento anomalo della size (lot size) ─────────────────────────
+    final lotSize = data.lastLotSize;
+    if (lotSize != null && lotSize > 0) {
+      _baselineLotSizeToday ??= lotSize;
+      if (!_lotSizeAlertSent && lotSize > (_baselineLotSizeToday! * 2.0)) {
+        _lotSizeAlertSent = true;
+        NotificationService.showLocalNotification(
+          title: '⚠️ Lot size anomaly',
+          body:
+              'Your position size (${lotSize.toStringAsFixed(2)}) is 2× your usual size today. Check your risk.',
+          id: 8007,
+        );
+      }
+    }
+
+    // ── 3. Re-entry troppo veloce ────────────────────────────────────────
+    final currentPositions = data.openPositions ?? 0;
+    if (_prevOpenPositions > 0 && currentPositions < _prevOpenPositions) {
+      _lastPositionCloseTime = DateTime.now();
+      _fastReentryAlertSent = false;
+    }
+    if (_lastPositionCloseTime != null &&
+        _prevOpenPositions >= 0 &&
+        currentPositions > _prevOpenPositions &&
+        !_fastReentryAlertSent) {
+      final secondsFromClose =
+          DateTime.now().difference(_lastPositionCloseTime!).inSeconds;
+      if (secondsFromClose < 120) {
+        _fastReentryAlertSent = true;
+        NotificationService.showLocalNotification(
+          title: '⚡ Fast re-entry',
+          body:
+              'You re-entered the market ${secondsFromClose}s after closing. Is this intentional?',
+          id: 8008,
+        );
+      }
+    }
+    _prevOpenPositions = currentPositions;
+
+    // ── Alert all'80% del limite giornaliero ────────────────────────────────
+    if (rules.maxDailyLoss != null && rules.maxDailyLoss! > 0) {
+      final lossValue = rules.maxDailyLossType == 'percent' ? dayLossPct : dayLossUsd;
+      final lossPercent = lossValue / rules.maxDailyLoss!;
+      if (lossPercent >= 0.80 && lossPercent < 1.0 && !_soft80AlertSent) {
+        _soft80AlertSent = true;
+        NotificationService.showLocalNotification(
+          title: '⚠️ 80% of daily limit reached',
+          body: 'You are close to your daily loss limit. Consider stopping.',
+          id: 8001,
+        );
+      }
+      if (lossPercent < 0.80) _soft80AlertSent = false;
+    }
 
     String? reason;
 
@@ -1021,7 +940,7 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     if (reason == null) {
       try {
         final challenges = _ref.read(challengeListProvider);
-        final activeChallenges = challenges.where((c) => c.status == 'active');
+        final activeChallenges = _challengesForCurrentAccount(challenges);
         for (final challenge in activeChallenges) {
           final plan = challenge.aiPlan;
           if (plan == null) continue;
@@ -1055,17 +974,65 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       reason = 'max_trades';
     }
 
+    // ── 4. Violazione del piano AI (trades > recommendedTradesPerDay) ────
+    if (reason == null && !_planViolationAlertSent) {
+      try {
+        final challenges = _ref.read(challengeListProvider);
+        for (final c in _challengesForCurrentAccount(challenges)) {
+          final plan = c.aiPlan;
+          if (plan == null) continue;
+          final recTrades = (plan['recommendedTradesPerDay'] as num?)?.toInt();
+          if (recTrades != null && tradesToday > recTrades) {
+            _planViolationAlertSent = true;
+            NotificationService.showLocalNotification(
+              title: '📋 AI Plan exceeded',
+              body:
+                  'You have made $tradesToday trades today. Your AI plan recommends max $recTrades.',
+              id: 8009,
+            );
+            break;
+          }
+        }
+      } catch (_) {}
+    }
+
+    // ── 5. Killswitch a 5 perdite consecutive ────────────────────────────
+    if (reason == null && _consecutiveLossesLocal >= 5) {
+      reason = 'consecutive_losses';
+    }
+
     // Nota: rimosso il check drawdown hardcoded al 10% — era fonte di falsi positivi.
     // Il drawdown verrà gestito tramite i parametri della challenge (piano AI) in futuro.
 
-    if (reason == 'max_trades') {
-      // Trade limit: overlay arancio su MT5, non killswitch rosso
-      // L'utente può ancora gestire le posizioni aperte
-      AccessibilityService.showTradeLimitOverlay(
-        currentTrades: tradesToday,
-        maxTrades: rules.maxTradesPerDay ?? 0,
-      );
-    } else if (reason != null) {
+    // ── Check drawdown totale per challenge attiva ──────────────────────────
+    if (reason == null) {
+      try {
+        final challenges = _ref.read(challengeListProvider);
+        final activeChallengesForAccount = _challengesForCurrentAccount(challenges);
+        final activeChallenge = activeChallengesForAccount.isNotEmpty
+            ? activeChallengesForAccount.first
+            : null;
+        if (activeChallenge != null) {
+          final maxTotalDrawdown = activeChallenge.maxTotalDrawdown;
+          final currentEquity = data.equity ?? 0;
+          final startEquity = activeChallenge.accountSize;
+          if (startEquity > 0 && currentEquity > 0) {
+            final drawdownPct = (startEquity - currentEquity) / startEquity * 100;
+            if (drawdownPct >= maxTotalDrawdown) {
+              reason = 'daily_loss';
+              SupabaseService.updateChallengeStatus(activeChallenge.id, 'failed').catchError((_) {});
+              NotificationService.showLocalNotification(
+                title: '❌ Challenge Failed',
+                body: 'Max drawdown reached. Your challenge has been marked as failed.',
+                id: 8003,
+              );
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (reason != null) {
       _isActivating = true;
       final userId = _ref.read(currentUserIdProvider);
       final durationMin = _durationMinutes(rules.killswitchDuration);
@@ -1092,6 +1059,8 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     final openPositions = (map['open_positions'] as num?)?.toInt();
     final tradesToday = (map['trades_today'] as num?)?.toInt();
     final currency = map['currency'] as String?;
+    final consecutiveLosses = (map['consecutive_losses'] as num?)?.toInt();
+    final lastLotSize = (map['last_lot_size'] as num?)?.toDouble();
 
     return BrokerData(
       equity: equity,
@@ -1104,6 +1073,8 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       tradesToday: tradesToday,
       currency: currency,
       lastUpdate: DateTime.now(),
+      consecutiveLosses: consecutiveLosses,
+      lastLotSize: lastLotSize,
     );
   }
 
@@ -1165,14 +1136,29 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     }
   }
 
+  // ── Aggiornamento da EA MQL5 via Supabase Realtime ─────────────────────────
+
+  /// Chiamato da RealtimeProvider quando un UPDATE arriva su broker_connections.
+  /// Aggiorna status e last_sync_at nella UI senza toccare i dati finanziari
+  /// (quelli arrivano tramite il webhook EA direttamente a Supabase).
+  void updateConnectionStatusFromEa(String status) {
+    final mapped = switch (status) {
+      'connected' => BrokerConnectionStatus.connected,
+      'error' => BrokerConnectionStatus.error,
+      'disconnected' => BrokerConnectionStatus.disconnected,
+      _ => BrokerConnectionStatus.disconnected,
+    };
+    if (state.status != mapped) {
+      state = state.copyWith(status: mapped);
+    }
+  }
+
   @override
   void dispose() {
     _realtimeSub?.cancel();
     _accessibilitySub?.cancel();
     _accessibilityTimer?.cancel();
     _metaApiTimer?.cancel();
-    _ctraderTimer?.cancel();
-    _oandaTimer?.cancel();
     _midnightTimer?.cancel();
     super.dispose();
   }
@@ -1191,3 +1177,7 @@ final metaApiProvider = brokerProvider;
 
 // Typedef per compatibilità con codice che usa MetaApiState
 typedef MetaApiState = BrokerState;
+
+/// True quando il Gatekeeper FOMO overlay deve essere mostrato nella dashboard.
+/// Resettato a false quando l'utente lo chiude.
+final gatekeeperActiveProvider = StateProvider<bool>((ref) => false);

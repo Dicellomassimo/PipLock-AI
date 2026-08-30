@@ -8,7 +8,8 @@ import '../config/constants.dart';
 final _mockProfile = Profile(
   id: 'dev-user-000',
   accountMode: 'personal',
-  tokensAvailable: 2,
+  tokensWeekly: 2,
+  tokensPurchased: 0,
   tokensResetAt: DateTime.now().add(const Duration(days: 4)),
   subscriptionTier: 'free',
   createdAt: DateTime(2026, 1, 1),
@@ -65,20 +66,34 @@ class AuthNotifier extends StateNotifier<AuthState> {
     }
   }
 
-  Future<void> _loadProfile(String userId) async {
+  Future<void> _loadProfile(String userId, {int attempt = 0}) async {
     state = state.copyWith(isLoading: true);
     try {
       await SupabaseService.ensureProfile(userId);
+      await SupabaseService.checkAndResetWeeklyTokens(userId);
       final data = await SupabaseService.getProfile(userId);
       if (data != null) {
         state = AuthState(profile: Profile.fromJson(data));
-        // Inizializza in_app_purchase (fire and forget)
-        PurchaseService.initialize();
+        // Inizializza RevenueCat (fire and forget)
+        PurchaseService.initialize(userId: userId);
       } else {
         state = const AuthState();
       }
     } catch (_) {
-      state = const AuthState();
+      // Retry up to 2 times with exponential backoff.
+      if (attempt < 2) {
+        await Future.delayed(Duration(seconds: (attempt + 1) * 2));
+        await _loadProfile(userId, attempt: attempt + 1);
+      } else {
+        // After all retries: if a profile was already loaded (e.g. from a previous
+        // successful load this session), keep it rather than forcing a logout.
+        // Only clear state if there was genuinely no profile at all.
+        if (state.profile == null) {
+          state = const AuthState();
+        } else {
+          state = state.copyWith(isLoading: false);
+        }
+      }
     }
   }
 
@@ -94,9 +109,18 @@ class AuthNotifier extends StateNotifier<AuthState> {
   void consumeToken() {
     final current = state.profile;
     if (current == null) return;
+    // Consume weekly tokens first, then purchased
+    int newWeekly = current.tokensWeekly;
+    int newPurchased = current.tokensPurchased;
+    if (newWeekly > 0) {
+      newWeekly = newWeekly - 1;
+    } else if (newPurchased > 0) {
+      newPurchased = newPurchased - 1;
+    }
     state = state.copyWith(
       profile: current.copyWith(
-        tokensAvailable: (current.tokensAvailable - 1).clamp(0, 999),
+        tokensWeekly: newWeekly,
+        tokensPurchased: newPurchased,
       ),
     );
   }

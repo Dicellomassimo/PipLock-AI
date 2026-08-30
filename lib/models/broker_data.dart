@@ -1,6 +1,6 @@
 // Modello unificato per i dati broker, indipendente dalla fonte di connessione.
 
-enum BrokerConnectionMethod { ea, ctrader, oanda, manual, metaApi, accessibility, none }
+enum BrokerConnectionMethod { ea, manual, metaApi, accessibility, none }
 
 enum BrokerConnectionStatus { disconnected, connecting, connected, error }
 
@@ -22,6 +22,8 @@ class BrokerData {
   final int? tradesToday;
   final String? currency;
   final DateTime? lastUpdate;
+  final int? consecutiveLosses;
+  final double? lastLotSize;
 
   const BrokerData({
     this.equity,
@@ -34,6 +36,8 @@ class BrokerData {
     this.tradesToday,
     this.currency,
     this.lastUpdate,
+    this.consecutiveLosses,
+    this.lastLotSize,
   });
 
   BrokerData copyWith({
@@ -47,6 +51,8 @@ class BrokerData {
     Object? tradesToday = _sentinel,
     Object? currency = _sentinel,
     Object? lastUpdate = _sentinel,
+    Object? consecutiveLosses = _sentinel,
+    Object? lastLotSize = _sentinel,
   }) {
     return BrokerData(
       equity: equity == _sentinel ? this.equity : equity as double?,
@@ -59,6 +65,8 @@ class BrokerData {
       tradesToday: tradesToday == _sentinel ? this.tradesToday : tradesToday as int?,
       currency: currency == _sentinel ? this.currency : currency as String?,
       lastUpdate: lastUpdate == _sentinel ? this.lastUpdate : lastUpdate as DateTime?,
+      consecutiveLosses: consecutiveLosses == _sentinel ? this.consecutiveLosses : consecutiveLosses as int?,
+      lastLotSize: lastLotSize == _sentinel ? this.lastLotSize : lastLotSize as double?,
     );
   }
 

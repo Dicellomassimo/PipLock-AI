@@ -29,6 +29,7 @@ import 'screens/observer/observer_screen.dart';
 import 'screens/journal/journal_screen.dart';
 import 'screens/journal/journal_entry_form_screen.dart';
 import 'screens/paywall/paywall_screen.dart';
+import 'screens/killswitch/trading_hours_block_screen.dart';
 
 // Re-esporta kDevMode per compatibilità con altri file che lo importano da app.dart
 export 'config/constants.dart' show kDevMode;
@@ -121,11 +122,11 @@ class PipLockApp extends StatelessWidget {
               '/auth': (_) => const AuthScreen(),
               '/main': (_) => const MainNavScreen(),
               '/dashboard': (_) => const MainNavScreen(), // compatibilità
-              '/onboarding': (_) => const OnboardingScreen(),
               '/ai_planner': (_) => const AiPlannerScreen(),
               '/history': (_) => const HistoryScreen(),
               '/notifications': (_) => const NotificationsScreen(),
               '/tokens': (_) => const TokensScreen(),
+              '/buy_tokens': (_) => const TokensScreen(), // redirected — no purchase
               '/settings': (_) => const SettingsScreen(),
               '/personal_rules': (_) => const PersonalRulesScreen(),
               '/challenge_setup': (_) => const ChallengeSetupScreen(),
@@ -139,8 +140,17 @@ class PipLockApp extends StatelessWidget {
               '/observer': (_) => const ObserverScreen(),
               '/journal': (_) => const JournalScreen(),
               '/journal/add': (_) => const JournalEntryFormScreen(),
-              '/paywall': (_) => const PaywallScreen(),
               '/auth-callback': (_) => const _AuthCallbackScreen(),
+              '/trading_hours_block': (ctx) {
+                final args = ModalRoute.of(ctx)!.settings.arguments
+                    as Map<String, dynamic>? ?? {};
+                final start = args['tradingStart'] as TimeOfDay?
+                    ?? const TimeOfDay(hour: 8, minute: 0);
+                final end = args['tradingEnd'] as TimeOfDay?
+                    ?? const TimeOfDay(hour: 18, minute: 0);
+                return TradingHoursBlockScreen(
+                    tradingStart: start, tradingEnd: end);
+              },
             },
           );
         },

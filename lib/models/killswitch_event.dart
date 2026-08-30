@@ -8,6 +8,7 @@ class KillswitchEvent {
   final bool unlockedEarly;
   final bool unlockedWithToken;
   final DateTime? resolvedAt;
+  final String? overrideReason; // motivo dichiarato dall'utente al momento dell'override
 
   const KillswitchEvent({
     required this.id,
@@ -19,6 +20,7 @@ class KillswitchEvent {
     this.unlockedEarly = false,
     this.unlockedWithToken = false,
     this.resolvedAt,
+    this.overrideReason,
   });
 
   factory KillswitchEvent.fromJson(Map<String, dynamic> json) {
@@ -38,6 +40,7 @@ class KillswitchEvent {
       resolvedAt: json['resolved_at'] != null
           ? parseDate(json['resolved_at'] as String?)
           : null,
+      overrideReason: json['override_reason'] as String?,
     );
   }
 
@@ -52,6 +55,7 @@ class KillswitchEvent {
       'unlocked_early': unlockedEarly,
       'unlocked_with_token': unlockedWithToken,
       'resolved_at': resolvedAt?.toIso8601String(),
+      if (overrideReason != null) 'override_reason': overrideReason,
     };
   }
 

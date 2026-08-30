@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/accessibility_service.dart';
-import 'broker_provider.dart';
+import 'broker_provider.dart'; // gatekeeperActiveProvider
 import 'killswitch_provider.dart';
 import 'rules_provider.dart';
 import 'auth_provider.dart';
@@ -25,7 +25,8 @@ class AccessibilityWatcher {
     _eventSub?.cancel();
     _dataSub?.cancel();
 
-    // Ascolta eventi: apertura app broker, killswitch nativo, ecc.
+    // Ascolta eventi: apertura app broker, killswitch nativo, revenge, FOMO, ecc.
+    // Questo provider gira SEMPRE — indipendente dal metodo di connessione broker.
     _eventSub = AccessibilityService.brokerEvents.listen((event) {
       final eventType = event['event_type'] as String? ?? '';
 
@@ -44,6 +45,27 @@ class AccessibilityWatcher {
           // activateNative: non chiama showKillswitchOverlay (già attivo nativo)
           _ref.read(killswitchProvider.notifier).activateNative(reason, remainingMin);
         }
+      }
+
+      // Revenge trading rilevato nativamente → attiva killswitch Flutter
+      if (eventType == 'revenge_detected' && event['revenge_detected'] == true) {
+        final ksState = _ref.read(killswitchProvider);
+        if (!ksState.isActive) {
+          try {
+            _ref.read(killswitchProvider.notifier)
+                .activateWithDurationString('revenge_pattern', 'midnight');
+          } catch (_) {}
+        }
+      }
+
+      // FOMO rilevato nativamente → mostra gatekeeper overlay in Flutter
+      if (eventType == 'fomo_detected' && event['fomo_detected'] == true) {
+        try {
+          AccessibilityService.showFomoOverlay();
+        } catch (_) {}
+        try {
+          _ref.read(gatekeeperActiveProvider.notifier).state = true;
+        } catch (_) {}
       }
     }, onError: (_) {
       // Stream error → reconnect after 5s

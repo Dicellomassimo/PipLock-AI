@@ -7,14 +7,18 @@ import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_strings.dart';
+import '../../config/app_theme.dart';
 import '../../models/challenge.dart';
 import '../../models/killswitch_event.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/challenge_provider.dart';
+import '../../providers/killswitch_provider.dart';
 import '../../services/cache_service.dart';
+import '../../services/discipline_service.dart';
 import '../../services/supabase_service.dart';
 import '../../services/share_service.dart';
 import '../../widgets/ambient_blobs.dart';
+import '../../widgets/candle_background.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -26,7 +30,9 @@ class HistoryScreen extends ConsumerStatefulWidget {
 class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   int _tab = 0; // 0=Grafico, 1=Lista, 2=Calendario, 3=Avanzate
   List<KillswitchEvent> _events = [];
+  DisciplineReport? _disciplineReport;
   bool _isLoading = true;
+  bool _hasError = false;
   DateTime _calendarMonth = DateTime.now();
   DateTime? _selectedDay;
 
@@ -40,6 +46,14 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     super.initState();
     _loadHistory();
     _loadCheckinData();
+    // Ricarica la history quando il killswitch viene attivato/disattivato
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.listenManual(killswitchProvider, (prev, next) {
+        if (prev?.isActive != next.isActive) {
+          _loadHistory(forceRefresh: true);
+        }
+      });
+    });
   }
 
   /// Carica i punteggi check-in reali degli ultimi 7 giorni da SharedPreferences.
@@ -97,9 +111,16 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     }
     try {
       final events = await SupabaseService.getKillswitchHistory(userId);
-      if (mounted) setState(() { _events = events; _isLoading = false; });
+      if (mounted) {
+        setState(() {
+          _events = events;
+          _disciplineReport = DisciplineService.computeWeekly(events);
+          _isLoading = false;
+          _hasError = false;
+        });
+      }
     } catch (e) {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted) setState(() { _isLoading = false; _hasError = true; });
     }
   }
 
@@ -153,23 +174,38 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       ),
       body: Stack(
         children: [
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: CandleBackground(
+                accentColor: Color(0xFF00C896),
+                opacity: 0.05,
+              ),
+            ),
+          ),
           const Positioned.fill(child: IgnorePointer(child: AmbientBlobs())),
           Column(
             children: [
+              if (_disciplineReport != null && _events.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+                  child: _WeeklyReportCard(report: _disciplineReport!),
+                ),
               _buildToggle(),
               Expanded(
                 child: _isLoading
                     ? const Center(child: CircularProgressIndicator(
                         valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent)))
-                    : RefreshIndicator(
-                        color: AppColors.accent,
-                        backgroundColor: AppColors.cardBg,
-                        onRefresh: () => _loadHistory(forceRefresh: true),
-                        child: _tab == 0 ? _buildChartView()
-                          : _tab == 1 ? _buildListView()
-                          : _tab == 2 ? _buildCalendarView()
-                          : _buildAdvancedView(),
-                      ),
+                    : _hasError
+                        ? _buildErrorState()
+                        : RefreshIndicator(
+                            color: AppColors.accent,
+                            backgroundColor: AppColors.cardBg,
+                            onRefresh: () => _loadHistory(forceRefresh: true),
+                            child: _tab == 0 ? _buildChartView()
+                              : _tab == 1 ? _buildListView()
+                              : _tab == 2 ? _buildCalendarView()
+                              : _buildAdvancedView(),
+                          ),
               ),
             ],
           ),
@@ -210,6 +246,54 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               ),
             );
           }),
+        ),
+      ),
+    );
+  }
+
+  // ── ERROR STATE ────────────────────────────────────────────────────────
+
+  Widget _buildErrorState() {
+    final s = ref.watch(appStringsProvider);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(32),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.wifi_off_rounded, color: AppColors.textTertiary, size: 48),
+            const SizedBox(height: 16),
+            Text(
+              s.t('Could not load history', 'Impossibile caricare la cronologia'),
+              textAlign: TextAlign.center,
+              style: GoogleFonts.manrope(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              s.t('Check your connection and try again.', 'Controlla la connessione e riprova.'),
+              textAlign: TextAlign.center,
+              style: GoogleFonts.manrope(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 24),
+            TextButton.icon(
+              onPressed: () {
+                setState(() { _isLoading = true; _hasError = false; });
+                _loadHistory(forceRefresh: true);
+              },
+              icon: const Icon(Icons.refresh_rounded, color: AppColors.accent),
+              label: Text(
+                s.t('Retry', 'Riprova'),
+                style: GoogleFonts.manrope(color: AppColors.accent, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -305,18 +389,22 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     final maxCount = countsByDay.reduce((a, b) => a > b ? a : b);
     final chartMaxY = (maxCount + 1).toDouble().clamp(3.0, double.infinity);
 
+    final s = ref.watch(appStringsProvider);
+    final dayLabels = [s.historyDayMon, s.historyDayTue, s.historyDayWed, s.historyDayThu, s.historyDayFri, s.historyDaySat, s.historyDaySun];
+    final todayLabel = s.t('Today', 'Oggi');
     return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(20),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           _statsSummary(),
           const SizedBox(height: 20),
-          Text(ref.watch(appStringsProvider).historyKsHeader, style: GoogleFonts.manrope(
+          Text(s.historyKsHeader, style: GoogleFonts.manrope(
             color: AppColors.textSecondary, fontSize: 11, letterSpacing: 0.5)),
           const SizedBox(height: 12),
           SizedBox(
-            height: 200,
+            height: 220,
             child: BarChart(BarChartData(
               alignment: BarChartAlignment.spaceAround,
               maxY: chartMaxY,
@@ -330,14 +418,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                     style: GoogleFonts.manrope(color: AppColors.textSecondary, fontSize: 11)))),
                 bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true,
                   getTitlesWidget: (v, _) {
-                    final s = ref.watch(appStringsProvider);
                     final barDate = now.subtract(Duration(days: 6 - v.round()));
-                    final dayLabels = [s.historyDayMon, s.historyDayTue, s.historyDayWed, s.historyDayThu, s.historyDayFri, s.historyDaySat, s.historyDaySun];
                     final isToday = v.round() == 6;
                     return Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        isToday ? s.t('Today', 'Oggi') : dayLabels[barDate.weekday - 1],
+                        isToday ? todayLabel : dayLabels[barDate.weekday - 1],
                         style: GoogleFonts.manrope(
                           color: isToday ? AppColors.accent : AppColors.textSecondary,
                           fontSize: 10,
@@ -352,7 +438,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             )),
           ),
           const SizedBox(height: 28),
-          Text(ref.watch(appStringsProvider).historyReadinessHeader, style: GoogleFonts.manrope(
+          Text(s.historyReadinessHeader, style: GoogleFonts.manrope(
             color: AppColors.textSecondary, fontSize: 11, letterSpacing: 0.5)),
           const SizedBox(height: 12),
           // Grafico readiness con dati reali da check-in
@@ -372,7 +458,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               ),
               child: Center(
                 child: Text(
-                  ref.watch(appStringsProvider).t(
+                  s.t(
                     'Complete daily check-ins to see your readiness trend',
                     'Completa i check-in giornalieri per vedere il tuo andamento',
                   ),
@@ -386,7 +472,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             )
           else
             SizedBox(
-              height: 160,
+              height: 180,
               child: LineChart(LineChartData(
                 minY: 0, maxY: 10,
                 gridData: FlGridData(show: true, drawVerticalLine: false,
@@ -401,14 +487,12 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                     })),
                   bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true,
                     getTitlesWidget: (v, _) {
-                      final s = ref.watch(appStringsProvider);
                       final barDate = now.subtract(Duration(days: 6 - v.round()));
-                      final dayLabels = [s.historyDayMon, s.historyDayTue, s.historyDayWed, s.historyDayThu, s.historyDayFri, s.historyDaySat, s.historyDaySun];
                       final isToday = v.round() == 6;
                       return Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
-                          isToday ? s.t('Today', 'Oggi') : dayLabels[barDate.weekday - 1],
+                          isToday ? todayLabel : dayLabels[barDate.weekday - 1],
                           style: GoogleFonts.manrope(
                             color: isToday ? AppColors.accent : AppColors.textSecondary,
                             fontSize: 10,
@@ -596,15 +680,20 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
     // Raccogli tutti gli eventi del giorno selezionato
     final List<_DayItem> selectedItems = [];
+    final s = ref.read(appStringsProvider);
     if (_selectedDay != null) {
       for (final e in _events) {
         if (_isSameDay(e.triggeredAt, _selectedDay!)) {
+          final blockedHours = (e.lockDurationMinutes / 60.0).roundToDouble();
+          final estTrades = (blockedHours / 2).ceil();
+          final saving = '~€${(estTrades * 50).round()} ${s.t('saved', 'salvati')}';
           selectedItems.add(_DayItem(
             type: 'killswitch',
-            title: e.reasonLabel,
+            title: s.t(e.reasonLabelEn, e.reasonLabelIt),
             subtitle: DateFormat('HH:mm').format(e.triggeredAt),
             color: _colorForReason(e.reason),
             icon: _iconForReason(e.reason),
+            savingEstimate: saving,
           ));
         }
       }
@@ -616,7 +705,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           if (_isSameDay(milestoneDate, _selectedDay!)) {
             selectedItems.add(_DayItem(
               type: 'milestone',
-              title: ref.read(appStringsProvider).historyMilestone(week, c.propFirmName ?? "Challenge"),
+              title: s.historyMilestone(week, c.propFirmName ?? "Challenge"),
               subtitle: '+${m['profitTarget']}% — ${m['description'] ?? ""}',
               color: AppColors.accent,
               icon: Icons.flag_outlined,
@@ -630,6 +719,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
       children: [
         _buildMonthHeader(),
         _buildWeekDayHeaders(),
+        _buildMonthSummary(),
         _buildMonthGrid(challenges),
         if (_selectedDay != null) ...[
           const Divider(color: AppColors.divider, height: 1),
@@ -655,6 +745,38 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
             ),
           ),
       ],
+    );
+  }
+
+  Widget _buildMonthSummary() {
+    final ksThisMonth = _events.where((e) =>
+      e.triggeredAt.year == _calendarMonth.year &&
+      e.triggeredAt.month == _calendarMonth.month).toList();
+
+    if (ksThisMonth.isEmpty) return const SizedBox.shrink();
+
+    int totalMinutes = 0;
+    for (final e in ksThisMonth) totalMinutes += e.lockDurationMinutes;
+    final blockedHours = (totalMinutes / 60.0).roundToDouble();
+    final estTrades = (blockedHours / 2).ceil();
+    final saving = estTrades * 50;
+
+    final s = ref.read(appStringsProvider);
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        color: AppColors.success.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.success.withValues(alpha: 0.2)),
+      ),
+      child: Text(
+        s.t(
+          '${ksThisMonth.length} killswitch this month · ~€$saving estimated saved',
+          '${ksThisMonth.length} killswitch questo mese · ~€$saving stimati salvati',
+        ),
+        style: GoogleFonts.manrope(color: AppColors.success, fontSize: 12),
+      ),
     );
   }
 
@@ -834,6 +956,9 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               if (item.subtitle.isNotEmpty)
                 Text(item.subtitle, style: GoogleFonts.manrope(
                   color: AppColors.textSecondary, fontSize: 11)),
+              if (item.savingEstimate != null)
+                Text(item.savingEstimate!, style: GoogleFonts.manrope(
+                  color: AppColors.success, fontSize: 11, fontWeight: FontWeight.w600)),
             ]),
           ),
           Container(
@@ -1126,17 +1251,243 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   }
 }
 
+// ── Weekly Discipline Report Card ─────────────────────────────────────────
+
+class _WeeklyReportCard extends StatelessWidget {
+  final DisciplineReport report;
+  const _WeeklyReportCard({required this.report});
+
+  @override
+  Widget build(BuildContext context) {
+    // Perfect week — full gold banner
+    if (report.isPerfectWeek) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+        decoration: BoxDecoration(
+          color: AppColors.surface,
+          borderRadius: AppTheme.bLg,
+          border: Border.all(color: const Color(0xFFFFC947), width: 1.5),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Text('🔒', style: TextStyle(fontSize: 20)),
+            const SizedBox(width: 10),
+            Text(
+              'Perfect week — no activations',
+              style: GoogleFonts.manrope(
+                color: const Color(0xFFFFC947),
+                fontWeight: FontWeight.w700,
+                fontSize: 15,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final scoreColor = report.score >= 80
+        ? const Color(0xFF4CAF50)
+        : report.score >= 55
+            ? const Color(0xFFFFC947)
+            : AppColors.danger;
+
+    final hasDangerousPattern =
+        report.mostDangerousPatternLabel != '—' &&
+        report.mostDangerousPattern != null;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.surface,
+        borderRadius: AppTheme.bLg,
+        border: Border.all(color: AppColors.glassBorderStrong),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header row: label + score badge
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Text(
+                'THIS WEEK',
+                style: GoogleFonts.manrope(
+                  color: AppColors.textSecondary,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                decoration: BoxDecoration(
+                  color: scoreColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                      color: scoreColor.withValues(alpha: 0.35)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '${report.score}',
+                      style: GoogleFonts.manrope(
+                        color: scoreColor,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        height: 1,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      report.scoreLabel,
+                      style: GoogleFonts.manrope(
+                        color: scoreColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Stats chips row
+          Row(
+            children: [
+              Expanded(
+                child: _StatChip(
+                  icon: Icons.shield_outlined,
+                  iconColor: const Color(0xFF4CAF50),
+                  label: 'Avoided: ${report.tradesAvoided}',
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _StatChip(
+                  icon: Icons.warning_amber_rounded,
+                  iconColor: const Color(0xFFF5A623),
+                  label: 'Activations: ${report.activations}',
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: _StatChip(
+                  icon: Icons.key_rounded,
+                  iconColor: AppColors.danger,
+                  label: 'Overrides: ${report.overridesUsed}',
+                ),
+              ),
+            ],
+          ),
+
+          // Most dangerous pattern (only if present)
+          if (hasDangerousPattern) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: const BoxDecoration(
+                    color: AppColors.danger,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Most frequent: ${report.mostDangerousPatternLabel}',
+                    style: GoogleFonts.manrope(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ],
+            ),
+          ],
+
+          const SizedBox(height: 10),
+          // Monthly overrides note
+          Text(
+            'This month: ${report.monthlyOverrides} override${report.monthlyOverrides == 1 ? '' : 's'} used',
+            style: GoogleFonts.manrope(
+              color: AppColors.textTertiary,
+              fontSize: 11,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StatChip extends StatelessWidget {
+  final IconData icon;
+  final Color iconColor;
+  final String label;
+
+  const _StatChip({
+    required this.icon,
+    required this.iconColor,
+    required this.label,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: iconColor, size: 13),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              label,
+              style: GoogleFonts.manrope(
+                color: AppColors.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 class _DayItem {
   final String type;
   final String title;
   final String subtitle;
   final Color color;
   final IconData icon;
+  final String? savingEstimate;
   const _DayItem({
     required this.type,
     required this.title,
     required this.subtitle,
     required this.color,
     required this.icon,
+    this.savingEstimate,
   });
 }

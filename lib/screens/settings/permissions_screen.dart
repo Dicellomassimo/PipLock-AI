@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_strings.dart';
 import '../../services/accessibility_service.dart';
@@ -13,8 +14,128 @@ class PermissionsScreen extends ConsumerStatefulWidget {
   ConsumerState<PermissionsScreen> createState() => _PermissionsScreenState();
 }
 
-class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
+class _PermissionsScreenState extends ConsumerState<PermissionsScreen>
+    with WidgetsBindingObserver {
   int _refreshKey = 0;
+
+  static const _kPermAccessibility = 'perm_accessibility_granted';
+  static const _kPermOverlay       = 'perm_overlay_granted';
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _checkPermissionsOnResume();
+      setState(() => _refreshKey++);
+    }
+  }
+
+  Future<bool> _canChangePermissions() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    // Check 1: se killswitch è attivo, blocca
+    final ksActive = prefs.getBool('killswitch_active') ?? false;
+    if (ksActive) return false;
+
+    // Check 2: se già revocato oggi, blocca
+    final lastRevokeStr = prefs.getString('perm_last_revoke_date');
+    if (lastRevokeStr != null) {
+      final lastRevoke = DateTime.tryParse(lastRevokeStr);
+      if (lastRevoke != null) {
+        final today = DateTime.now();
+        if (lastRevoke.year == today.year &&
+            lastRevoke.month == today.month &&
+            lastRevoke.day == today.day) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  void _showPermissionLockedDialog() {
+    final s = ref.read(appStringsProvider);
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.cardBg,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Row(
+          children: [
+            const Icon(Icons.lock_rounded, color: AppColors.warning, size: 22),
+            const SizedBox(width: 10),
+            Text(
+              s.t('Permission Locked', 'Permesso Bloccato'),
+              style: GoogleFonts.manrope(color: AppColors.textPrimary, fontWeight: FontWeight.bold, fontSize: 16),
+            ),
+          ],
+        ),
+        content: Text(
+          s.t(
+            'You cannot change permissions while a Killswitch is active, or more than once per day. This protects your trading rules.',
+            'Non puoi modificare i permessi durante un Killswitch attivo, o più di una volta al giorno. Questo protegge le tue regole di trading.',
+          ),
+          style: GoogleFonts.manrope(color: AppColors.textSecondary, fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.accent,
+              foregroundColor: Colors.black,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            ),
+            child: Text(s.t('OK', 'OK'), style: GoogleFonts.manrope(fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _checkPermissionsOnResume() async {
+    final prefs = await SharedPreferences.getInstance();
+    final wasAccessibilityGranted = prefs.getBool(_kPermAccessibility) ?? false;
+    final wasOverlayGranted = prefs.getBool(_kPermOverlay) ?? false;
+
+    final isAccessibilityNowEnabled = await AccessibilityService.isEnabled();
+    final isOverlayNowEnabled = await AccessibilityService.canDrawOverlays();
+
+    if (wasAccessibilityGranted && !isAccessibilityNowEnabled) {
+      await prefs.setBool(_kPermAccessibility, false);
+      await prefs.setString('perm_last_revoke_date', DateTime.now().toIso8601String());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text(
+              'Accessibility permission was revoked. Killswitch protection is disabled.'),
+          backgroundColor: AppColors.warning,
+          duration: const Duration(seconds: 5),
+        ));
+      }
+    }
+    if (wasOverlayGranted && !isOverlayNowEnabled) {
+      await prefs.setBool(_kPermOverlay, false);
+      await prefs.setString('perm_last_revoke_date', DateTime.now().toIso8601String());
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: const Text(
+              'Overlay permission was revoked. Killswitch block screen is disabled.'),
+          backgroundColor: AppColors.warning,
+          duration: const Duration(seconds: 5),
+        ));
+      }
+    }
+  }
 
   void _showAccessibilityExplanation(BuildContext context, AppStrings s) {
     showDialog(
@@ -93,9 +214,16 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
                     GoogleFonts.manrope(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(context);
+              final canChange = await _canChangePermissions();
+              if (!canChange) {
+                if (mounted) _showPermissionLockedDialog();
+                return;
+              }
               AccessibilityService.openSettings();
+              SharedPreferences.getInstance().then(
+                  (p) => p.setBool(_kPermAccessibility, true));
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.accent,
@@ -175,7 +303,16 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen> {
             checkingLabel: s.permissionsChecking,
           ),
           const SizedBox(height: 16),
-          _OverlayPermissionCard(refreshKey: _refreshKey, s: s),
+          _OverlayPermissionCard(refreshKey: _refreshKey, s: s, onOpenSettings: () async {
+            final canChange = await _canChangePermissions();
+            if (!canChange) {
+              if (mounted) _showPermissionLockedDialog();
+              return;
+            }
+            AccessibilityService.requestOverlayPermission();
+            SharedPreferences.getInstance().then(
+                (p) => p.setBool('perm_overlay_granted', true));
+          }),
           const SizedBox(height: 16),
           _FcmPermissionCard(refreshKey: _refreshKey, s: s),
           const SizedBox(height: 16),
@@ -343,7 +480,8 @@ class _PermissionCard extends StatelessWidget {
 class _OverlayPermissionCard extends StatelessWidget {
   final int refreshKey;
   final AppStrings s;
-  const _OverlayPermissionCard({required this.refreshKey, required this.s});
+  final VoidCallback onOpenSettings;
+  const _OverlayPermissionCard({required this.refreshKey, required this.s, required this.onOpenSettings});
 
   @override
   Widget build(BuildContext context) {
@@ -441,7 +579,7 @@ class _OverlayPermissionCard extends StatelessWidget {
           ),
           const SizedBox(height: 14),
           ElevatedButton.icon(
-            onPressed: () => AccessibilityService.requestOverlayPermission(),
+            onPressed: onOpenSettings,
             icon: const Icon(Icons.open_in_new, size: 16),
             label: Text(
               s.permissionsGoToSettings,

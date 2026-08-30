@@ -10,7 +10,6 @@ import '../../config/app_theme.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/killswitch_provider.dart';
 import '../../services/accessibility_service.dart';
-import '../../services/face_auth_service.dart';
 
 class KillswitchScreen extends ConsumerStatefulWidget {
   const KillswitchScreen({super.key});
@@ -39,6 +38,12 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
   // Countdown state
   Duration _remaining = Duration.zero;
   Timer? _countdownTimer;
+
+  // Override flow state
+  String? _overrideReason;
+  bool _overrideWaitComplete = false;
+  int _overrideWaitSeconds = 0;
+  Timer? _overrideWaitTimer;
 
   @override
   void initState() {
@@ -81,10 +86,14 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
     _entryCtrl.forward();
     HapticFeedback.heavyImpact();
 
-    // Initialize countdown
+    // Initialize countdown + disclaimer check
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final ks = ref.read(killswitchProvider);
       setState(() => _remaining = ks.remainingTime);
+      // Mostra il disclaimer legale la prima volta che il killswitch si attiva.
+      if (ks.needsDisclaimer && mounted) {
+        _showDisclaimerModal();
+      }
     });
 
     _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -113,7 +122,24 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
     _entryCtrl.dispose();
     _holdCtrl.dispose();
     _countdownTimer?.cancel();
+    _overrideWaitTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _showDisclaimerModal() async {
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      isDismissible: false,
+      enableDrag: false,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _DisclaimerSheet(
+        onConfirm: () {
+          Navigator.of(context).pop();
+          ref.read(killswitchProvider.notifier).markDisclaimerShown();
+        },
+      ),
+    );
   }
 
   void _startHold() {
@@ -131,12 +157,7 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
 
   Future<void> _tryUnlock() async {
     final s = ref.read(appStringsProvider);
-    // Face ID: optional attempt, does not block flow if unavailable.
-    try {
-      await FaceAuthService.authenticate(reason: s.ksConfirmIdentity);
-    } catch (_) {}
-
-    final success = await ref.read(killswitchProvider.notifier).useToken();
+    final success = await ref.read(killswitchProvider.notifier).useToken(_overrideReason);
     if (!success && mounted) {
       _cancelHold();
       ScaffoldMessenger.of(context).showSnackBar(
@@ -149,10 +170,50 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
       // Set flag so personal_rules_screen skips the lock for this session
       final prefs = await SharedPreferences.getInstance();
       await prefs.setBool('killswitch_token_used', true);
+      await prefs.setBool('override_trade_pending', true);
+      await prefs.setString('override_trade_reason', _overrideReason ?? '');
       if (mounted) {
         Navigator.of(context).pushReplacementNamed('/main');
       }
     }
+  }
+
+  // ── Override flow ────────────────────────────────────────────────────────────
+
+  Future<void> _startOverrideFlow() async {
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => const _OverrideReasonSheet(),
+    );
+    if (result != null && mounted) {
+      setState(() => _overrideReason = result);
+      _startOverrideWait();
+    }
+  }
+
+  void _startOverrideWait() {
+    setState(() {
+      _overrideWaitSeconds = 90;
+      _overrideWaitComplete = false;
+    });
+    _overrideWaitTimer?.cancel();
+    _overrideWaitTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {
+        _overrideWaitSeconds--;
+        if (_overrideWaitSeconds <= 0) {
+          _overrideWaitSeconds = 0;
+          _overrideWaitComplete = true;
+          timer.cancel();
+          HapticFeedback.heavyImpact();
+        }
+      });
+    });
   }
 
   String _formatDuration(Duration d) {
@@ -399,43 +460,8 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
                           ),
                           const SizedBox(height: 14),
 
-                          // Token info badge
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: AppTheme.sp16, vertical: AppTheme.sp12),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.04),
-                              borderRadius: AppTheme.bMd,
-                              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.toll_rounded, color: AppColors.accent, size: 16),
-                                const SizedBox(width: 8),
-                                Text(
-                                  tokens > 0 ? s.ksTokensAvailable(tokens) : s.ksNoTokens,
-                                  style: GoogleFonts.manrope(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-
-                          const SizedBox(height: AppTheme.sp24),
-
-                          // Hold-to-unlock button
-                          _HoldToUnlockButton(
-                            holdProgress: _holdProgress,
-                            holding: _holding,
-                            onHoldStart: tokens > 0 ? _startHold : null,
-                            onHoldEnd: tokens > 0 ? _cancelHold : null,
-                            label: tokens > 0 ? s.ksHoldToUnlock : s.ksNoTokens,
-                            enabled: tokens > 0,
-                          ),
+                          // ── Override Token section ───────────────────────────
+                          _buildOverrideSection(tokens, s),
 
                           const SizedBox(height: 12),
 
@@ -510,6 +536,239 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
           },
         ),
       ),
+    );
+  }
+
+  Widget _buildOverrideSection(int tokens, AppStrings s) {
+    // State 1: No tokens available
+    if (tokens == 0) {
+      return Column(
+        children: [
+          // No overrides badge
+          Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.sp16, vertical: AppTheme.sp12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.04),
+              borderRadius: AppTheme.bMd,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.key_rounded, color: AppColors.accent, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  s.ksNoTokens,
+                  style: GoogleFonts.manrope(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppTheme.sp24),
+          // Hold button disabled
+          _HoldToUnlockButton(
+            holdProgress: _holdProgress,
+            holding: _holding,
+            onHoldStart: null,
+            onHoldEnd: null,
+            label: s.ksNoTokens,
+            enabled: false,
+          ),
+          const SizedBox(height: 8),
+          // No tokens — show reset info (no purchase option)
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            decoration: BoxDecoration(
+              color: AppColors.cardBg,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: AppColors.border),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.schedule_rounded,
+                    color: AppColors.textSecondary, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  '2 new tokens reset every Sunday',
+                  style: GoogleFonts.manrope(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
+    // State 2: Tokens available, flow not started yet
+    if (_overrideReason == null) {
+      return Column(
+        children: [
+          // Override available badge
+          Container(
+            padding: const EdgeInsets.symmetric(
+                horizontal: AppTheme.sp16, vertical: AppTheme.sp12),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.04),
+              borderRadius: AppTheme.bMd,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.key_rounded, color: AppColors.accent, size: 16),
+                const SizedBox(width: 8),
+                Text(
+                  'Override available: $tokens this week',
+                  style: GoogleFonts.manrope(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppTheme.sp24),
+          // Tappable "start process" card
+          GestureDetector(
+            onTap: _startOverrideFlow,
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.06),
+                borderRadius: AppTheme.bMd,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.18),
+                ),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.key_rounded,
+                      color: Colors.white70, size: 18),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Use Override — tap to start the process',
+                    style: GoogleFonts.manrope(
+                      color: Colors.white70,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          // Disabled hold button
+          _HoldToUnlockButton(
+            holdProgress: _holdProgress,
+            holding: false,
+            onHoldStart: null,
+            onHoldEnd: null,
+            label: s.ksHoldToUnlock,
+            enabled: false,
+          ),
+        ],
+      );
+    }
+
+    // State 3: Reason selected, waiting 90s
+    if (!_overrideWaitComplete) {
+      return Column(
+        children: [
+          // Countdown row
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.05),
+              borderRadius: AppTheme.bMd,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.timer_rounded, color: AppColors.warning, size: 18),
+                const SizedBox(width: 10),
+                Flexible(
+                  child: Text(
+                    'Confirming override intent... ${_overrideWaitSeconds}s remaining',
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.manrope(
+                      color: AppColors.warning,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: AppTheme.sp24),
+          // Greyed disabled hold button
+          _HoldToUnlockButton(
+            holdProgress: _holdProgress,
+            holding: false,
+            onHoldStart: null,
+            onHoldEnd: null,
+            label: s.ksHoldToUnlock,
+            enabled: false,
+          ),
+        ],
+      );
+    }
+
+    // State 4: Wait complete — ready to override
+    return Column(
+      children: [
+        // Green "ready" badge
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFF4CAF50).withValues(alpha: 0.12),
+            borderRadius: AppTheme.bMd,
+            border: Border.all(color: const Color(0xFF4CAF50).withValues(alpha: 0.40)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.check_circle_rounded,
+                  color: Color(0xFF4CAF50), size: 18),
+              const SizedBox(width: 10),
+              Text(
+                'Ready to override — hold to confirm',
+                style: GoogleFonts.manrope(
+                  color: const Color(0xFF4CAF50),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: AppTheme.sp24),
+        // Active hold button
+        _HoldToUnlockButton(
+          holdProgress: _holdProgress,
+          holding: _holding,
+          onHoldStart: _startHold,
+          onHoldEnd: _cancelHold,
+          label: s.ksHoldToUnlock,
+          enabled: true,
+        ),
+      ],
     );
   }
 }
@@ -680,7 +939,7 @@ class _HoldToUnlockButton extends StatelessWidget {
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Icon(
-                              Icons.toll_rounded,
+                              Icons.key_rounded,
                               color: enabled
                                   ? Colors.white.withValues(alpha: 0.7 + progress * 0.3)
                                   : Colors.white.withValues(alpha: 0.25),
@@ -707,6 +966,181 @@ class _HoldToUnlockButton extends StatelessWidget {
             ),
           );
         },
+      ),
+    );
+  }
+}
+
+// ── Override Reason Sheet ────────────────────────────────────────────────────
+class _OverrideReasonSheet extends StatefulWidget {
+  const _OverrideReasonSheet();
+
+  @override
+  State<_OverrideReasonSheet> createState() => _OverrideReasonSheetState();
+}
+
+class _OverrideReasonSheetState extends State<_OverrideReasonSheet> {
+  static const _presetReasons = [
+    'Strong valid setup',
+    'Risk management exception',
+    'News play',
+    'Other',
+  ];
+
+  String? _selected;
+  final _otherController = TextEditingController();
+
+  @override
+  void dispose() {
+    _otherController.dispose();
+    super.dispose();
+  }
+
+  String? get _resolvedReason {
+    if (_selected == null) return null;
+    if (_selected == 'Other') {
+      final text = _otherController.text.trim();
+      return text.isEmpty ? null : text;
+    }
+    return _selected;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final canContinue = _resolvedReason != null;
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+      child: Container(
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
+        decoration: BoxDecoration(
+          color: const Color(0xFF141418),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Title
+            Text(
+              'Why are you overriding?',
+              style: GoogleFonts.manrope(
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.3,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'This will be recorded in your weekly discipline report.',
+              style: GoogleFonts.manrope(
+                color: Colors.white.withValues(alpha: 0.55),
+                fontSize: 13,
+                height: 1.4,
+              ),
+            ),
+            const SizedBox(height: 20),
+            // Reason chips
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: _presetReasons.map((reason) {
+                final isSelected = _selected == reason;
+                return GestureDetector(
+                  onTap: () => setState(() {
+                    _selected = reason;
+                    if (reason != 'Other') _otherController.clear();
+                  }),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 180),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? AppColors.accent.withValues(alpha: 0.18)
+                          : Colors.white.withValues(alpha: 0.06),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: isSelected
+                            ? AppColors.accent.withValues(alpha: 0.60)
+                            : Colors.white.withValues(alpha: 0.12),
+                      ),
+                    ),
+                    child: Text(
+                      reason,
+                      style: GoogleFonts.manrope(
+                        color: isSelected ? AppColors.accent : Colors.white70,
+                        fontSize: 13,
+                        fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+            // "Other" text field
+            if (_selected == 'Other') ...[
+              const SizedBox(height: 16),
+              TextField(
+                controller: _otherController,
+                autofocus: true,
+                maxLines: 2,
+                onChanged: (_) => setState(() {}),
+                style: GoogleFonts.manrope(color: Colors.white, fontSize: 13),
+                decoration: InputDecoration(
+                  hintText: 'Describe your reason...',
+                  hintStyle: GoogleFonts.manrope(
+                    color: Colors.white.withValues(alpha: 0.35),
+                    fontSize: 13,
+                  ),
+                  filled: true,
+                  fillColor: Colors.white.withValues(alpha: 0.06),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.accent.withValues(alpha: 0.5)),
+                  ),
+                ),
+              ),
+            ],
+            const SizedBox(height: 24),
+            // Continue button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: canContinue
+                    ? () => Navigator.of(context).pop(_resolvedReason)
+                    : null,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: canContinue ? AppColors.accent : Colors.white12,
+                  foregroundColor: canContinue ? Colors.black : Colors.white38,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 0,
+                ),
+                child: Text(
+                  'Continue',
+                  style: GoogleFonts.manrope(
+                    fontWeight: FontWeight.w700,
+                    fontSize: 15,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -822,6 +1256,110 @@ class _BreathingWidgetState extends State<_BreathingWidget>
           ],
         );
       },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Disclaimer sheet — mostrato una sola volta al primo killswitch
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _DisclaimerSheet extends StatelessWidget {
+  final VoidCallback onConfirm;
+
+  const _DisclaimerSheet({required this.onConfirm});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
+      decoration: BoxDecoration(
+        color: const Color(0xFF141418),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.orange.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.orange.withValues(alpha: 0.3)),
+                ),
+                child: const Icon(Icons.gavel_rounded, color: Colors.orange, size: 20),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Text(
+                  'Before you continue',
+                  style: GoogleFonts.manrope(
+                    color: Colors.white,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
+          _bullet('PipLock does NOT close positions automatically on your behalf.'),
+          _bullet('You are solely responsible for managing your trades and any financial losses.'),
+          _bullet('This app is a discipline tool only — not financial advice.'),
+          _bullet('Always close losing positions manually before the lockdown activates.'),
+          const SizedBox(height: 24),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: onConfirm,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.orange,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+              child: Text(
+                'I understand — Continue',
+                style: GoogleFonts.manrope(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 15,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bullet(String text) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('• ', style: TextStyle(color: Colors.orange, fontSize: 14)),
+          Expanded(
+            child: Text(
+              text,
+              style: GoogleFonts.manrope(
+                color: Colors.white70,
+                fontSize: 13,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

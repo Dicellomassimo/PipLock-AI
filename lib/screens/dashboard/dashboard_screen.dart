@@ -14,6 +14,7 @@ import '../../providers/ai_plan_provider.dart';
 import '../../providers/killswitch_provider.dart';
 import '../../providers/broker_provider.dart';
 import '../../providers/rules_provider.dart';
+// gatekeeperActiveProvider is declared in broker_provider.dart
 import '../../providers/auth_provider.dart';
 import '../../providers/challenge_provider.dart';
 import '../../services/supabase_service.dart';
@@ -27,6 +28,8 @@ import '../../widgets/glass_card.dart';
 import '../../widgets/glow_progress_bar.dart';
 import '../../widgets/stat_ring_chart.dart';
 import '../../widgets/staggered_list.dart';
+import '../../models/journal_entry.dart';
+import '../../providers/journal_provider.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -38,7 +41,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 class _DashboardScreenState extends ConsumerState<DashboardScreen>
     with WidgetsBindingObserver {
   bool _checkinDone = false;
-  int _checkinScore = 5;
+  int _checkinScore = 0;
   bool _showGatekeeper = false;
   bool _showDevTools = false;
   Challenge? _activeChallenge;
@@ -118,12 +121,15 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     return DateFormat.yMMMMd(s.locale).format(DateTime.now());
   }
 
-  /// Forex sessions in UTC:
-  /// Sydney:   22:00 – 07:00
-  /// Asia:     00:00 – 09:00
-  /// London:   08:00 – 17:00
-  /// New York: 13:00 – 22:00
-  /// Closed:   Fri 22:00 UTC → Sun 22:00 UTC (full weekend)
+  /// Forex sessions — correct UTC hours.
+  /// Closed: Fri 22:00 UTC → Sun 22:00 UTC (full weekend)
+  static const _sessions = [
+    (name: 'Sydney',   open: 21, close:  6, labelKey: 'sydney'),
+    (name: 'Tokyo',    open: 23, close:  8, labelKey: 'tokyo'),
+    (name: 'London',   open:  7, close: 16, labelKey: 'london'),
+    (name: 'New York', open: 13, close: 22, labelKey: 'newyork'),
+  ];
+
   bool _isWeekendClosed() {
     final now = DateTime.now().toUtc();
     final wd = now.weekday; // Mon=1 … Sat=6, Sun=7
@@ -134,22 +140,53 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     return false;
   }
 
-  String _sessionName(AppStrings s) {
-    if (_isWeekendClosed()) return s.dashSessionClosed;
+  bool _isSessionActive(int openUtc, int closeUtc) {
     final h = DateTime.now().toUtc().hour;
-    if (h >= 8 && h < 13) return s.dashSessionLondon;
-    if (h >= 13 && h < 22) return s.dashSessionNewYork;
-    if (h >= 22 || h < 7) return s.dashSessionSydney;
-    return s.dashSessionAsia; // 07:00–08:00 transition
+    if (openUtc < closeUtc) return h >= openUtc && h < closeUtc;
+    return h >= openUtc || h < closeUtc; // overnight (wrap midnight)
+  }
+
+  String _utcToLocal(int utcHour) {
+    final now = DateTime.now();
+    final utcDt = DateTime.utc(now.year, now.month, now.day, utcHour);
+    final local = utcDt.toLocal();
+    return '${local.hour.toString().padLeft(2, '0')}:00';
+  }
+
+  List<String> _activeSessions(AppStrings s) {
+    if (_isWeekendClosed()) return [s.dashSessionClosed];
+    final active = <String>[];
+    for (final session in _sessions) {
+      if (_isSessionActive(session.open, session.close)) {
+        switch (session.labelKey) {
+          case 'sydney':   active.add(s.dashSessionSydney);
+          case 'tokyo':    active.add(s.dashSessionAsia);
+          case 'london':   active.add(s.dashSessionLondon);
+          case 'newyork':  active.add(s.dashSessionNewYork);
+        }
+      }
+    }
+    return active;
+  }
+
+  String _sessionName(AppStrings s) {
+    final active = _activeSessions(s);
+    if (active.isEmpty) return s.dashSessionClosed;
+    return active.join(' · ');
   }
 
   String _sessionSub(AppStrings s) {
     if (_isWeekendClosed()) return s.dashSessionClosedSub;
-    final h = DateTime.now().toUtc().hour;
-    if (h >= 8 && h < 13) return s.dashSessionClosesLondon;
-    if (h >= 13 && h < 22) return s.dashSessionClosesNY;
-    if (h >= 22 || h < 7) return s.dashSessionClosesSydney;
-    return s.dashSessionOpensLondon; // 07:00–08:00
+    final active = <({String name, int open, int close})>[];
+    for (final session in _sessions) {
+      if (_isSessionActive(session.open, session.close)) {
+        active.add((name: session.name, open: session.open, close: session.close));
+      }
+    }
+    if (active.isEmpty) return s.dashSessionClosedSub;
+    if (active.length > 1) return 'Overlap · ${_utcToLocal(active.first.open)} – ${_utcToLocal(active.last.close)}';
+    final first = active.first;
+    return '${_utcToLocal(first.open)} – ${_utcToLocal(first.close)}';
   }
 
   String _lossLimitLabel(double pnlLimit, bool brokerConnected, String? currency) {
@@ -158,7 +195,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final value = pnlLimit.abs().toStringAsFixed(isPercent ? 1 : 0);
     if (isPercent) return '$value%';
     if (brokerConnected) return '${currency ?? ''}$value';
-    return '€$value';
+    final rulesCurrency = rulesState.rules?.currency ?? 'EUR';
+    return '${_currencySymbol(rulesCurrency)}$value';
+  }
+
+  String _currencySymbol(String code) {
+    const map = {'EUR': '€', 'USD': '\$', 'GBP': '£', 'CHF': 'Fr', 'JPY': '¥', 'AUD': 'A\$', 'CAD': 'C\$'};
+    return map[code] ?? code;
   }
 
   @override
@@ -167,6 +210,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     // NON ripetiamo qui addPostFrameCallback: verrebbe chiamato ogni rebuild
     // causando multipli push della route /killswitch sullo stack.
     ref.watch(killswitchProvider); // watch per rebuild se cambia, ma non naviga da qui
+
+    // Gatekeeper FOMO da evento nativo (broadcast da PipLockAccessibilityService)
+    ref.listen<bool>(gatekeeperActiveProvider, (_, isActive) {
+      if (isActive && mounted) {
+        setState(() => _showGatekeeper = true);
+        ref.read(gatekeeperActiveProvider.notifier).state = false;
+      }
+    });
 
     final profile = ref.watch(authProvider).profile;
     final rulesState = ref.watch(rulesProvider);
@@ -177,7 +228,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final tradesToday = metaState.isConnected
         ? (metaState.tradesToday ?? rulesState.tradesToday)
         : rulesState.tradesToday;
-    final maxTrades = rulesState.rules?.maxTradesPerDay ?? 3;
+    // Use effectiveMaxTrades which accounts for low check-in score (reduces by 30%)
+    final maxTrades = rulesState.effectiveMaxTrades;
 
     // P&L: da MetaAPI se connesso (positivo = profitto, negativo = perdita)
     // Guardia NaN/Infinity: l'accessibility service può inviare Double.NaN per il profit
@@ -218,6 +270,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             ? s.dashBadgeWarning
             : s.dashBadgeCritical;
 
+    ref.watch(brokerProvider).method;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: Stack(
@@ -238,6 +292,35 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                       children: [
                         const SizedBox(height: 28),
                         _buildHeader(profile?.tokensAvailable ?? 2),
+                        // Low readiness banner — visible when checkin score < 5 and reduces trade limit
+                        if (rulesState.checkinScore > 0 && rulesState.checkinScore < 5) ...[
+                          const SizedBox(height: 10),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFF6B35).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFFFF6B35).withValues(alpha: 0.3)),
+                            ),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF6B35), size: 16),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Today\'s trade limit reduced to $maxTrades (low readiness score)',
+                                    style: GoogleFonts.manrope(
+                                      color: const Color(0xFFFF6B35),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
                         const SizedBox(height: 20),
                         _buildHeroCard(
                           s: s,
@@ -309,64 +392,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         // Avatar con glow teal + pulse ring animato
         GestureDetector(
           onTap: () => Navigator.pushNamed(context, '/profile'),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              // Pulse ring
-              TweenAnimationBuilder<double>(
-                tween: Tween(begin: 0.0, end: 1.0),
-                duration: const Duration(seconds: 3),
-                curve: Curves.easeOut,
-                builder: (_, v, _) => Opacity(
-                  opacity: (1 - v) * 0.4,
-                  child: Container(
-                    width: 44 + v * 14,
-                    height: 44 + v * 14,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.accent, width: 1),
-                    ),
-                  ),
-                ),
-                onEnd: () => setState(() {}), // re-trigger
-              ),
-              // Avatar
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  gradient: _avatarPath == null ? AppColors.logoGradient : null,
-                  shape: BoxShape.circle,
-                  image: _avatarPath != null
-                      ? DecorationImage(
-                          image: FileImage(File(_avatarPath!)),
-                          fit: BoxFit.cover,
-                        )
-                      : null,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.accent.withValues(alpha: 0.28),
-                      blurRadius: 14,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: _avatarPath == null
-                    ? Center(
-                        child: Text(
-                          name.isNotEmpty ? name[0].toUpperCase() : 'T',
-                          style: GoogleFonts.manrope(
-                            color: Colors.black,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                      )
-                    : null,
-              ),
-            ],
-          ),
+          child: _AvatarWithPulse(avatarPath: _avatarPath, name: name),
         ),
         const SizedBox(width: 12),
         Expanded(
@@ -414,7 +440,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         const SizedBox(width: 8),
         // Badge token
         GestureDetector(
-          onTap: () => Navigator.pushNamed(context, '/tokens'),
+          onTap: () => Navigator.pushNamed(context, '/paywall'),
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
@@ -439,6 +465,28 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               ],
             ),
           ),
+        ),
+        // Broker connection status dot
+        Consumer(
+          builder: (context, ref, _) {
+            final isConnected = ref.watch(brokerProvider).isConnected;
+            return Container(
+              width: 8,
+              height: 8,
+              margin: const EdgeInsets.only(left: 6),
+              decoration: BoxDecoration(
+                color: isConnected ? AppColors.success : AppColors.textTertiary,
+                shape: BoxShape.circle,
+                boxShadow: isConnected
+                    ? [BoxShadow(
+                        color: AppColors.success.withValues(alpha: 0.4),
+                        blurRadius: 6,
+                        spreadRadius: 1,
+                      )]
+                    : null,
+              ),
+            );
+          },
         ),
       ],
     );
@@ -570,7 +618,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                   // Big animated P&L number (main focal point)
                   AnimatedCounter(
                     value: pnlToday,
-                    prefix: '${brokerConnected ? (currency ?? '€') : '€'}${pnlToday >= 0 ? '+' : ''}',
+                    prefix: '${brokerConnected ? (currency ?? '€') : _currencySymbol(ref.read(rulesProvider).rules?.currency ?? 'EUR')}${pnlToday >= 0 ? '+' : ''}',
                     suffix: '',
                     decimalPlaces: 0,
                     style: GoogleFonts.manrope(
@@ -886,6 +934,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   // ── Check-in Row ──────────────────────────────────────────────────────────
   Widget _buildCheckinRow() {
+    final s = ref.watch(appStringsProvider);
     final color = _checkinScore >= 8
         ? AppColors.accent
         : _checkinScore >= 6
@@ -895,12 +944,12 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 : AppColors.danger;
 
     final scoreLabel = _checkinScore >= 8
-        ? ref.watch(appStringsProvider).dashReadinessOptimal
+        ? s.dashReadinessOptimal
         : _checkinScore >= 6
-            ? ref.watch(appStringsProvider).dashReadinessGood
+            ? s.dashReadinessGood
             : _checkinScore >= 4
-                ? ref.watch(appStringsProvider).dashReadinessLow
-                : ref.watch(appStringsProvider).dashReadinessCritical;
+                ? s.dashReadinessLow
+                : s.dashReadinessCritical;
 
     return AnimatedCard(
       onTap: () => CheckinModal.show(context).then((result) {
@@ -942,7 +991,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      ref.watch(appStringsProvider).dashCheckinTitle,
+                      s.dashCheckinTitle,
                       style: GoogleFonts.manrope(
                         color: AppColors.textPrimary,
                         fontSize: 14,
@@ -1018,6 +1067,20 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   // ── Recent Activity ───────────────────────────────────────────────────────
   Widget _buildRecentActivity() {
     final s = ref.watch(appStringsProvider);
+    final journalState = ref.watch(journalProvider);
+    final allEntries = journalState.entries;
+
+    // Preferisci i trade di oggi, altrimenti gli ultimi 3 in assoluto
+    final today = DateTime.now();
+    final todayEntries = allEntries.where((e) =>
+      e.date.year == today.year &&
+      e.date.month == today.month &&
+      e.date.day == today.day,
+    ).toList();
+    final displayEntries = (todayEntries.isNotEmpty ? todayEntries : allEntries)
+        .take(3)
+        .toList();
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -1034,7 +1097,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               ),
             ),
             GestureDetector(
-              onTap: () => Navigator.pushNamed(context, '/history'),
+              onTap: () => Navigator.pushNamed(context, '/journal'),
               child: Text(
                 s.dashSeeAll,
                 style: GoogleFonts.manrope(
@@ -1047,55 +1110,161 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           ],
         ),
         const SizedBox(height: 10),
-        AnimatedCard(
-          borderRadius: BorderRadius.circular(AppTheme.radiusLg),
-          backgroundColor: AppColors.cardBg,
-          border: Border.all(color: AppColors.border, width: 0.5),
-          boxShadow: const [],
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
-            child: Row(
-              children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: AppColors.success.withValues(alpha: 0.10),
-                    borderRadius: BorderRadius.circular(AppTheme.radiusSm),
-                  ),
-                  child: const Icon(
-                    Icons.check_circle_outline_rounded,
-                    color: AppColors.success,
-                    size: 22,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      s.dashNoEventsToday,
-                      style: GoogleFonts.manrope(
-                        color: AppColors.textPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -0.2,
-                      ),
+        if (displayEntries.isEmpty)
+          AnimatedCard(
+            borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+            backgroundColor: AppColors.cardBg,
+            border: Border.all(color: AppColors.border, width: 0.5),
+            boxShadow: const [],
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+              child: Row(
+                children: [
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: BoxDecoration(
+                      color: AppColors.success.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(AppTheme.radiusSm),
                     ),
-                    const SizedBox(height: 2),
-                    Text(
-                      s.dashRespectingRules,
-                      style: GoogleFonts.manrope(
-                        color: AppColors.textSecondary,
-                        fontSize: 12,
-                      ),
+                    child: const Icon(
+                      Icons.check_circle_outline_rounded,
+                      color: AppColors.success,
+                      size: 22,
                     ),
-                  ],
-                ),
-              ],
+                  ),
+                  const SizedBox(width: 14),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        s.dashNoEventsToday,
+                        style: GoogleFonts.manrope(
+                          color: AppColors.textPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        s.dashRespectingRules,
+                        style: GoogleFonts.manrope(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
+          )
+        else
+          Column(
+            children: displayEntries.map((entry) {
+              final isProfitable = entry.isProfitable;
+              final pnlColor = isProfitable ? AppColors.success : AppColors.danger;
+              final pnlStr = entry.pnl != null
+                  ? '${isProfitable ? '+' : ''}${entry.pnl!.toStringAsFixed(2)}'
+                  : '—';
+              final emotionIcon = switch (entry.emotion) {
+                'calm'       => Icons.self_improvement,
+                'confident'  => Icons.trending_up,
+                'anxious'    => Icons.warning_amber_rounded,
+                'frustrated' => Icons.mood_bad_outlined,
+                'fomo'       => Icons.remove_red_eye_outlined,
+                'revenge'    => Icons.repeat,
+                _            => Icons.circle_outlined,
+              };
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: AnimatedCard(
+                  borderRadius: BorderRadius.circular(AppTheme.radiusLg),
+                  backgroundColor: AppColors.cardBg,
+                  border: Border.all(color: AppColors.border, width: 0.5),
+                  boxShadow: const [],
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 38,
+                          height: 38,
+                          decoration: BoxDecoration(
+                            color: pnlColor.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(AppTheme.radiusSm),
+                          ),
+                          child: Icon(
+                            isProfitable ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                            color: pnlColor,
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                '${entry.symbol} · ${entry.direction.toUpperCase()}',
+                                style: GoogleFonts.manrope(
+                                  color: AppColors.textPrimary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  Icon(emotionIcon, size: 11, color: AppColors.textTertiary),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    entry.emotion,
+                                    style: GoogleFonts.manrope(
+                                      color: AppColors.textTertiary,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                  if (!entry.wasPlanned) ...[
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: AppColors.warning.withValues(alpha: 0.15),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        'unplanned',
+                                        style: GoogleFonts.manrope(
+                                          color: AppColors.warning,
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        Text(
+                          pnlStr,
+                          style: GoogleFonts.manrope(
+                            color: pnlColor,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
           ),
-        ),
       ],
     );
   }
@@ -1312,6 +1481,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       }
       currentMilestone ??= milestones.isNotEmpty ? milestones.last : null;
 
+      // Monte Carlo data from challenge fields
+      final mcRange = challengeWithPlan.monteCarloRange;
+      final mcPassPct = challengeWithPlan.monteCarloPassPct;
+      final drawdownType = challengeWithPlan.drawdownType;
+      final hasConsistency = challengeWithPlan.consistencyRule;
+      final consistencyPct = challengeWithPlan.consistencyRulePct;
+      final hasNews = challengeWithPlan.newsRestriction;
+
+      // Process objectives from AI plan
+      final processFocus = plan['processFocus'] as Map<String, dynamic>?;
+      final objectives = (processFocus?['processObjectives'] as List<dynamic>?)
+          ?.cast<String>() ?? const <String>[];
+
       planBody = Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1322,8 +1504,30 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               _planChip(s.dashSuccessPct(pct is int ? pct : (pct as num).toInt())),
               _planChip(s.dashLotSize(lotSize.toString())),
               _planChip(s.dashRiskPerTrade(risk.toString())),
+              // Drawdown type badge
+              _planChip(drawdownType == 'trailing_eod' ? '📈 Trailing EOD' : '🔒 Static'),
             ],
           ),
+          // Monte Carlo probability
+          if (mcRange != null && mcPassPct != null) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Simulated pass probability: $mcRange%',
+              style: GoogleFonts.manrope(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+            const SizedBox(height: 4),
+            LinearProgressIndicator(
+              value: (mcPassPct / 100).clamp(0.0, 1.0),
+              backgroundColor: AppColors.divider,
+              color: AppColors.accent,
+              minHeight: 3,
+              borderRadius: BorderRadius.circular(4),
+            ),
+          ],
           if (currentMilestone != null) ...[
             const SizedBox(height: 10),
             Text(
@@ -1332,6 +1536,45 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 color: AppColors.textSecondary,
                 fontSize: 12,
               ),
+            ),
+          ],
+          // Process objectives
+          if (objectives.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: objectives.take(3).map((obj) => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text('✅ ', style: TextStyle(fontSize: 11)),
+                  Flexible(
+                    child: Text(
+                      obj,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.manrope(
+                        color: AppColors.textSecondary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ),
+                ],
+              )).toList(),
+            ),
+          ],
+          // Consistency / news warning chips
+          if (hasConsistency || hasNews) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                if (hasConsistency)
+                  _planChip(consistencyPct != null
+                      ? '⚠️ Consistency ≤${consistencyPct.toStringAsFixed(0)}%'
+                      : '⚠️ Consistency rule'),
+                if (hasNews) _planChip('⚠️ News restriction'),
+              ],
             ),
           ],
         ],
@@ -1485,7 +1728,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               label: s.dashMaxLossLabel,
               value: rulesState.rules!.maxDailyLossType == 'percent'
                   ? '${rulesState.rules!.maxDailyLoss ?? 0}%'
-                  : '€${(rulesState.rules!.maxDailyLoss ?? 0).toStringAsFixed(0)}',
+                  : '${_currencySymbol(rulesState.rules!.currency)}${(rulesState.rules!.maxDailyLoss ?? 0).toStringAsFixed(0)}',
               progress: () {
                 if (rulesState.rules!.maxDailyLoss == null ||
                     rulesState.rules!.maxDailyLoss! <= 0) return 0.0;
@@ -1641,15 +1884,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       ));
     }
 
-    // Challenge attive con account number
-    for (final c in challenges.where((c) => c.status == 'active' && c.accountNumber != null)) {
-      final isActive = detectedAccount == c.accountNumber;
+    // Mostra solo la singola challenge più recente con account number (le altre in History)
+    final activeChallenge = challenges
+        .where((c) => c.status == 'active' && c.accountNumber != null)
+        .fold<Challenge?>(null, (best, c) =>
+          best == null || c.startedAt.isAfter(best.startedAt) ? c : best);
+    if (activeChallenge != null) {
+      final isActive = detectedAccount == activeChallenge.accountNumber;
       activeAccounts.add(_accountCard(
         s: s,
         icon: Icons.emoji_events_rounded,
-        label: c.propFirmName ?? 'Challenge',
-        accountNumber: c.accountNumber!,
-        subtitle: s.dashChallengeDay(c.currentDay, c.durationDays, c.profitTarget.toStringAsFixed(0)),
+        label: activeChallenge.propFirmName ?? 'Challenge',
+        accountNumber: activeChallenge.accountNumber!,
+        subtitle: s.dashChallengeDay(activeChallenge.currentDay, activeChallenge.durationDays, activeChallenge.profitTarget.toStringAsFixed(0)),
         isActive: isActive,
       ));
     }
@@ -2032,6 +2279,374 @@ class _BannerContentState extends ConsumerState<_BannerContent>
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+// ── Avatar (statico — senza animazione) ──────────────────────────────────────
+class _AvatarWithPulse extends StatelessWidget {
+  final String? avatarPath;
+  final String name;
+  const _AvatarWithPulse({required this.avatarPath, required this.name});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        gradient: avatarPath == null ? AppColors.logoGradient : null,
+        shape: BoxShape.circle,
+        image: avatarPath != null
+            ? DecorationImage(
+                image: FileImage(File(avatarPath!)),
+                fit: BoxFit.cover,
+              )
+            : null,
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.accent.withValues(alpha: 0.28),
+            blurRadius: 14,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: avatarPath == null
+          ? Center(
+              child: Text(
+                name.isNotEmpty ? name[0].toUpperCase() : 'T',
+                style: GoogleFonts.manrope(
+                  color: Colors.black,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: -0.5,
+                ),
+              ),
+            )
+          : null,
+    );
+  }
+}
+
+// ── Quick Log Sheet ───────────────────────────────────────────────────────────
+class QuickLogSheet extends ConsumerStatefulWidget {
+  final Future<void> Function(JournalEntry) onSubmit;
+
+  const QuickLogSheet({super.key, required this.onSubmit});
+
+  @override
+  ConsumerState<QuickLogSheet> createState() => _QuickLogSheetState();
+}
+
+class _QuickLogSheetState extends ConsumerState<QuickLogSheet> {
+  final _symbolCtrl = TextEditingController();
+  final _pnlCtrl = TextEditingController();
+  String _direction = 'long';
+  String _emotion = 'calm';
+  bool _wasPlanned = true;
+  bool _submitting = false;
+
+  static const _emotions = [
+    ('calm', '😌', 'Calm'),
+    ('confident', '🦁', 'Confident'),
+    ('anxious', '😰', 'Anxious'),
+    ('frustrated', '😤', 'Frustrated'),
+    ('fomo', '😱', 'FOMO'),
+    ('revenge', '🔥', 'Revenge'),
+  ];
+
+  @override
+  void dispose() {
+    _symbolCtrl.dispose();
+    _pnlCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    final symbol = _symbolCtrl.text.trim();
+    if (symbol.isEmpty) return;
+    setState(() => _submitting = true);
+
+    final userId = ref.read(currentUserIdProvider);
+    final pnlText = _pnlCtrl.text.trim().replaceAll(',', '.');
+    final pnl = pnlText.isNotEmpty ? double.tryParse(pnlText) : null;
+
+    final entry = JournalEntry(
+      id: '',
+      userId: userId,
+      date: DateTime.now(),
+      symbol: symbol.toUpperCase(),
+      direction: _direction,
+      pnl: pnl,
+      emotion: _emotion,
+      emotionScore: _emotion == 'calm' || _emotion == 'confident' ? 4 : 2,
+      wasPlanned: _wasPlanned,
+      createdAt: DateTime.now(),
+    );
+
+    await widget.onSubmit(entry);
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+    return Container(
+      decoration: const BoxDecoration(
+        color: AppColors.cardBg,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      padding: EdgeInsets.fromLTRB(20, 16, 20, 24 + bottomInset),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Handle
+          Center(
+            child: Container(
+              width: 36,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 18),
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          Text(
+            'LOG TRADE',
+            style: GoogleFonts.manrope(
+              color: AppColors.textTertiary,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.4,
+            ),
+          ),
+          const SizedBox(height: 14),
+          // Symbol + P&L
+          Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: _field(
+                  controller: _symbolCtrl,
+                  label: 'Symbol',
+                  hint: 'XAUUSD',
+                  capitalization: TextCapitalization.characters,
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                flex: 2,
+                child: _field(
+                  controller: _pnlCtrl,
+                  label: 'P&L (optional)',
+                  hint: '+142.50',
+                  keyboardType: const TextInputType.numberWithOptions(
+                      decimal: true, signed: true),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // Direction
+          Row(
+            children: [
+              _dirBtn('long', '▲ Long', AppColors.success),
+              const SizedBox(width: 8),
+              _dirBtn('short', '▼ Short', AppColors.danger),
+            ],
+          ),
+          const SizedBox(height: 14),
+          // Emotion
+          Text(
+            'EMOTION',
+            style: GoogleFonts.manrope(
+              color: AppColors.textTertiary,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 6,
+            runSpacing: 6,
+            children: _emotions.map((e) {
+              final selected = _emotion == e.$1;
+              return GestureDetector(
+                onTap: () => setState(() => _emotion = e.$1),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? AppColors.accent.withValues(alpha: 0.15)
+                        : AppColors.cardBg2,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: selected ? AppColors.accent : AppColors.border,
+                      width: selected ? 1.0 : 0.5,
+                    ),
+                  ),
+                  child: Text(
+                    '${e.$2} ${e.$3}',
+                    style: GoogleFonts.manrope(
+                      color: selected ? AppColors.accent : AppColors.textSecondary,
+                      fontSize: 11,
+                      fontWeight:
+                          selected ? FontWeight.w700 : FontWeight.w500,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 14),
+          // Was planned
+          GestureDetector(
+            onTap: () => setState(() => _wasPlanned = !_wasPlanned),
+            child: Row(
+              children: [
+                Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    color: _wasPlanned
+                        ? AppColors.accent.withValues(alpha: 0.15)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(5),
+                    border: Border.all(
+                      color: _wasPlanned ? AppColors.accent : AppColors.border,
+                    ),
+                  ),
+                  child: _wasPlanned
+                      ? const Icon(Icons.check,
+                          color: AppColors.accent, size: 13)
+                      : null,
+                ),
+                const SizedBox(width: 9),
+                Text(
+                  'Planned trade (had a setup)',
+                  style: GoogleFonts.manrope(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+          // Submit
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed:
+                  _submitting || _symbolCtrl.text.trim().isEmpty ? null : _submit,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                foregroundColor: Colors.black,
+                disabledBackgroundColor: AppColors.border,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                padding: const EdgeInsets.symmetric(vertical: 15),
+              ),
+              child: _submitting
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          color: Colors.black, strokeWidth: 2),
+                    )
+                  : Text(
+                      'Log Trade',
+                      style: GoogleFonts.manrope(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
+                    ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _field({
+    required TextEditingController controller,
+    required String label,
+    required String hint,
+    TextInputType? keyboardType,
+    TextCapitalization capitalization = TextCapitalization.none,
+    void Function(String)? onChanged,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      textCapitalization: capitalization,
+      onChanged: onChanged,
+      style: GoogleFonts.manrope(
+        color: AppColors.textPrimary,
+        fontSize: 15,
+        fontWeight: FontWeight.w600,
+      ),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle:
+            GoogleFonts.manrope(color: AppColors.textSecondary, fontSize: 12),
+        hintText: hint,
+        hintStyle:
+            GoogleFonts.manrope(color: AppColors.textTertiary, fontSize: 13),
+        filled: true,
+        fillColor: AppColors.cardBg2,
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.border, width: 0.5),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.border, width: 0.5),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: AppColors.accent, width: 1),
+        ),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+      ),
+    );
+  }
+
+  Widget _dirBtn(String value, String label, Color color) {
+    final selected = _direction == value;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _direction = value),
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color:
+                selected ? color.withValues(alpha: 0.15) : AppColors.cardBg2,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? color : AppColors.border,
+              width: selected ? 1.0 : 0.5,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: GoogleFonts.manrope(
+                color: selected ? color : AppColors.textSecondary,
+                fontSize: 13,
+                fontWeight:
+                    selected ? FontWeight.w700 : FontWeight.w500,
+              ),
+            ),
+          ),
         ),
       ),
     );
