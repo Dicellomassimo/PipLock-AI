@@ -302,11 +302,17 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   // ── SHARE ──────────────────────────────────────────────────────────────
 
   Future<void> _shareStats() async {
+    final s = ref.read(appStringsProvider);
     final cleanDays = _consecutiveCleanDays();
     final text = ShareService.generateStatsText(
       ksEvents: _events.length,
       cleanDays: cleanDays,
       totalTrades: _events.length,
+      title: s.historyShareTitle,
+      ksLabel: s.historyShareKsEvents(_events.length),
+      cleanDaysLabel: s.historyShareCleanDays(cleanDays),
+      tradesLabel: s.historyShareTrades(_events.length),
+      tagline: s.historyShareTagline,
     );
     await ShareService.shareText(text);
   }
@@ -373,6 +379,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   Widget _buildChartView() {
     if (_events.isEmpty) return _buildEmptyPlaceholder();
     final now = DateTime.now();
+    const _bottomPad = 88.0; // nav bar height
     final countsByDay = List<int>.filled(7, 0);
     final colorsByDay = List<Color>.filled(7, AppColors.accent);
     for (final e in _events) {
@@ -394,7 +401,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
     final todayLabel = s.t('Today', 'Oggi');
     return SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, _bottomPad),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -486,9 +493,13 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                         style: GoogleFonts.manrope(color: AppColors.textSecondary, fontSize: 11));
                     })),
                   bottomTitles: AxisTitles(sideTitles: SideTitles(showTitles: true,
+                    interval: 1, // evita label duplicate (es. "Today" due volte)
                     getTitlesWidget: (v, _) {
-                      final barDate = now.subtract(Duration(days: 6 - v.round()));
-                      final isToday = v.round() == 6;
+                      final idx = v.round();
+                      // Salta valori non interi che il chart può passare
+                      if ((v - idx).abs() > 0.01) return const SizedBox.shrink();
+                      final barDate = now.subtract(Duration(days: 6 - idx));
+                      final isToday = idx == 6;
                       return Padding(
                         padding: const EdgeInsets.only(top: 4),
                         child: Text(
@@ -566,7 +577,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   Widget _buildListView() {
     if (_events.isEmpty) return _buildEmptyPlaceholder();
     return ListView.builder(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 88),
       itemCount: _events.length,
       itemBuilder: (_, i) => TweenAnimationBuilder<double>(
         tween: Tween(begin: 0.0, end: 1.0),
@@ -732,7 +743,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
                     ),
                   )
                 : ListView.builder(
-                    padding: const EdgeInsets.all(16),
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
                     itemCount: selectedItems.length,
                     itemBuilder: (_, i) => _buildDayItemCard(selectedItems[i]),
                   ),
@@ -984,7 +995,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
   Widget _buildAdvancedView() {
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 88),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1253,12 +1264,54 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
 
 // ── Weekly Discipline Report Card ─────────────────────────────────────────
 
-class _WeeklyReportCard extends StatelessWidget {
+class _WeeklyReportCard extends ConsumerWidget {
   final DisciplineReport report;
   const _WeeklyReportCard({required this.report});
 
+  void _showScoreInfo(BuildContext context, AppStrings s) {
+    showDialog<void>(
+      context: context,
+      builder: (_) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: Text(
+          s.t('Weekly Discipline Score', 'Punteggio di Disciplina Settimanale'),
+          style: GoogleFonts.manrope(
+              color: AppColors.textPrimary, fontWeight: FontWeight.w700),
+        ),
+        content: Text(
+          s.t(
+            'Score from 0 to 100 based on this week\'s activity:\n\n'
+            '• Each Killswitch activation: −8 pts\n'
+            '• Each early unlock (token): −15 pts\n'
+            '• No unlocks despite activations: +5 pts\n'
+            '• Zero activations: 100 pts (Perfect week)\n\n'
+            'Higher = fewer impulsive trades this week.',
+            'Punteggio da 0 a 100 basato sull\'attività della settimana:\n\n'
+            '• Ogni attivazione Killswitch: −8 pt\n'
+            '• Ogni sblocco anticipato (token): −15 pt\n'
+            '• Nessuno sblocco nonostante attivazioni: +5 pt\n'
+            '• Zero attivazioni: 100 pt (Settimana perfetta)\n\n'
+            'Più alto = meno trade impulsivi questa settimana.',
+          ),
+          style: GoogleFonts.manrope(
+              color: AppColors.textSecondary, fontSize: 13, height: 1.5),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: Text(s.t('Got it', 'Ok'),
+                style: GoogleFonts.manrope(color: AppColors.accent)),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(appStringsProvider);
+
     // Perfect week — full gold banner
     if (report.isPerfectWeek) {
       return Container(
@@ -1275,7 +1328,7 @@ class _WeeklyReportCard extends StatelessWidget {
             const Text('🔒', style: TextStyle(fontSize: 20)),
             const SizedBox(width: 10),
             Text(
-              'Perfect week — no activations',
+              s.t('Perfect week — no activations', 'Settimana perfetta — nessuna attivazione'),
               style: GoogleFonts.manrope(
                 color: const Color(0xFFFFC947),
                 fontWeight: FontWeight.w700,
@@ -1313,7 +1366,7 @@ class _WeeklyReportCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               Text(
-                'THIS WEEK',
+                s.t('THIS WEEK', 'QUESTA SETTIMANA'),
                 style: GoogleFonts.manrope(
                   color: AppColors.textSecondary,
                   fontSize: 11,
@@ -1322,6 +1375,14 @@ class _WeeklyReportCard extends StatelessWidget {
                 ),
               ),
               const Spacer(),
+              GestureDetector(
+                onTap: () => _showScoreInfo(context, s),
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: Icon(Icons.info_outline_rounded,
+                      size: 16, color: AppColors.textTertiary),
+                ),
+              ),
               Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
@@ -1366,7 +1427,7 @@ class _WeeklyReportCard extends StatelessWidget {
                 child: _StatChip(
                   icon: Icons.shield_outlined,
                   iconColor: const Color(0xFF4CAF50),
-                  label: 'Avoided: ${report.tradesAvoided}',
+                  label: s.t('Avoided: ${report.tradesAvoided}', 'Evitati: ${report.tradesAvoided}'),
                 ),
               ),
               const SizedBox(width: 6),
@@ -1374,7 +1435,7 @@ class _WeeklyReportCard extends StatelessWidget {
                 child: _StatChip(
                   icon: Icons.warning_amber_rounded,
                   iconColor: const Color(0xFFF5A623),
-                  label: 'Activations: ${report.activations}',
+                  label: s.t('Activations: ${report.activations}', 'Attivazioni: ${report.activations}'),
                 ),
               ),
               const SizedBox(width: 6),
@@ -1382,7 +1443,7 @@ class _WeeklyReportCard extends StatelessWidget {
                 child: _StatChip(
                   icon: Icons.key_rounded,
                   iconColor: AppColors.danger,
-                  label: 'Overrides: ${report.overridesUsed}',
+                  label: s.t('Overrides: ${report.overridesUsed}', 'Sblocchi: ${report.overridesUsed}'),
                 ),
               ),
             ],
@@ -1404,7 +1465,8 @@ class _WeeklyReportCard extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Most frequent: ${report.mostDangerousPatternLabel}',
+                    s.t('Most frequent: ${report.mostDangerousPatternLabel}',
+                        'Più frequente: ${report.mostDangerousPatternLabel}'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textSecondary,
                       fontSize: 12,

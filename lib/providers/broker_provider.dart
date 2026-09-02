@@ -6,13 +6,17 @@ import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import '../config/constants.dart';
 import '../models/broker_data.dart';
 import '../models/challenge.dart';
+import '../models/chat_session.dart';
 import '../services/accessibility_service.dart';
+import '../services/ai_service.dart';
 import '../services/notification_service.dart';
 import '../services/supabase_service.dart';
 import '../services/fomo_detection_service.dart';
 import '../services/metaapi_service.dart';
 import 'challenge_provider.dart';
+import 'chat_history_provider.dart';
 import 'killswitch_provider.dart';
+import 'locale_provider.dart';
 import 'navigation_provider.dart';
 import 'rules_provider.dart';
 import 'auth_provider.dart';
@@ -134,6 +138,7 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
   int _prevOpenPositions = -1;
   DateTime? _lastPositionCloseTime;
   bool _fastReentryAlertSent = false;
+  bool _dailyBriefingTriggered = false;
 
   BrokerNotifier(this._ref) : super(const BrokerState()) {
     _loadPersistedConnection();
@@ -144,6 +149,13 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       final nextId = next.profile?.id ?? '';
       if (nextId.isNotEmpty && nextId != prevId && state.method == BrokerConnectionMethod.none) {
         _loadPersistedConnection();
+      }
+    });
+    // Trigger daily briefing when challenges first load
+    _ref.listen<List<Challenge>>(challengeListProvider, (prev, next) {
+      if ((prev?.isEmpty ?? true) && next.isNotEmpty && !_dailyBriefingTriggered) {
+        _dailyBriefingTriggered = true;
+        _triggerDailyChallengeBriefing();
       }
     });
   }
@@ -187,6 +199,8 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           _ref.read(killswitchProvider.notifier).deactivate();
         }
       }
+      _dailyBriefingTriggered = false; // reset so next day briefing can fire
+      _triggerDailyChallengeBriefing(); // fire briefing for new day
     }
   }
 
@@ -233,6 +247,21 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
               _scheduleMidnightReset();
               return; // EA trovato, non serve accessibility
             }
+          } else if (connType == 'accessibility') {
+            // Accessibility connection saved to Supabase — restore it
+            try {
+              final prefs = await SharedPreferences.getInstance();
+              await prefs.setString('connection_method', 'accessibility');
+            } catch (_) {}
+            state = BrokerState(
+              method: BrokerConnectionMethod.accessibility,
+              status: BrokerConnectionStatus.connecting,
+              statusMessage: 'Reading MT5 data...',
+            );
+            _startAccessibilityStream();
+            _startAccessibilityPolling();
+            _scheduleMidnightReset();
+            return;
           }
         }
       }
@@ -262,10 +291,11 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       final ageMs = DateTime.now().millisecondsSinceEpoch - ts;
       if (ageMs > 86400000) return; // scarta dati più vecchi di 24h
 
-      final equity    = lastData['equity']    as double?;
-      final balance   = lastData['balance']   as double?;
-      final profitRaw = lastData['profit']    as double?;
-      final positions = lastData['positions'] as int?;
+      final equity      = lastData['equity']       as double?;
+      final balance     = lastData['balance']      as double?;
+      final profitRaw   = lastData['profit']       as double?;
+      final positions   = lastData['positions']    as int?;
+      final tradesRaw   = lastData['trades_today'] as int?;
 
       final dataDate = DateTime.fromMillisecondsSinceEpoch(ts);
       final now2 = DateTime.now();
@@ -274,10 +304,11 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
                       dataDate.day == now2.day;
 
       updateFromAccessibility(
-        equity:    (equity    != null && equity    >= 0)    ? equity    : null,
-        balance:   (balance   != null && balance   >= 0)    ? balance   : null,
-        profit:    isToday ? ((profitRaw != null && !profitRaw.isNaN) ? profitRaw : null) : null,
-        positions: (positions != null && positions >= 0)    ? positions : null,
+        equity:      (equity      != null && equity      >= 0)  ? equity      : null,
+        balance:     (balance     != null && balance     >= 0)  ? balance     : null,
+        profit:      isToday ? ((profitRaw != null && !profitRaw.isNaN) ? profitRaw : null) : null,
+        positions:   (positions   != null && positions   >= 0)  ? positions   : null,
+        tradesToday: isToday ? ((tradesRaw != null && tradesRaw >= 0)  ? tradesRaw  : null) : null,
       );
     } catch (_) {}
 
@@ -401,6 +432,19 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString('connection_method', 'accessibility');
     } catch (_) {}
+    // Also save to Supabase so connection survives a reinstall
+    try {
+      if (!kDevMode) {
+        final userId = _ref.read(currentUserIdProvider);
+        if (userId.isNotEmpty) {
+          await _upsertBrokerConnection(
+            userId: userId,
+            connectionType: 'accessibility',
+            broker: 'mt5',
+          );
+        }
+      }
+    } catch (_) {}
     _startAccessibilityStream();
     await _checkAccessibilityAndUpdate();
     _startAccessibilityPolling();
@@ -463,6 +507,7 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         final balanceRaw      = event['balance']        as double?;
         final profitRaw       = event['profit']         as double?;
         final positionsRaw    = event['positions']      as int?;
+        final tradesTodayRaw  = event['trades_today']   as int?;
         final accountNumRaw   = event['account_number'] as String?;
 
         if (accountNumRaw != null && accountNumRaw.isNotEmpty) {
@@ -470,10 +515,11 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         }
 
         updateFromAccessibility(
-          equity:    (equityRaw    != null && equityRaw    >= 0)  ? equityRaw    : null,
-          balance:   (balanceRaw   != null && balanceRaw   >= 0)  ? balanceRaw   : null,
-          profit:    (profitRaw    != null && !profitRaw.isNaN)   ? profitRaw    : null,
-          positions: (positionsRaw != null && positionsRaw >= 0)  ? positionsRaw : null,
+          equity:      (equityRaw      != null && equityRaw      >= 0)  ? equityRaw      : null,
+          balance:     (balanceRaw     != null && balanceRaw     >= 0)  ? balanceRaw     : null,
+          profit:      (profitRaw      != null && !profitRaw.isNaN)     ? profitRaw      : null,
+          positions:   (positionsRaw   != null && positionsRaw   >= 0)  ? positionsRaw   : null,
+          tradesToday: (tradesTodayRaw != null && tradesTodayRaw >= 0)  ? tradesTodayRaw : null,
         );
       } else if (eventType == 'account_switched') {
         final toAccount = event['to_account'] as String? ?? '';
@@ -711,11 +757,17 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
   // ── Aggiornamento da Accessibility Service ──────────────────────────────────
 
   /// Aggiorna i dati estratti dall'Accessibility Service (MT5/cTrader mobile).
+  ///
+  /// [tradesToday] — conteggio cumulativo dei trade aperti oggi, calcolato dal
+  /// lato Kotlin via delta-margine (disponibile solo quando extractMT5ByViewId
+  /// funziona, cioè MT5 Trade tab con resource ID leggibili). Se null, Flutter
+  /// calcola il conteggio in modo autonomo tramite le variazioni di [positions].
   void updateFromAccessibility({
     double? equity,
     double? balance,
     double? profit,
     int? positions,
+    int? tradesToday,
   }) {
     // Ignora valori sentinella (-1 per i doppi, -1 per gli int)
     final validEquity = (equity != null && equity >= 0) ? equity : null;
@@ -734,46 +786,57 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         ? (validBalance - validEquity) / validBalance * 100
         : null;
 
-    // Traccia i trade aperti oggi: quando il conteggio posizioni aumenta,
-    // significa che l'utente ha aperto nuovi trade — incrementa tradesToday.
-    // La prima lettura stabilisce il baseline (posizioni già aperte prima dell'avvio)
-    // e non viene contata come nuovi trade per evitare falsi positivi.
-    final prevPositions = state.data.openPositions ?? 0;
+    // ── Conteggio trade aperti oggi ─────────────────────────────────────────
+    // Due percorsi:
+    // A) Kotlin invia trades_today (margin-delta, preciso, funziona con >9 trade):
+    //    → usiamo direttamente il valore nativo; aggiorniamo il baseline per coerenza.
+    // B) Kotlin non invia trades_today (text-based fallback, usa childCount visibile):
+    //    → Flutter conta i nuovi trade confrontando le variazioni di positions.
     int? newTradesToday = state.data.tradesToday;
-    if (validPositions != null) {
-      if (!_positionsBaselineSet) {
+
+    if (tradesToday != null) {
+      // ── Percorso A: valore accurato da Kotlin ────────────────────────────
+      newTradesToday = tradesToday;
+      // Aggiorna il baseline Flutter così se in futuro Kotlin smette di inviare
+      // trades_today (cambio tab) non ripartiamo da zero.
+      if (validPositions != null && validPositions > 0) {
         _positionsBaselineSet = true;
         _lastNonZeroPositions = validPositions;
-        // Prima lettura: registra baseline senza contare come nuovi trade
-      } else if (validPositions == 0) {
-        // MT5 backgrounded or no positions — save last known count, don't count as closed trades
-        if (prevPositions > 0) {
-          _lastNonZeroPositions = prevPositions;
-          _positionsDroppedToZero = true;
-        }
-      } else if (_positionsDroppedToZero) {
-        // Posizioni tornate da zero: sono SEMPRE nuovi trade (i precedenti erano stati chiusi)
         _positionsDroppedToZero = false;
-        final newlyOpened = validPositions;
-        newTradesToday = (state.data.tradesToday ?? 0) + newlyOpened;
-        _lastNonZeroPositions = validPositions;
-        for (var i = 0; i < newlyOpened; i++) {
-          try { _ref.read(rulesProvider.notifier).trackTrade(); } catch (_) {}
+      }
+    } else {
+      // ── Percorso B: fallback Flutter (text-based extraction) ─────────────
+      if (validPositions != null) {
+        if (!_positionsBaselineSet) {
+          _positionsBaselineSet = true;
+          _lastNonZeroPositions = validPositions;
+          // Prima lettura: registra baseline senza contare come nuovi trade
+        } else if (validPositions == 0) {
+          // MT5 in background o nessuna posizione — salva ultimo conteggio noto
+          if (validPositions == 0 && _lastNonZeroPositions > 0) {
+            _positionsDroppedToZero = true;
+          }
+        } else if (_positionsDroppedToZero) {
+          // Posizioni tornate da zero: sono SEMPRE nuovi trade
+          _positionsDroppedToZero = false;
+          final newlyOpened = validPositions;
+          newTradesToday = (state.data.tradesToday ?? 0) + newlyOpened;
+          _lastNonZeroPositions = validPositions;
+          for (var i = 0; i < newlyOpened; i++) {
+            try { _ref.read(rulesProvider.notifier).trackTrade(); } catch (_) {}
+          }
+        } else if (validPositions > _lastNonZeroPositions) {
+          // Caso normale: nuove posizioni aperte mentre MT5 era aperto.
+          final newlyOpened = validPositions - _lastNonZeroPositions;
+          newTradesToday = (state.data.tradesToday ?? 0) + newlyOpened;
+          _lastNonZeroPositions = validPositions;
+          for (var i = 0; i < newlyOpened; i++) {
+            try { _ref.read(rulesProvider.notifier).trackTrade(); } catch (_) {}
+          }
+          _checkFomoOnNewPosition(null);
+        } else if (validPositions > 0) {
+          _lastNonZeroPositions = validPositions;
         }
-      } else if (validPositions > _lastNonZeroPositions) {
-        // Normal case: new positions opened while MT5 was open.
-        final newlyOpened = validPositions - _lastNonZeroPositions;
-        newTradesToday = (state.data.tradesToday ?? 0) + newlyOpened;
-        _lastNonZeroPositions = validPositions;
-        for (var i = 0; i < newlyOpened; i++) {
-          try { _ref.read(rulesProvider.notifier).trackTrade(); } catch (_) {}
-        }
-        // FOMO detection: check for price spike on the detected instrument
-        // The symbol is not available from Accessibility Service directly,
-        // so we trigger a generic check that the UI can surface if a signal is found.
-        _checkFomoOnNewPosition(null);
-      } else if (validPositions > 0) {
-        _lastNonZeroPositions = validPositions;
       }
     }
 
@@ -911,6 +974,15 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           killswitchDurationMinutes: 1440, // challenges: lock until midnight
           accountNumber: accountNumber,
         );
+        // Scrivi il lot size raccomandato dal piano AI in SharedPreferences.
+        // L'AccessibilityService Kotlin lo legge come metadata per il rilevamento
+        // overleveraging (chiave: flutter.recommended_lot_size).
+        final recommendedLotSize = (plan?['recommendedLotSize'] as num?)?.toDouble();
+        if (recommendedLotSize != null && recommendedLotSize > 0) {
+          SharedPreferences.getInstance().then((prefs) {
+            prefs.setDouble('recommended_lot_size', recommendedLotSize);
+          });
+        }
         return;
       }
 
@@ -1246,7 +1318,7 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     required String userId,
     required String connectionType,
     required String broker,
-    required String webhookSecret,
+    String? webhookSecret,
   }) async {
     final existing = await Supabase.instance.client
         .from('broker_connections')
@@ -1325,6 +1397,95 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     _metaApiTimer?.cancel();
     _midnightTimer?.cancel();
     super.dispose();
+  }
+
+  // ── Daily challenge briefing ────────────────────────────────────────────────
+
+  /// Genera il briefing giornaliero della challenge e lo aggiunge come nuova sessione
+  /// nell'AI Planner. Chiamato una volta al giorno (al reset di mezzanotte o al primo
+  /// caricamento delle challenge). È idempotente: verifica che non sia già stato
+  /// generato oggi per questa challenge.
+  Future<void> _triggerDailyChallengeBriefing() async {
+    if (kDevMode) return;
+    try {
+      final challenges = _ref.read(challengeListProvider);
+      final active = challenges.where((c) => c.status == 'active').toList();
+      if (active.isEmpty) return;
+
+      final challenge = active.first;
+
+      // Controlla se il briefing è già stato generato oggi per questa challenge
+      final prefs = await SharedPreferences.getInstance();
+      final todayKey = _todayBriefingKey();
+      final lastBriefingDate = prefs.getString('daily_briefing_${challenge.id}');
+      if (lastBriefingDate == todayKey) return; // già fatto oggi
+
+      // Segna subito come fatto (evita doppie generazioni se l'app viene riaperta)
+      await prefs.setString('daily_briefing_${challenge.id}', todayKey);
+
+      // Dati broker per contestualizzare il briefing
+      final brokerData = state.isConnected
+          ? {
+              'equity': state.equity,
+              'dailyPnl': state.dailyPnl,
+              'tradesToday': state.tradesToday,
+            }
+          : <String, dynamic>{};
+
+      // Giorno corrente calcolato da startedAt (non dipende dal campo DB)
+      final currentDay = DateTime.now().difference(challenge.startedAt).inDays + 1;
+
+      // Lingua dell'app (it o en)
+      String locale = 'it';
+      try {
+        locale = _ref.read(localeProvider).languageCode;
+      } catch (_) {}
+
+      // Genera briefing via Groq
+      final briefingText = await AiService.generateDailyChallengeBriefing(
+        challenge: challenge,
+        currentDay: currentDay,
+        brokerData: brokerData,
+        locale: locale,
+      );
+
+      // Crea nuova sessione nell'AI Planner con il briefing come primo messaggio
+      final session = await _ref.read(chatHistoryProvider.notifier).createSession(
+        type: 'challenge',
+        contextName: challenge.propFirmName,
+        challengeId: challenge.id,
+      );
+      final updatedSession = session.copyWith(
+        plan: challenge.aiPlan,
+        messages: [
+          ChatMessage(
+            text: briefingText,
+            isUser: false,
+            timestamp: DateTime.now(),
+          ),
+        ],
+        updatedAt: DateTime.now(),
+      );
+      await _ref.read(chatHistoryProvider.notifier).updateSession(updatedSession);
+
+      // Notifica push
+      NotificationService.showLocalNotification(
+        title: locale.startsWith('it')
+            ? '📋 Giorno $currentDay — piano pronto'
+            : '📋 Day $currentDay — plan ready',
+        body: locale.startsWith('it')
+            ? 'Il tuo briefing per ${challenge.propFirmName ?? "la challenge"} è pronto.'
+            : 'Your briefing for ${challenge.propFirmName ?? "the challenge"} is ready.',
+        id: 9001,
+      );
+    } catch (_) {
+      // Fail silently — daily briefing is non-critical
+    }
+  }
+
+  static String _todayBriefingKey() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
   }
 }
 

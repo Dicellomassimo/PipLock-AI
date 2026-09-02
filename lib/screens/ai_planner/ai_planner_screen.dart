@@ -5,9 +5,11 @@ import '../../config/app_colors.dart';
 import '../../config/app_strings.dart';
 import '../../models/challenge.dart';
 import '../../models/chat_session.dart';
+import '../../providers/broker_provider.dart';
 import '../../providers/challenge_provider.dart';
 import '../../providers/chat_history_provider.dart';
 import '../../providers/pending_challenge_provider.dart';
+import '../../providers/rules_provider.dart';
 import '../../services/ai_service.dart';
 import '../../widgets/ambient_blobs.dart';
 import '../../widgets/candle_background.dart';
@@ -50,12 +52,14 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
     required String type,
     Challenge? challenge,
   }) async {
+    final s = ref.read(appStringsProvider);
     final session = await ref.read(chatHistoryProvider.notifier).createSession(
           type: type,
           contextName: type == 'challenge'
-              ? (challenge?.propFirmName ?? 'Challenge')
-              : 'Personal',
+              ? (challenge?.propFirmName ?? s.t('Challenge', 'Challenge'))
+              : s.t('Personal', 'Personale'),
           challengeId: challenge?.id,
+          personalLabel: s.t('Personal', 'Personale'),
         );
     if (!mounted) return;
     Navigator.push(
@@ -94,6 +98,9 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
   void _showNewChatSheet() {
     final challenges = ref.read(challengeListProvider);
     final s = ref.read(appStringsProvider);
+    final hasPersonalRules = ref.read(rulesProvider).rules != null;
+    final brokerState = ref.read(brokerProvider);
+    final hasBroker = brokerState.hasAccount;
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.cardBg,
@@ -121,15 +128,49 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
                   color: AppColors.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 20),
-            // Conto personale
+            // Conto personale — disabilitato se regole manuali già configurate
             _NewChatOption(
               icon: Icons.person_outline,
               title: s.aiPlannerPersonalAccount,
-              subtitle: s.aiPlannerPersonalSubtitle,
-              onTap: () {
-                Navigator.pop(ctx);
-                _openNewSession(type: 'personal');
-              },
+              subtitle: hasPersonalRules
+                  ? s.t(
+                      'Manual rules already set — use a Challenge or new account',
+                      'Regole manuali già configurate — usa una Challenge o un nuovo account',
+                    )
+                  : !hasBroker
+                      ? s.t(
+                          'Connect your broker first to get a personalized plan',
+                          'Collega prima il broker per ricevere un piano personalizzato',
+                        )
+                      : s.aiPlannerPersonalSubtitle,
+              disabled: hasPersonalRules,
+              onTap: hasPersonalRules
+                  ? () {
+                      Navigator.pop(ctx);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          backgroundColor: AppColors.surface,
+                          content: Text(
+                            s.t(
+                              'You already have manual rules for your personal account. Create a Challenge plan or add a new personal account in Settings.',
+                              'Hai già regole manuali per il tuo account personale. Crea un piano Challenge o aggiungi un nuovo account nelle Impostazioni.',
+                            ),
+                            style: GoogleFonts.manrope(
+                                color: AppColors.textPrimary, fontSize: 13),
+                          ),
+                          duration: const Duration(seconds: 4),
+                        ),
+                      );
+                    }
+                  : !hasBroker
+                      ? () {
+                          Navigator.pop(ctx);
+                          Navigator.pushNamed(context, '/broker');
+                        }
+                      : () {
+                          Navigator.pop(ctx);
+                          _openNewSession(type: 'personal');
+                        },
             ),
             if (challenges.isNotEmpty) ...[
               const SizedBox(height: 10),
@@ -190,6 +231,12 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
     final sessions = ref.watch(chatHistoryProvider);
     final s = ref.watch(appStringsProvider);
 
+    ref.listen<Challenge?>(pendingChallengeProvider, (_, next) {
+      if (next != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _handlePendingChallenge());
+      }
+    });
+
     return Scaffold(
       backgroundColor: const Color(0xFF0A0A0F),
       appBar: AppBar(
@@ -226,25 +273,21 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
           ),
           const Positioned.fill(child: IgnorePointer(child: AmbientBlobs())),
           sessions.isEmpty ? _buildEmpty() : _buildSessionList(sessions),
-        ],
-      ),
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      floatingActionButton: sessions.isEmpty
-          ? null
-          : Padding(
-              // Lift the FAB above the floating nav bar (~88dp tall) + system inset
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(context).padding.bottom + 100,
-              ),
+          if (sessions.isNotEmpty)
+            Positioned(
+              right: 16,
+              bottom: MediaQuery.of(context).padding.bottom + 88,
               child: FloatingActionButton.extended(
                 onPressed: _showNewChatSheet,
                 backgroundColor: AppColors.accent,
                 foregroundColor: Colors.black,
                 icon: const Icon(Icons.add, size: 20),
-                label: Text(ref.watch(appStringsProvider).aiPlannerNewChat,
+                label: Text(s.aiPlannerNewChat,
                     style: GoogleFonts.manrope(fontWeight: FontWeight.bold)),
               ),
             ),
+        ],
+      ),
     );
   }
 
@@ -462,7 +505,9 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      session.title,
+                      session.type == 'personal'
+                          ? '${s.t('Personal', 'Personale')} · ${session.title.contains(' · ') ? session.title.split(' · ').last : ''}'
+                          : session.title,
                       style: GoogleFonts.manrope(
                         color: AppColors.textPrimary,
                         fontWeight: FontWeight.w600,
@@ -558,56 +603,67 @@ class _NewChatOption extends StatelessWidget {
   final String title;
   final String subtitle;
   final VoidCallback onTap;
+  final bool disabled;
 
   const _NewChatOption({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.onTap,
+    this.disabled = false,
   });
 
   @override
   Widget build(BuildContext context) {
+    final iconColor = disabled ? AppColors.textTertiary : AppColors.accent;
+    final textColor = disabled ? AppColors.textTertiary : AppColors.textPrimary;
     return GestureDetector(
       onTap: onTap,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.surface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: AppColors.divider),
-        ),
-        child: Row(
-          children: [
-            Container(
-              width: 36,
-              height: 36,
-              decoration: BoxDecoration(
-                color: AppColors.accent.withValues(alpha: 0.10),
-                borderRadius: BorderRadius.circular(9),
+      child: Opacity(
+        opacity: disabled ? 0.6 : 1.0,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+                color: disabled ? AppColors.border : AppColors.divider),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: iconColor.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(9),
+                ),
+                child: Icon(icon, color: iconColor, size: 18),
               ),
-              child: Icon(icon, color: AppColors.accent, size: 18),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(title,
-                      style: GoogleFonts.manrope(
-                        color: AppColors.textPrimary,
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                      )),
-                  Text(subtitle,
-                      style: GoogleFonts.manrope(
-                          color: AppColors.textSecondary, fontSize: 12)),
-                ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: GoogleFonts.manrope(
+                          color: textColor,
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        )),
+                    Text(subtitle,
+                        style: GoogleFonts.manrope(
+                            color: AppColors.textSecondary, fontSize: 12)),
+                  ],
+                ),
               ),
-            ),
-            const Icon(Icons.chevron_right,
-                color: AppColors.textSecondary, size: 16),
-          ],
+              Icon(
+                disabled ? Icons.block_rounded : Icons.chevron_right,
+                color: AppColors.textSecondary,
+                size: 16,
+              ),
+            ],
+          ),
         ),
       ),
     );

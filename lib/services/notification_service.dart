@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz_data;
@@ -338,6 +339,40 @@ class NotificationService {
     _dailyRefreshTimer = null;
   }
 
+  /// Scrive i timestamp degli eventi high-impact passati recentemente (ultimi 45 min)
+  /// e futuri (prossime 24h) in SharedPreferences, nella chiave 'upcoming_events'
+  /// di 'piplock_news_cache'. L'AccessibilityService Kotlin legge questi timestamp
+  /// per rilevare il pattern FOMO (finestra T+2 a T+30 minuti dopo l'evento).
+  ///
+  /// Formato: JSON array di int (millisecondsSinceEpoch)
+  /// Esempio: [1720000000000, 1720003600000]
+  static Future<void> _writeNewsTimestampsToPrefs(List<EconomicEvent> events) async {
+    try {
+      final now = DateTime.now();
+      final timestamps = events
+          .where((e) => e.impact == 'high')
+          .where((e) {
+            final diff = e.time.difference(now);
+            // Include: eventi passati nelle ultime 45 min (finestra FOMO post-news)
+            //          ed eventi futuri nelle prossime 24h (per check pre-sessione)
+            return diff.inMinutes >= -45 && diff.inHours <= 24;
+          })
+          .map((e) => e.time.millisecondsSinceEpoch)
+          .toList();
+
+      final prefs = await SharedPreferences.getInstance();
+      // Nota: il pref-file di default Flutter ('FlutterSharedPreferences') viene
+      // letto dal Kotlin come 'FlutterSharedPreferences' con prefisso 'flutter.'
+      // Per semplicità usiamo la stessa istanza — Kotlin deve leggere da
+      // getSharedPreferences('FlutterSharedPreferences', MODE_PRIVATE)
+      // con chiave 'flutter.piplock_news_upcoming'.
+      await prefs.setString('piplock_news_upcoming', jsonEncode(timestamps));
+      debugPrint('[NotificationService] News timestamps scritti: ${timestamps.length} eventi high-impact');
+    } catch (e) {
+      debugPrint('[NotificationService] _writeNewsTimestampsToPrefs error: $e');
+    }
+  }
+
   static Future<void> _checkUpcomingEvents() async {
     try {
       final events = await _fetchMonth();
@@ -363,6 +398,10 @@ class NotificationService {
         );
         debugPrint('[NotificationService] Alert: ${e.event} $minLabel');
       }
+
+      // Scrivi sempre i timestamp in SharedPreferences, così l'AccessibilityService
+      // Kotlin può rilevare il pattern FOMO anche quando l'app è in background.
+      await _writeNewsTimestampsToPrefs(events);
     } catch (err) {
       debugPrint('[NotificationService] _checkUpcomingEvents error: $err');
     }

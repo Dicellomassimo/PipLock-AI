@@ -36,12 +36,13 @@ class ChatHistoryNotifier extends StateNotifier<List<ChatSession>> {
     required String type,
     String? contextName,
     String? challengeId,
+    String? personalLabel,
   }) async {
     final now = DateTime.now();
     final dateLabel = '${now.day.toString().padLeft(2, '0')}/'
         '${now.month.toString().padLeft(2, '0')}';
     final title = type == 'personal'
-        ? 'Personale · $dateLabel'
+        ? '${personalLabel ?? 'Personal'} · $dateLabel'
         : '${contextName ?? "Challenge"} · $dateLabel';
 
     final session = ChatSession(

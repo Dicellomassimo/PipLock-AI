@@ -132,7 +132,10 @@ class RulesNotifier extends StateNotifier<RulesState> {
         state = const RulesState();
         return;
       }
-      final rules = await SupabaseService.getPersonalRules(userId);
+      var rules = await SupabaseService.getPersonalRules(userId);
+      // Fallback: se Supabase non ha regole (trigger bug o primo avvio dopo reinstall),
+      // usa la cache locale salvata in SharedPreferences dall'ultima sessione valida.
+      if (rules == null) rules = await _loadLocalRulesCache(userId);
       final (trades, loss) = await _loadDailyCounters(userId);
       final checkinScore = await _loadTodayCheckinScore();
       if (_disposed) return;
@@ -153,8 +156,67 @@ class RulesNotifier extends StateNotifier<RulesState> {
         await Future.delayed(Duration(seconds: (attempt + 1) * 2));
         await _loadRules(attempt: attempt + 1);
       } else {
-        state = const RulesState();
+        // Ultimo tentativo fallito: prova la cache locale
+        final userId = _ref.read(currentUserIdProvider);
+        final cached = await _loadLocalRulesCache(userId);
+        if (!_disposed && cached != null) {
+          state = state.copyWith(rules: cached, isLoading: false);
+          _syncToNative(cached);
+        } else if (!_disposed) {
+          state = const RulesState();
+        }
       }
+    }
+  }
+
+  // ── Cache locale regole (resilienza a Supabase trigger bug / reinstall) ────────
+
+  static const _kCacheMaxLoss      = 'rules_cache_max_loss';
+  static const _kCacheLossType     = 'rules_cache_loss_type';
+  static const _kCacheMaxTrades    = 'rules_cache_max_trades';
+  static const _kCacheDuration     = 'rules_cache_ks_duration';
+  static const _kCacheAccountNum   = 'rules_cache_account_num';
+  static const _kCacheTimezone     = 'rules_cache_timezone';
+  static const _kCacheTradingHours = 'rules_cache_trading_hours_enabled';
+  static const _kCacheHoursStart   = 'rules_cache_hours_start';
+  static const _kCacheHoursEnd     = 'rules_cache_hours_end';
+
+  Future<void> _saveLocalRulesCache(PersonalRules rules) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setDouble(_kCacheMaxLoss, rules.maxDailyLoss ?? -1.0);
+      await prefs.setString(_kCacheLossType, rules.maxDailyLossType ?? 'amount');
+      await prefs.setInt(_kCacheMaxTrades, rules.maxTradesPerDay ?? -1);
+      await prefs.setString(_kCacheDuration, rules.killswitchDuration);
+      await prefs.setString(_kCacheAccountNum, rules.accountNumber ?? '');
+      await prefs.setString(_kCacheTimezone, rules.timezone ?? '');
+      await prefs.setBool(_kCacheTradingHours, rules.tradingHoursEnabled);
+      await prefs.setString(_kCacheHoursStart, rules.tradingHoursStart ?? '');
+      await prefs.setString(_kCacheHoursEnd, rules.tradingHoursEnd ?? '');
+    } catch (_) {}
+  }
+
+  Future<PersonalRules?> _loadLocalRulesCache(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final maxLoss = prefs.getDouble(_kCacheMaxLoss);
+      if (maxLoss == null || maxLoss < 0) return null; // nessuna cache valida
+      final maxTrades = prefs.getInt(_kCacheMaxTrades);
+      final accountNum = prefs.getString(_kCacheAccountNum) ?? '';
+      return PersonalRules(
+        userId: userId,
+        maxDailyLoss: maxLoss,
+        maxDailyLossType: prefs.getString(_kCacheLossType) ?? 'amount',
+        maxTradesPerDay: (maxTrades != null && maxTrades >= 0) ? maxTrades : null,
+        killswitchDuration: prefs.getString(_kCacheDuration) ?? '6h',
+        accountNumber: accountNum.isNotEmpty ? accountNum : null,
+        timezone: prefs.getString(_kCacheTimezone),
+        tradingHoursEnabled: prefs.getBool(_kCacheTradingHours) ?? false,
+        tradingHoursStart: prefs.getString(_kCacheHoursStart),
+        tradingHoursEnd: prefs.getString(_kCacheHoursEnd),
+      );
+    } catch (_) {
+      return null;
     }
   }
 
@@ -242,6 +304,8 @@ class RulesNotifier extends StateNotifier<RulesState> {
       killswitchDurationMinutes: _durationMinutes(rules.killswitchDuration),
       accountNumber: rules.accountNumber,
     );
+    // Salva in cache locale così sopravvive a reinstall/trigger bug Supabase
+    _saveLocalRulesCache(rules);
   }
 
   int _durationMinutes(String d) {

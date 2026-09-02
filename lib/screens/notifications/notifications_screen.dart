@@ -598,7 +598,7 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               if (past.isNotEmpty) ...[
                 _SectionHeader(label: s.notificationsSectionPast(past.length)),
                 const SizedBox(height: 8),
-                ...past.reversed.map((e) => _EventCard(event: e, isPast: true)),
+                ...past.reversed.map((e) => _EventCard(event: e, s: s, isPast: true)),
                 const SizedBox(height: 16),
               ],
               if (todayUpcoming.isNotEmpty) ...[
@@ -606,14 +606,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
                     label: s.notificationsSectionToday(todayUpcoming.length),
                     highlight: true),
                 const SizedBox(height: 8),
-                ...todayUpcoming.map((e) => _EventCard(event: e, isToday: true)),
+                ...todayUpcoming.map((e) => _EventCard(event: e, s: s, isToday: true)),
                 const SizedBox(height: 16),
               ],
               if (futureEvents.isNotEmpty) ...[
                 _SectionHeader(
                     label: s.notificationsSectionUpcoming(futureEvents.length)),
                 const SizedBox(height: 8),
-                ...futureEvents.map((e) => _EventCard(event: e, isFuture: true)),
+                ...futureEvents.map((e) => _EventCard(event: e, s: s, isFuture: true)),
                 const SizedBox(height: 16),
               ],
             ],
@@ -942,9 +942,11 @@ class _EventCard extends StatelessWidget {
   final bool isPast;
   final bool isToday;
   final bool isFuture;
+  final AppStrings s;
 
   const _EventCard({
     required this.event,
+    required this.s,
     this.isPast = false,
     this.isToday = false,
     this.isFuture = false,
@@ -972,19 +974,14 @@ class _EventCard extends StatelessWidget {
     }
   }
 
-  String _formatDate(DateTime dt, BuildContext context) {
+  String _formatDate(DateTime dt) {
     final now = DateTime.now();
     final time =
         '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
     if (dt.year == now.year && dt.month == now.month && dt.day == now.day) {
-      // Use a simple in-widget t() approach
-      final locale = Localizations.localeOf(context);
-      return locale.languageCode == 'it' ? 'Oggi $time' : 'Today $time';
+      return s.notifSettingsToday(time);
     }
-    final locale = Localizations.localeOf(context);
-    final weekdays = locale.languageCode == 'it'
-        ? ['Lun', 'Mar', 'Mer', 'Gio', 'Ven', 'Sab', 'Dom']
-        : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+    final weekdays = s.historyDaysShort;
     final wd = weekdays[dt.weekday - 1];
     return '$wd ${dt.day.toString().padLeft(2, '0')}/${dt.month.toString().padLeft(2, '0')} $time';
   }
@@ -1050,7 +1047,7 @@ class _EventCard extends StatelessWidget {
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    _formatDate(event.time, context),
+                    _formatDate(event.time),
                     style: GoogleFonts.manrope(
                         color: AppColors.textSecondary, fontSize: 11),
                   ),

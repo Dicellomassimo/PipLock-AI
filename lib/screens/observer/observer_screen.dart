@@ -3,21 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../config/app_colors.dart';
+import '../../config/app_strings.dart';
 import '../../config/app_theme.dart';
 import '../../providers/observer_provider.dart';
 
-const _quotes = [
-  'Il miglior trade a volte è quello che non fai.',
-  'Osservare è un\'abilità. I trader migliori sanno quando stare fermi.',
-  'La pazienza non è aspettare: è sapere quando agire.',
-  'Un giorno senza trade non è un giorno perso.',
-  'Il mercato ci sarà anche domani. Il tuo capitale no, se lo bruci oggi.',
-  'La disciplina è fare la cosa giusta anche quando non ci si sente.',
-  'Ogni giorno clean è un investimento nel tuo futuro come trader.',
-  'Non stai perdendo opportunità. Stai proteggendo il capitale.',
-  'I professionisti aspettano il setup perfetto. I dilettanti inseguono il mercato.',
-  'La forza più grande di un trader è la capacità di non fare nulla.',
-];
 
 class ObserverScreen extends ConsumerStatefulWidget {
   const ObserverScreen({super.key});
@@ -48,7 +37,7 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
     _quoteTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) {
         setState(() {
-          _quoteIndex = (_quoteIndex + 1) % _quotes.length;
+          _quoteIndex = _quoteIndex + 1;
         });
       }
     });
@@ -130,7 +119,10 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(appStringsProvider);
     final observer = ref.watch(observerProvider);
+    final quotes = s.observerQuotes;
+    final quoteIndex = _quoteIndex % quotes.length;
     const blueColor = Color(0xFF4A90E2);
 
     return PopScope(
@@ -216,7 +208,7 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
 
                 // Title
                 Text(
-                  'Modalità Osservatore',
+                  s.observerTitle,
                   style: GoogleFonts.manrope(
                     color: Colors.white,
                     fontSize: 26,
@@ -227,7 +219,7 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  'Oggi osservi il mercato senza operare',
+                  s.observerSubtitle,
                   style: GoogleFonts.manrope(
                     color: Colors.white.withValues(alpha: 0.55),
                     fontSize: 14,
@@ -309,7 +301,7 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
                         ),
                         const SizedBox(height: 8),
                         Text(
-                          _quotes[_quoteIndex],
+                          quotes[quoteIndex],
                           style: GoogleFonts.manrope(
                             color: Colors.white.withValues(alpha: 0.85),
                             fontSize: 14,
@@ -356,8 +348,8 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
                           ),
                         Text(
                           _isHolding
-                              ? 'Rilascia per annullare...'
-                              : 'Tieni premuto per uscire dalla modalità',
+                              ? s.observerReleaseToCancel
+                              : s.observerHoldToExit,
                           style: GoogleFonts.manrope(
                             color: Colors.white.withValues(alpha: 0.7),
                             fontWeight: FontWeight.w600,
@@ -371,7 +363,7 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
 
                 const SizedBox(height: 10),
                 Text(
-                  'Tieni premuto 2 secondi per uscire',
+                  s.observerHoldHint,
                   style: GoogleFonts.manrope(
                     color: Colors.white.withValues(alpha: 0.3),
                     fontSize: 12,

@@ -17,6 +17,16 @@ class TokensScreen extends ConsumerWidget {
     final profile = ref.watch(authProvider).profile;
     final tokensWeekly = profile?.tokensWeekly ?? 0;
 
+    // Compute time until next Sunday midnight (tokens reset day)
+    final now = DateTime.now();
+    // weekday: Mon=1 ... Sun=7; days until Sunday = (7 - now.weekday) % 7, min 1 if today is Sunday
+    final daysUntilSunday = now.weekday == DateTime.sunday ? 7 : (7 - now.weekday);
+    final nextSunday = DateTime(now.year, now.month, now.day + daysUntilSunday, 0, 0, 0);
+    final diff = nextSunday.difference(now);
+    final renewLabel = diff.inHours < 24
+        ? s.t('${diff.inHours}h ${diff.inMinutes.remainder(60)}m', '${diff.inHours}h ${diff.inMinutes.remainder(60)}min')
+        : s.t('${diff.inDays}d ${diff.inHours.remainder(24)}h', '${diff.inDays}g ${diff.inHours.remainder(24)}h');
+
     return Scaffold(
       backgroundColor: AppColors.background,
       body: SafeArea(
@@ -108,7 +118,7 @@ class TokensScreen extends ConsumerWidget {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                s.tokensRenew,
+                                s.tokensRenew(renewLabel),
                                 style: GoogleFonts.manrope(
                                   color: AppColors.textTertiary,
                                   fontSize: 11,

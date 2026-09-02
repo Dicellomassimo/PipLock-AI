@@ -63,9 +63,14 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _preloadRules();
       await _checkLockState();
-      _preloadRules();
     });
+  }
+
+  String get _effectiveLockKey {
+    final accountNum = _brokerController.text.trim();
+    return accountNum.isNotEmpty ? 'rules_locked_until_ms_$accountNum' : _lockKey;
   }
 
   Future<void> _checkLockState() async {
@@ -75,7 +80,9 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
     final tokenUsed = prefs.getBool('killswitch_token_used') ?? false;
     if (tokenUsed) return; // skip lock — flag cleared in _confirm()
 
-    final lockedUntil = prefs.getInt(_lockKey) ?? 0;
+    // Controlla sia la chiave account-specifica sia quella generica (fallback
+    // per quando Supabase non riesce a caricare l'account number all'avvio).
+    final lockedUntil = prefs.getInt(_effectiveLockKey) ?? prefs.getInt(_lockKey) ?? 0;
     if (lockedUntil > DateTime.now().millisecondsSinceEpoch) {
       if (mounted) {
         setState(() {
@@ -96,7 +103,8 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
         });
       }
     } else {
-      // Lock expired → clear
+      // Lock expired → clear both keys
+      await prefs.remove(_effectiveLockKey);
       await prefs.remove(_lockKey);
     }
   }
@@ -124,7 +132,7 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
       if (!mounted) return;
       if (success) {
         final prefs = await SharedPreferences.getInstance();
-        await prefs.remove(_lockKey);
+        await prefs.remove(_effectiveLockKey);
         setState(() {
           _isLocked = false;
           _isUnlocking = false;
@@ -161,8 +169,15 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
   Future<void> _writeLock() async {
     final prefs = await SharedPreferences.getInstance();
     final now = DateTime.now();
-    final midnight = DateTime(now.year, now.month, now.day + 1);
-    await prefs.setInt(_lockKey, midnight.millisecondsSinceEpoch);
+    // Regola: le rules rimangono bloccate SEMPRE fino a mezzanotte (non dipende
+    // dalla durata del killswitch). Sblocco anticipato solo con token.
+    final expiry = DateTime(now.year, now.month, now.day + 1).millisecondsSinceEpoch;
+    // Scrivi su entrambe le chiavi (generica + account-specifica) così il check
+    // funziona anche se Supabase non carica l'account number al prossimo avvio.
+    await prefs.setInt(_lockKey, expiry);
+    if (_effectiveLockKey != _lockKey) {
+      await prefs.setInt(_effectiveLockKey, expiry);
+    }
   }
 
   Future<void> _preloadRules() async {

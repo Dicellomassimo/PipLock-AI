@@ -45,8 +45,8 @@ List<_FaqSection> _buildSections(AppStrings s) => [
       _FaqItem(
         question: s.t('Is my trading data safe?', 'I miei dati di trading sono al sicuro?'),
         answer: s.t(
-          "Yes. PipLock AI never accesses your broker account or can open/close positions. It reads only the data needed to apply your rules (equity, trade count) — via Screen Reading (Accessibility Service for mobile), EA MQL5 on MT5 desktop, MetaAPI, cTrader or OANDA API.",
-          "Sì. PipLock AI non accede mai al tuo conto broker né può aprire/chiudere posizioni. Legge solo i dati necessari per applicare le tue regole (equity, numero trade) — tramite Lettura Schermo (Accessibility Service per mobile), EA MQL5 su MT5 desktop, MetaAPI, cTrader o OANDA API.",
+          "Yes. PipLock AI never accesses your broker account or can open/close positions. It reads only the data needed to apply your rules (equity, trade count) — via Screen Reading (Accessibility Service for mobile), EA MQL5 on MT5 desktop, or MetaAPI.",
+          "Sì. PipLock AI non accede mai al tuo conto broker né può aprire/chiudere posizioni. Legge solo i dati necessari per applicare le tue regole (equity, numero trade) — tramite Lettura Schermo (Accessibility Service per mobile), EA MQL5 su MT5 desktop, o MetaAPI.",
         ),
       ),
     ],
@@ -151,8 +151,8 @@ List<_FaqSection> _buildSections(AppStrings s) => [
           "Perché l'app richiede i permessi di Accessibilità e Overlay?",
         ),
         answer: s.t(
-          'Two permissions are required for the Screen Reading connection method:\n\n• Accessibility Service: reads numerical data (equity, P&L, open positions) directly from your MT5/cTrader screen on mobile. No passwords, no messages, no screenshots are ever read.\n\n• Display over other apps (Overlay): allows PipLock to show the WARNING and LOCKDOWN panels directly above the broker app when limits are exceeded, without having to open PipLock separately.\n\nBoth permissions persist until you manually disable them in Android Settings. They are not required if you connect via EA MQL5, MetaAPI, cTrader or OANDA instead.',
-          "Sono richiesti due permessi per il metodo di connessione via Lettura Schermo:\n\n• Accessibility Service: legge i dati numerici (equity, P&L, posizioni aperte) direttamente dalla schermata di MT5/cTrader sul tuo telefono. Non vengono mai lette password, messaggi o screenshot.\n\n• Visualizza sopra altre app (Overlay): permette a PipLock di mostrare i pannelli AVVISO e BLOCCO direttamente sopra l'app broker quando si superano i limiti, senza dover aprire PipLock separatamente.\n\nEntrambi i permessi persistono finché non li disabiliti manualmente nelle Impostazioni Android. Non sono richiesti se ti connetti tramite EA MQL5, MetaAPI, cTrader o OANDA.",
+          'Two permissions are required for the Screen Reading connection method:\n\n• Accessibility Service: reads numerical data (equity, P&L, open positions) directly from your MT5 screen on mobile. No passwords, no messages, no screenshots are ever read.\n\n• Display over other apps (Overlay): allows PipLock to show the WARNING and LOCKDOWN panels directly above the broker app when limits are exceeded, without having to open PipLock separately.\n\nBoth permissions persist until you manually disable them in Android Settings. They are not required if you connect via EA MQL5 or MetaAPI instead.',
+          "Sono richiesti due permessi per il metodo di connessione via Lettura Schermo:\n\n• Accessibility Service: legge i dati numerici (equity, P&L, posizioni aperte) direttamente dalla schermata di MT5 sul tuo telefono. Non vengono mai lette password, messaggi o screenshot.\n\n• Visualizza sopra altre app (Overlay): permette a PipLock di mostrare i pannelli AVVISO e BLOCCO direttamente sopra l'app broker quando si superano i limiti, senza dover aprire PipLock separatamente.\n\nEntrambi i permessi persistono finché non li disabiliti manualmente nelle Impostazioni Android. Non sono richiesti se ti connetti tramite EA MQL5 o MetaAPI.",
         ),
       ),
       _FaqItem(

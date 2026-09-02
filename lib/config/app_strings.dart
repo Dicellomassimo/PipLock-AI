@@ -340,6 +340,45 @@ class AppStrings {
   String historyMilestone(int week, String firmName) => _t('Milestone Week $week — $firmName', 'Milestone Sett. $week — $firmName');
   String get historyTypeKS => _t('KS', 'KS');
   String get historyTypeTarget => _t('Target', 'Target');
+  String get historyShareTitle => _t('My PipLock AI Stats 📊', 'Le mie statistiche PipLock AI 📊');
+  String historyShareKsEvents(int n) => _t('🔒 Killswitch triggered: $n', '🔒 Killswitch attivati: $n');
+  String historyShareCleanDays(int n) => _t('✅ Clean days: $n', '✅ Giorni clean: $n');
+  String historyShareTrades(int n) => _t('📈 Total trades: $n', '📈 Trade totali: $n');
+  String get historyShareTagline => _t('Forced discipline. Every day.', 'Disciplina forzata. Ogni giorno.');
+
+  // ── Journal screen ───────────────────────────────────────────────────────
+  String get journalPnlNotRecorded => _t('P&L not recorded', 'P&L non registrato');
+  String get journalPlanned => _t('📋 Planned', '📋 Pianificato');
+
+  // ── Observer screen ───────────────────────────────────────────────────────
+  String get observerTitle => _t('Observer Mode', 'Modalità Osservatore');
+  String get observerSubtitle => _t('Today you observe the market without trading', 'Oggi osservi il mercato senza operare');
+  String get observerHoldToExit => _t('Hold to exit observer mode', 'Tieni premuto per uscire dalla modalità');
+  String get observerReleaseToCancel => _t('Release to cancel...', 'Rilascia per annullare...');
+  String get observerHoldHint => _t('Hold 2 seconds to exit', 'Tieni premuto 2 secondi per uscire');
+  List<String> get observerQuotes => _lang == 'it' ? [
+    'Il miglior trade a volte è quello che non fai.',
+    'Osservare è un\'abilità. I trader migliori sanno quando stare fermi.',
+    'La pazienza non è aspettare: è sapere quando agire.',
+    'Un giorno senza trade non è un giorno perso.',
+    'Il mercato ci sarà anche domani. Il tuo capitale no, se lo bruci oggi.',
+    'La disciplina è fare la cosa giusta anche quando non ci si sente.',
+    'Ogni giorno clean è un investimento nel tuo futuro come trader.',
+    'Non stai perdendo opportunità. Stai proteggendo il capitale.',
+    'I professionisti aspettano il setup perfetto. I dilettanti inseguono il mercato.',
+    'La forza più grande di un trader è la capacità di non fare nulla.',
+  ] : [
+    'The best trade is sometimes the one you don\'t take.',
+    'Observing is a skill. The best traders know when to stay still.',
+    'Patience isn\'t waiting — it\'s knowing when to act.',
+    'A day without trades is not a day lost.',
+    'The market will be here tomorrow. Your capital won\'t be if you burn it today.',
+    'Discipline means doing the right thing even when you don\'t feel like it.',
+    'Every clean day is an investment in your future as a trader.',
+    'You\'re not missing opportunities. You\'re protecting your capital.',
+    'Professionals wait for the perfect setup. Amateurs chase the market.',
+    'The greatest strength of a trader is the ability to do nothing.',
+  ];
 
   // ── Notifications screen ─────────────────────────────────────────────────
   String get notificationsTitle => _t('Notifications & Calendar', 'Notifiche & Calendario');
@@ -385,6 +424,14 @@ class AppStrings {
   String notifSettingsToday(String time) => _t('Today $time', 'Oggi $time');
   String notifSettingsTomorrow(String time) => _t('Tomorrow $time', 'Domani $time');
 
+  // ── Trading hours block screen ────────────────────────────────────────────
+  String get tradingHoursTitle => _t('Trading Closed', 'Trading Chiuso');
+  String tradingHoursSubtitle(String start, String end) => _t('Outside your hours · $start – $end', 'Fuori orario · $start – $end');
+  String get tradingHoursOpensIn => _t('OPENS IN', 'RIAPRE IN');
+  String get tradingHoursCurrentTime => _t('Current time:', 'Ora attuale:');
+  String get tradingHoursOpensAt => _t('Opens at:', 'Riapertura:');
+  String get tradingHoursFooter => _t('PipLock is protecting your discipline', 'PipLock sta proteggendo la tua disciplina');
+
   // ── Tokens screen ────────────────────────────────────────────────────────
   String get tokensTitle => _t('Tokens', 'Token');
   String get buyTokensTitle => _t('Buy Tokens', 'Acquista Token');
@@ -392,7 +439,7 @@ class AppStrings {
   String get buyTokensBuy => _t('Buy', 'Acquista');
   String get buyTokensNoProducts => _t('Products unavailable. Check your connection.', 'Prodotti non disponibili. Controlla la connessione.');
   String tokensAvailable(int n) => _t('$n / 2 tokens available', '$n / 2 token disponibili');
-  String get tokensRenew => _t('Renew in 3 days', 'Si rinnovano tra 3 giorni');
+  String tokensRenew(String timeLeft) => _t('Renews in $timeLeft', 'Si rinnovano tra $timeLeft');
   String get tokensBuyExtra => _t('BUY EXTRA TOKENS', 'ACQUISTA TOKEN EXTRA');
   String get tokensBadgePopular => _t('Popular', 'Popolare');
   String get tokensBadgeBestValue => _t('Best value', 'Miglior valore');
@@ -458,6 +505,29 @@ class AppStrings {
   String get permissionsChecking => _t('Checking…', 'Controllo in corso...');
   String get permissionsOverlayTitle => _t('"Show over other apps" permission required', 'Permesso "Mostra sopra altre app" richiesto');
   String get permissionsOverlayButton => _t('Grant permission', 'Concedi permesso');
+  // Cooldown dialog
+  String get permCooldownTitle => _t('Take a moment', 'Momento di riflessione');
+  String get permCooldownWarning => _t(
+    'You are about to disable Killswitch protection. Wait 60 seconds and reflect before proceeding.',
+    'Stai per disattivare la protezione del Killswitch. Aspetta 60 secondi e rifletti prima di procedere.');
+  String get permCooldownBreathIn => _t('Inhale...', 'Inspira...');
+  String get permCooldownBreathHold => _t('Hold...', 'Trattieni...');
+  String get permCooldownBreathOut => _t('Exhale...', 'Espira...');
+  List<String> get permCooldownBreathLabels => [permCooldownBreathIn, permCooldownBreathHold, permCooldownBreathOut];
+  String get permCooldownAskYourself => _t('Ask yourself:', 'Rispondi a te stesso:');
+  List<String> get permCooldownQuestions => [
+    _t('Do you have a valid setup for this trade, or are you feeling FOMO?',
+       'Hai un setup valido per questo trade, o stai sentendo FOMO?'),
+    _t('Are you within your daily loss limit if you enter now?',
+       'Sei ancora entro il tuo limite di perdita giornaliero se entri ora?'),
+    _t('Would you take this trade if you had to explain it to a mentor?',
+       'Faresti questo trade se dovessi spiegarlo a un mentor?'),
+  ];
+  String get permCooldownCanProceed => _t('You may proceed', 'Puoi procedere');
+  String waitSeconds(int s) => _t('Wait ${s}s', 'Attendi ${s}s');
+  String get permCooldownCancel => _t('Cancel', 'Annulla');
+  String get permCooldownOpenSettings => _t('Open Settings', 'Apri Impostazioni');
+
 
   // ── Account screen ───────────────────────────────────────────────────────
   String get accountTitle => _t('Account', 'Account');
@@ -503,6 +573,36 @@ class AppStrings {
   String get brokerAutoUpdate => _t('Automatic update every 5s', 'Aggiornamento automatico ogni 5s');
   String brokerReadAgo(String t) => _t('Read: $t ago', 'Letto: $t fa');
   String get brokerDailyLoss => _t('Daily loss', 'Perdita oggi');
+  // EA setup guide
+  String get brokerEaGuideTitle => _t('How to set up the EA on MT5', 'Come configurare l\'EA su MT5');
+  String get brokerEaStep1Title => _t('Download MetaTrader 5', 'Scarica MetaTrader 5');
+  String get brokerEaStep1Body => _t(
+    'Download MT5 for free from metatrader.com/en/trading-platform/metatrader5/ and install it on your PC or VPS.',
+    'Scarica MT5 gratis da metatrader.com/en/trading-platform/metatrader5/ e installalo sul tuo PC o VPS.');
+  String get brokerEaStep2Title => _t('Open MetaEditor', 'Apri MetaEditor');
+  String get brokerEaStep2Body => _t(
+    'In MT5, press F4 (or Tools → MetaEditor) to open the MQL5 editor.',
+    'In MT5, premi F4 (oppure Strumenti → MetaEditor) per aprire l\'editor MQL5.');
+  String get brokerEaStep3Title => _t('Create the EA file', 'Crea il file EA');
+  String get brokerEaStep3Body => _t(
+    'In MetaEditor: File → New → Expert Advisor. Copy the EA code from this link (or ask PipLock Support for the .mq5 file).',
+    'In MetaEditor: File → Nuovo → Expert Advisor. Copia il codice EA da questo link (o chiedi a PipLock Support il file .mq5).');
+  String get brokerEaStep3Extra => _t('PipLockEA.mq5 — available at support@piplock.app', 'PipLockEA.mq5 — disponibile su support@piplock.app');
+  String get brokerEaStep4Title => _t('Enter your Webhook Secret', 'Inserisci il tuo Webhook Secret');
+  String get brokerEaStep4Body => _t(
+    'In the EA code, at the InpWebhookSecret line, paste your secret:',
+    'Nel codice EA, alla riga InpWebhookSecret, incolla il tuo secret:');
+  String get brokerEaStep4Extra => _t(
+    'Generate the secret first by pressing "Activate EA connection" above.',
+    'Genera prima il secret premendo "Attiva connessione EA" qui sopra.');
+  String get brokerEaStep5Title => _t('Compile and start the EA', 'Compila e avvia l\'EA');
+  String get brokerEaStep5Body => _t(
+    'Press F7 to compile. Then in MT5 drag the EA onto your account chart. Make sure "Allow WebRequests" is enabled in Options → Expert Advisors, and add the URL: https://[your project].supabase.co',
+    'Premi F7 per compilare. Poi in MT5 trascina l\'EA sul grafico del tuo account. Assicurati che "Allow WebRequests" sia abilitato in Opzioni → Expert Advisors, e aggiungi l\'URL: https://[il tuo progetto].supabase.co');
+  String get brokerEaStep6Title => _t('Verify connection', 'Verifica connessione');
+  String get brokerEaStep6Body => _t(
+    'If the connection works, you will see the status change to "Connected ✓" on this screen. The EA will send data every few seconds.',
+    'Se la connessione funziona, in questa schermata vedrai lo stato cambiare in "Connesso ✓". L\'EA invierà i dati ogni pochi secondi.');
   String get brokerDrawdown => _t('Drawdown', 'Drawdown');
   String get brokerTradesToday => _t('Trades today', 'Trade oggi');
   String get brokerOpenPositions => _t('Open positions', 'Posizioni aperte');

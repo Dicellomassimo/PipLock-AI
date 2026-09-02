@@ -9,7 +9,7 @@ class ShareService {
   /// Cattura il widget associato a [key] (RepaintBoundary) come PNG e lo condivide.
   static Future<void> shareWidgetAsImage(
     GlobalKey key, {
-    String text = 'Le mie statistiche PipLock 📊',
+    String text = 'My PipLock AI Stats 📊',
   }) async {
     try {
       final boundary =
@@ -40,19 +40,24 @@ class ShareService {
     await Share.share(text);
   }
 
-  /// Genera un testo statistiche da condividere.
+  /// Genera un testo statistiche da condividere (stringhe già localizzate dal caller).
   static String generateStatsText({
     required int ksEvents,
     required int cleanDays,
     required int totalTrades,
+    required String title,
+    required String ksLabel,
+    required String cleanDaysLabel,
+    required String tradesLabel,
+    required String tagline,
   }) {
-    return '''📊 Le mie statistiche PipLock AI
+    return '''$title
 
-🔒 Killswitch attivati: $ksEvents
-✅ Giorni clean: $cleanDays
-📈 Trade totali: $totalTrades
+$ksLabel
+$cleanDaysLabel
+$tradesLabel
 
-Disciplina forzata. Ogni giorno.
+$tagline
 #PipLockAI #PropFirm #TradingDiscipline''';
   }
 }

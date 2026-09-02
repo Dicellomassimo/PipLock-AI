@@ -22,6 +22,7 @@ import '../dashboard/dashboard_screen.dart';
 import '../ai_planner/ai_planner_screen.dart';
 import '../history/history_screen.dart';
 import '../settings/settings_screen.dart';
+import '../../providers/auth_provider.dart';
 import '../../providers/rules_provider.dart';
 
 class MainNavScreen extends ConsumerStatefulWidget {
@@ -35,8 +36,6 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   int _currentIndex = 0;
   DateTime? _lastResumeRefresh;
-  bool _tradingHoursCheckDone = false;
-
   static const List<Widget> _pages = [
     DashboardScreen(),
     AiPlannerScreen(),
@@ -67,6 +66,12 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
         ref.read(realtimeProvider);
         ref.read(brokerProvider);
       } catch (_) {}
+      // Load challenges on startup (provider auto-loads via auth listener,
+      // but trigger here too in case auth was already ready before provider init)
+      final userId = ref.read(currentUserIdProvider);
+      if (userId.isNotEmpty) {
+        unawaited(ref.read(challengeListProvider.notifier).load(userId));
+      }
 
       // Schedule economic calendar notifications after 4s — by this point
       // the user is on the main screen and the network stack is fully ready.
@@ -82,8 +87,6 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
           unawaited(ref.read(brokerProvider.notifier).syncAllAccountsToNative());
         }
       });
-      // Check trading hours on first launch
-      _checkTradingHours();
       // Recalculate dynamic plan on first load (also fires on resume via lifecycle observer)
       unawaited(_checkDynamicPlan());
     });
@@ -93,45 +96,6 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
-  }
-
-  /// Check if current time is outside the configured trading hours.
-  /// If so, navigate to TradingHoursBlockScreen.
-  void _checkTradingHours() {
-    final rulesState = ref.read(rulesProvider);
-    final rules = rulesState.rules;
-    if (rules == null) return;
-    if (!rules.tradingHoursEnabled) return;
-    final startStr = rules.tradingHoursStart;
-    final endStr = rules.tradingHoursEnd;
-    if (startStr == null || endStr == null) return;
-
-    final startParts = startStr.split(':');
-    final endParts = endStr.split(':');
-    if (startParts.length < 2 || endParts.length < 2) return;
-
-    final startHour = int.tryParse(startParts[0]);
-    final startMin  = int.tryParse(startParts[1]);
-    final endHour   = int.tryParse(endParts[0]);
-    final endMin    = int.tryParse(endParts[1]);
-    if (startHour == null || startMin == null || endHour == null || endMin == null) return;
-
-    final tradingStart = TimeOfDay(hour: startHour, minute: startMin);
-    final tradingEnd   = TimeOfDay(hour: endHour,   minute: endMin);
-
-    final now = DateTime.now();
-    final nowMinutes = now.hour * 60 + now.minute;
-    final startMinutes = startHour * 60 + startMin;
-    final endMinutes   = endHour * 60 + endMin;
-
-    final isOutside = nowMinutes < startMinutes || nowMinutes >= endMinutes;
-    if (!isOutside) return;
-
-    if (!mounted) return;
-    Navigator.of(context).pushNamed(
-      '/trading_hours_block',
-      arguments: {'tradingStart': tradingStart, 'tradingEnd': tradingEnd},
-    );
   }
 
   /// Ricalcola dinamicamente il piano challenge se non già fatto oggi.
@@ -175,19 +139,26 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
   }
 
   /// Called automatically when the app comes back to foreground.
-  /// Refreshes the economic calendar and reschedules notifications,
-  /// but at most once every 30 minutes to avoid hammering the API.
+  /// Refreshes data providers and notifications, throttled to once per 5 minutes.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) return;
-    _checkTradingHours();
     unawaited(_checkDynamicPlan());
+
     final now = DateTime.now();
     if (_lastResumeRefresh != null &&
-        now.difference(_lastResumeRefresh!) < const Duration(minutes: 30)) {
+        now.difference(_lastResumeRefresh!) < const Duration(minutes: 5)) {
       return; // skip — refreshed recently
     }
     _lastResumeRefresh = now;
+
+    // Reload rules and challenges from Supabase (both use file cache so won't spam API)
+    try { ref.read(rulesProvider.notifier).reload(); } catch (_) {}
+    final userId = ref.read(currentUserIdProvider);
+    if (userId.isNotEmpty) {
+      try { ref.read(challengeListProvider.notifier).load(userId); } catch (_) {}
+    }
+
     unawaited(NotificationService.refresh());
   }
 

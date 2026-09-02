@@ -356,6 +356,19 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ),
             ),
           ),
+          const SizedBox(height: 12),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 32),
+            child: Text(
+              'PipLock AI is not a financial advisor. It does not provide investment advice or trading signals. Trading involves substantial risk of loss. All trading decisions are solely your responsibility.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.manrope(
+                color: AppColors.textTertiary,
+                fontSize: 10,
+                height: 1.6,
+              ),
+            ),
+          ),
           const SizedBox(height: 36),
         ],
       ),

@@ -18,7 +18,7 @@ class AccountScreen extends ConsumerWidget {
     final isPro = profile?.subscriptionTier == 'pro';
     final email = kDevMode
         ? 'dev@piplock.ai'
-        : Supabase.instance.client.auth.currentUser?.email ?? 'Utente';
+        : Supabase.instance.client.auth.currentUser?.email ?? s.t('User', 'Utente');
     final displayName = email.split('@').first;
     final joinYear = profile?.createdAt.year ?? DateTime.now().year;
 

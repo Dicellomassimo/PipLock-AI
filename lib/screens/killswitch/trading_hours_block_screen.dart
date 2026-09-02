@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../../config/app_colors.dart';
+import '../../config/app_strings.dart';
 import '../../widgets/ambient_blobs.dart';
 
-class TradingHoursBlockScreen extends StatefulWidget {
+class TradingHoursBlockScreen extends ConsumerStatefulWidget {
   final TimeOfDay tradingStart;
   final TimeOfDay tradingEnd;
 
@@ -15,11 +17,11 @@ class TradingHoursBlockScreen extends StatefulWidget {
   });
 
   @override
-  State<TradingHoursBlockScreen> createState() =>
+  ConsumerState<TradingHoursBlockScreen> createState() =>
       _TradingHoursBlockScreenState();
 }
 
-class _TradingHoursBlockScreenState extends State<TradingHoursBlockScreen>
+class _TradingHoursBlockScreenState extends ConsumerState<TradingHoursBlockScreen>
     with WidgetsBindingObserver {
   Timer? _timer;
   Duration _remaining = Duration.zero;
@@ -86,6 +88,7 @@ class _TradingHoursBlockScreenState extends State<TradingHoursBlockScreen>
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(appStringsProvider);
     final startStr = _formatTime(widget.tradingStart);
     final endStr   = _formatTime(widget.tradingEnd);
 
@@ -143,7 +146,7 @@ class _TradingHoursBlockScreenState extends State<TradingHoursBlockScreen>
                       const SizedBox(height: 32),
                       // Title
                       Text(
-                        'Trading Chiuso\nTrading Closed',
+                        s.tradingHoursTitle,
                         textAlign: TextAlign.center,
                         style: GoogleFonts.manrope(
                           color: AppColors.textPrimary,
@@ -156,7 +159,7 @@ class _TradingHoursBlockScreenState extends State<TradingHoursBlockScreen>
                       const SizedBox(height: 12),
                       // Subtitle — configured hours
                       Text(
-                        'Sei fuori orario · $startStr – $endStr',
+                        s.tradingHoursSubtitle(startStr, endStr),
                         textAlign: TextAlign.center,
                         style: GoogleFonts.manrope(
                           color: AppColors.textSecondary,
@@ -181,7 +184,7 @@ class _TradingHoursBlockScreenState extends State<TradingHoursBlockScreen>
                         child: Column(
                           children: [
                             Text(
-                              'RIAPRE IN',
+                              s.tradingHoursOpensIn,
                               style: GoogleFonts.manrope(
                                 color: AppColors.textTertiary,
                                 fontSize: 10,
@@ -208,7 +211,7 @@ class _TradingHoursBlockScreenState extends State<TradingHoursBlockScreen>
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           Text(
-                            'Ora attuale: ',
+                            '${s.tradingHoursCurrentTime} ',
                             style: GoogleFonts.manrope(
                               color: AppColors.textSecondary,
                               fontSize: 13,
@@ -223,7 +226,7 @@ class _TradingHoursBlockScreenState extends State<TradingHoursBlockScreen>
                             ),
                           ),
                           Text(
-                            '   ·   Riapertura: ',
+                            '   ·   ${s.tradingHoursOpensAt} ',
                             style: GoogleFonts.manrope(
                               color: AppColors.textSecondary,
                               fontSize: 13,
@@ -242,7 +245,7 @@ class _TradingHoursBlockScreenState extends State<TradingHoursBlockScreen>
                       const SizedBox(height: 48),
                       // Bottom hint
                       Text(
-                        'PipLock sta proteggendo la tua disciplina',
+                        s.tradingHoursFooter,
                         textAlign: TextAlign.center,
                         style: GoogleFonts.manrope(
                           color: AppColors.textTertiary,

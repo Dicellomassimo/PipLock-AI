@@ -18,12 +18,12 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // Blocca screenshot, screen recording e anteprima nel task switcher.
-        // Appropriato per un'app finanziaria con dati di trading sensibili.
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE
-        )
+        // FLAG_SECURE disabilitato temporaneamente per screenshots di sviluppo.
+        // Riabilitare prima della submission al Play Store:
+        // window.setFlags(
+        //     WindowManager.LayoutParams.FLAG_SECURE,
+        //     WindowManager.LayoutParams.FLAG_SECURE
+        // )
     }
 
     companion object {
@@ -198,18 +198,20 @@ class MainActivity : FlutterActivity() {
                     // ── Leggi ultimi dati broker salvati dall'AccessibilityService
                     "getLastBrokerData" -> {
                         val prefs = getSharedPreferences("piplock_broker_data", Context.MODE_PRIVATE)
-                        val equity    = prefs.getFloat("equity",  -1f).toDouble()
-                        val balance   = prefs.getFloat("balance", -1f).toDouble()
-                        val profitRaw = prefs.getFloat("profit",  Float.NaN)
-                        val profit    = if (profitRaw.isNaN()) Double.NaN else profitRaw.toDouble()
-                        val positions = prefs.getInt("positions", -1)
-                        val timestamp = prefs.getLong("timestamp", 0L)
+                        val equity      = prefs.getFloat("equity",       -1f).toDouble()
+                        val balance     = prefs.getFloat("balance",      -1f).toDouble()
+                        val profitRaw   = prefs.getFloat("profit",       Float.NaN)
+                        val profit      = if (profitRaw.isNaN()) Double.NaN else profitRaw.toDouble()
+                        val positions   = prefs.getInt("positions",      -1)
+                        val tradesToday = prefs.getInt("trades_today",   -1)
+                        val timestamp   = prefs.getLong("timestamp",     0L)
                         result.success(mapOf(
-                            "equity" to equity,
-                            "balance" to balance,
-                            "profit" to profit,
-                            "positions" to positions,
-                            "timestamp" to timestamp
+                            "equity"       to equity,
+                            "balance"      to balance,
+                            "profit"       to profit,
+                            "positions"    to positions,
+                            "trades_today" to tradesToday,
+                            "timestamp"    to timestamp
                         ))
                     }
 

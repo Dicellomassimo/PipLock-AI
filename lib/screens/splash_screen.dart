@@ -24,17 +24,11 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
   @override
   void initState() {
     super.initState();
-    _minDelay = Future.delayed(const Duration(milliseconds: 2600));
+    _minDelay = Future.delayed(Duration.zero);
 
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1100),
-    );
-    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.easeOut);
-    _scale = Tween<double>(begin: 0.80, end: 1.0).animate(
-      CurvedAnimation(parent: _ctrl, curve: Curves.easeOutBack),
-    );
-    _ctrl.forward();
+    _ctrl = AnimationController(vsync: this, duration: Duration.zero);
+    _fade = CurvedAnimation(parent: _ctrl, curve: Curves.linear);
+    _scale = Tween<double>(begin: 1.0, end: 1.0).animate(_ctrl);
 
     if (kDevMode) {
       _minDelay.then((_) => _navigate());
@@ -89,42 +83,9 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
       });
     }
 
-    return Scaffold(
+    return const Scaffold(
       backgroundColor: AppColors.background,
-      body: FadeTransition(
-        opacity: _fade,
-        child: ScaleTransition(
-          scale: _scale,
-          child: Center(
-            child: Stack(
-              alignment: Alignment.center,
-              children: [
-                // Glow diffuso attorno all'icona
-                Container(
-                  width: 160,
-                  height: 160,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: AppColors.accent.withValues(alpha: 0.25),
-                        blurRadius: 80,
-                        spreadRadius: 30,
-                      ),
-                    ],
-                  ),
-                ),
-                Image.asset(
-                  'assets/images/Icona PipLock.png',
-                  width: 120,
-                  height: 120,
-                  fit: BoxFit.contain,
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+      body: SizedBox.shrink(),
     );
   }
 

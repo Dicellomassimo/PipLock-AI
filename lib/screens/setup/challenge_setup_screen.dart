@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_strings.dart';
 import '../../config/app_theme.dart';
@@ -291,6 +292,14 @@ class _ChallengeSetupScreenState extends ConsumerState<ChallengeSetupScreen> {
 
       ref.read(pendingChallengeProvider.notifier).state = finalChallenge;
       ref.read(challengeListProvider.notifier).addChallenge(finalChallenge);
+
+      // Lock challenge for its full duration to prevent rule bypasses
+      final prefs = await SharedPreferences.getInstance();
+      final challengeExpiry = DateTime.now().add(Duration(days: _durationDays));
+      await prefs.setInt(
+        'challenge_locked_until_${finalChallenge.id}',
+        challengeExpiry.millisecondsSinceEpoch,
+      );
 
       if (mounted) {
         setState(() {
@@ -676,8 +685,8 @@ class _ChallengeSetupScreenState extends ConsumerState<ChallengeSetupScreen> {
             keyboardType: TextInputType.number,
             style: GoogleFonts.manrope(color: AppColors.textPrimary),
             decoration: _inputDecoration(
-                hint: s.t('Your MT5/cTrader account number',
-                    'Il tuo numero account MT5/cTrader')),
+                hint: s.t('Your MT5 account number',
+                    'Il tuo numero account MT5')),
             onChanged: (_) {},
           ),
         ],

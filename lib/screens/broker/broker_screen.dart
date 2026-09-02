@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_strings.dart';
 import '../../config/app_theme.dart';
 import '../../providers/broker_provider.dart';
+import '../../providers/killswitch_provider.dart';
+import '../../providers/rules_provider.dart';
 import '../../services/accessibility_service.dart';
 import '../../widgets/animated_card.dart';
 import '../../widgets/premium_button.dart';
@@ -454,8 +457,100 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
   // Actions
   // ─────────────────────────────────────────────────────────────────────────
 
+  /// Returns true if any personal-account lock or challenge lock is currently active.
+  Future<bool> _anyLockActive() async {
+    final prefs = await SharedPreferences.getInstance();
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final key in prefs.getKeys()) {
+      if (key.startsWith('rules_locked_until_ms') ||
+          key.startsWith('challenge_locked_until_')) {
+        final expiry = prefs.getInt(key) ?? 0;
+        if (expiry > now) return true;
+      }
+    }
+    return false;
+  }
+
   Future<void> _disconnect() async {
     final s = ref.read(appStringsProvider);
+    final ksActive = ref.read(killswitchProvider).isActive;
+    final hasRules = ref.read(rulesProvider).rules != null;
+
+    // BLOCCO TOTALE: killswitch attivo — non si può disconnettere
+    if (ksActive) {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: AppColors.cardBg,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.lock_rounded, color: AppColors.danger, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                s.t('Killswitch Active', 'Killswitch Attivo'),
+                style: GoogleFonts.manrope(
+                    color: AppColors.danger, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          content: Text(
+            s.t(
+              'You cannot disconnect the broker while the Killswitch is active. Wait for the lock to expire or use a token to unlock early.',
+              'Non puoi disconnettere il broker mentre il Killswitch è attivo. Attendi la scadenza del blocco oppure usa un token per sbloccarti anticipatamente.',
+            ),
+            style: GoogleFonts.manrope(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(s.t('Got it', 'Ok'),
+                  style: GoogleFonts.manrope(color: AppColors.accent)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    // BLOCCO TOTALE: regole bloccate (lock attivo su qualsiasi account)
+    if (await _anyLockActive()) {
+      await showDialog<void>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: AppColors.cardBg,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              const Icon(Icons.lock_clock_rounded, color: AppColors.danger, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                s.t('Rules Locked', 'Regole Bloccate'),
+                style: GoogleFonts.manrope(
+                    color: AppColors.danger, fontWeight: FontWeight.bold),
+              ),
+            ],
+          ),
+          content: Text(
+            s.t(
+              'Your trading rules are locked. You cannot disconnect the broker until the lock expires. This protects you from bypassing your own rules.',
+              'Le tue regole di trading sono bloccate. Non puoi disconnettere il broker fino alla scadenza del blocco. Questo ti protegge dal bypassare le tue stesse regole.',
+            ),
+            style: GoogleFonts.manrope(color: AppColors.textSecondary, fontSize: 14, height: 1.5),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(s.t('Got it', 'Ok'),
+                  style: GoogleFonts.manrope(color: AppColors.accent)),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    // AVVISO RINFORZATO: regole attive ma KS non scattato
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
@@ -464,13 +559,46 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
         title: Text(s.brokerDisconnect,
             style: GoogleFonts.manrope(
                 color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
-        content: Text(
-            s.t(
-              'Do you want to remove the broker connection? Monitoring will stop.',
-              'Vuoi rimuovere la connessione al broker? Il monitoraggio si fermerà.',
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (hasRules) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: AppColors.danger.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: AppColors.danger.withValues(alpha: 0.25)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: AppColors.danger, size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        s.t(
+                          'Your rules are active. Disconnecting will stop all monitoring — the Killswitch will no longer trigger automatically.',
+                          'Le tue regole sono attive. Disconnettendoti il monitoraggio si fermerà — il Killswitch non scatterà più automaticamente.',
+                        ),
+                        style: GoogleFonts.manrope(
+                            color: AppColors.danger, fontSize: 12, height: 1.4),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            Text(
+              s.t(
+                'Do you want to remove the broker connection?',
+                'Vuoi rimuovere la connessione al broker?',
+              ),
+              style: GoogleFonts.manrope(color: AppColors.textSecondary, fontSize: 14),
             ),
-            style: GoogleFonts.manrope(
-                color: AppColors.textSecondary, fontSize: 14)),
+          ],
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -1033,7 +1161,7 @@ class _AccessibilityFormState extends ConsumerState<_AccessibilityForm> {
                       ] else ...[
                         const SizedBox(height: 4),
                         Text(
-                          'Open MT5 or cTrader to start reading data.',
+                          'Open MT5 to start reading data.',
                           style: GoogleFonts.manrope(
                               color: AppColors.textSecondary, fontSize: 12),
                         ),
@@ -1084,7 +1212,7 @@ class _AccessibilityFormState extends ConsumerState<_AccessibilityForm> {
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    'To show the Killswitch and FOMO Gatekeeper over MT5 or cTrader, PipLock needs the "Display over other apps" permission. Without this, the overlay will not appear while trading.',
+                    'To show the Killswitch and FOMO Gatekeeper over MT5, PipLock needs the "Display over other apps" permission. Without this, the overlay will not appear while trading.',
                     style: GoogleFonts.manrope(
                         color: AppColors.textSecondary,
                         fontSize: 12,
@@ -2019,21 +2147,22 @@ class _TextField extends StatelessWidget {
 // EA Step-by-step Setup Guide (collapsible)
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _EaSetupGuide extends StatefulWidget {
+class _EaSetupGuide extends ConsumerStatefulWidget {
   /// The user's webhook secret, may be null if not yet generated.
   final String? webhookSecret;
 
   const _EaSetupGuide({this.webhookSecret});
 
   @override
-  State<_EaSetupGuide> createState() => _EaSetupGuideState();
+  ConsumerState<_EaSetupGuide> createState() => _EaSetupGuideState();
 }
 
-class _EaSetupGuideState extends State<_EaSetupGuide> {
+class _EaSetupGuideState extends ConsumerState<_EaSetupGuide> {
   bool _expanded = false;
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(appStringsProvider);
     return Container(
       decoration: BoxDecoration(
         color: AppColors.cardBg,
@@ -2066,7 +2195,7 @@ class _EaSetupGuideState extends State<_EaSetupGuide> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'Come configurare l\'EA su MT5',
+                      s.brokerEaGuideTitle,
                       style: GoogleFonts.manrope(
                           color: AppColors.textPrimary,
                           fontWeight: FontWeight.bold,
@@ -2102,60 +2231,52 @@ class _EaSetupGuideState extends State<_EaSetupGuide> {
                   _EaStep(
                     number: 1,
                     icon: Icons.download_rounded,
-                    title: 'Scarica MetaTrader 5',
-                    body:
-                        'Scarica MT5 gratis da metatrader.com/en/trading-platform/metatrader5/ e installalo sul tuo PC o VPS.',
+                    title: s.brokerEaStep1Title,
+                    body: s.brokerEaStep1Body,
                   ),
 
                   // Step 2
                   _EaStep(
                     number: 2,
                     icon: Icons.code_rounded,
-                    title: 'Apri MetaEditor',
-                    body:
-                        'In MT5, premi F4 (oppure Strumenti → MetaEditor) per aprire l\'editor MQL5.',
+                    title: s.brokerEaStep2Title,
+                    body: s.brokerEaStep2Body,
                   ),
 
                   // Step 3
                   _EaStep(
                     number: 3,
                     icon: Icons.add_box_outlined,
-                    title: 'Crea il file EA',
-                    body:
-                        'In MetaEditor: File → Nuovo → Expert Advisor. Copia il codice EA da questo link (o chiedi a PipLock Support il file .mq5).',
-                    extra: _InfoBox(text: 'PipLockEA.mq5 — disponibile su support@piplock.app'),
+                    title: s.brokerEaStep3Title,
+                    body: s.brokerEaStep3Body,
+                    extra: _InfoBox(text: s.brokerEaStep3Extra),
                   ),
 
                   // Step 4 — shows the actual secret if available
                   _EaStep(
                     number: 4,
                     icon: Icons.vpn_key_rounded,
-                    title: 'Inserisci il tuo Webhook Secret',
-                    body:
-                        'Nel codice EA, alla riga InpWebhookSecret, incolla il tuo secret:',
+                    title: s.brokerEaStep4Title,
+                    body: s.brokerEaStep4Body,
                     extra: widget.webhookSecret != null
                         ? _SecretBox(secret: widget.webhookSecret!)
-                        : _InfoBox(
-                            text:
-                                'Genera prima il secret premendo "Attiva connessione EA" qui sopra.'),
+                        : _InfoBox(text: s.brokerEaStep4Extra),
                   ),
 
                   // Step 5
                   _EaStep(
                     number: 5,
                     icon: Icons.play_circle_outline_rounded,
-                    title: 'Compila e avvia l\'EA',
-                    body:
-                        'Premi F7 per compilare. Poi in MT5 trascina l\'EA sul grafico del tuo account. Assicurati che "Allow WebRequests" sia abilitato in Opzioni → Expert Advisors, e aggiungi l\'URL: https://[il tuo progetto].supabase.co',
+                    title: s.brokerEaStep5Title,
+                    body: s.brokerEaStep5Body,
                   ),
 
                   // Step 6
                   _EaStep(
                     number: 6,
                     icon: Icons.check_circle_outline_rounded,
-                    title: 'Verifica connessione',
-                    body:
-                        'Se la connessione funziona, in questa schermata vedrai lo stato cambiare in "Connesso ✓". L\'EA invierà i dati ogni pochi secondi.',
+                    title: s.brokerEaStep6Title,
+                    body: s.brokerEaStep6Body,
                     isLast: true,
                   ),
                 ],

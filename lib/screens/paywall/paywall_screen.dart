@@ -40,6 +40,19 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
         children: [
           const Positioned.fill(child: IgnorePointer(child: AmbientBlobs())),
           SafeArea(child: _buildContent(s)),
+          SafeArea(
+            child: Align(
+              alignment: Alignment.topLeft,
+              child: Padding(
+                padding: const EdgeInsets.only(left: 8, top: 4),
+                child: IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new, color: AppColors.textPrimary, size: 20),
+                  onPressed: () => Navigator.pop(context),
+                  padding: EdgeInsets.zero,
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );

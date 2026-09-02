@@ -343,7 +343,9 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              _session.title,
+              _session.type == 'personal'
+                  ? ref.watch(appStringsProvider).t('Personal', 'Personale')
+                  : _session.title,
               style: GoogleFonts.manrope(
                   color: AppColors.textPrimary,
                   fontWeight: FontWeight.bold,

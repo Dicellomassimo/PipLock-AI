@@ -224,6 +224,18 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                             ? Icons.rocket_launch_rounded
                             : Icons.arrow_forward_rounded,
                       ),
+                      if (_current == _totalSlides - 1) ...[
+                        const SizedBox(height: 14),
+                        Text(
+                          'Not financial advice. Trading involves substantial risk of loss.\nAll trading decisions are solely your responsibility.',
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.manrope(
+                            color: AppColors.textTertiary,
+                            fontSize: 10,
+                            height: 1.5,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -1182,18 +1194,9 @@ class _SocialProofSlideState extends State<_SocialProofSlide>
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Shield painter
-          SizedBox(
-            height: 160,
-            child: AnimatedBuilder(
-              animation: _constellCtrl,
-              builder: (_, __) => CustomPaint(
-                size: const Size(double.infinity, 160),
-                painter: _ShieldPainter(progress: _constellCtrl.value),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
+          // Padlock with prop firm badges
+          _PropFirmPadlock(animation: _constellCtrl),
+          const SizedBox(height: 16),
           // Counter
           AnimatedBuilder(
             animation: _counterCtrl,
@@ -1239,6 +1242,119 @@ class _SocialProofSlideState extends State<_SocialProofSlide>
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+// ── Prop firm padlock visual ──────────────────────────────────────────────────
+
+class _PropFirmPadlock extends StatelessWidget {
+  final Animation<double> animation;
+  const _PropFirmPadlock({required this.animation});
+
+  static const _firms = ['FTMO', 'The5%ers', 'FundedNext', 'E8 Funding', 'Apex'];
+  static const _firmColor = Color(0xFF7B61FF);
+
+  // Pre-defined positions (angle, radius factor) for the badges around the lock
+  static const _positions = [
+    (-0.55, 0.78),  // top-left
+    ( 0.55, 0.78),  // top-right
+    (-0.95, 0.68),  // mid-left
+    ( 0.95, 0.68),  // mid-right
+    ( 0.00, 0.95),  // bottom
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (_, __) {
+        final pulse = (math.sin(animation.value * 2 * math.pi) * 0.5 + 0.5);
+        return SizedBox(
+          height: 160,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Pulsing glow ring
+              Container(
+                width: 96 + pulse * 8,
+                height: 96 + pulse * 8,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  boxShadow: [
+                    BoxShadow(
+                      color: _firmColor.withValues(alpha: 0.18 + pulse * 0.10),
+                      blurRadius: 32 + pulse * 12,
+                      spreadRadius: 4,
+                    ),
+                  ],
+                ),
+              ),
+              // Lock body background circle
+              Container(
+                width: 80,
+                height: 80,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _firmColor.withValues(alpha: 0.12),
+                  border: Border.all(
+                    color: _firmColor.withValues(alpha: 0.35 + pulse * 0.15),
+                    width: 1.5,
+                  ),
+                ),
+                child: const Icon(
+                  Icons.lock_rounded,
+                  color: Color(0xFF7B61FF),
+                  size: 38,
+                ),
+              ),
+              // Prop firm badges
+              for (int i = 0; i < _firms.length; i++)
+                _buildBadge(i, pulse),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildBadge(int i, double pulse) {
+    final (angle, radiusFactor) = _positions[i];
+    final badgePulse = math.sin(animation.value * 2 * math.pi + i * 1.2) * 0.5 + 0.5;
+    return Positioned(
+      left: 0, right: 0, top: 0, bottom: 0,
+      child: Align(
+        alignment: Alignment(angle * 0.95, (i < 4 ? -radiusFactor + 0.1 : 0.85)),
+        child: Transform.translate(
+          offset: Offset(0, math.sin(animation.value * 2 * math.pi + i) * 2),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0D0D18),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(
+                color: _firmColor.withValues(alpha: 0.30 + badgePulse * 0.20),
+                width: 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: _firmColor.withValues(alpha: 0.08 + badgePulse * 0.06),
+                  blurRadius: 8,
+                ),
+              ],
+            ),
+            child: Text(
+              _firms[i],
+              style: GoogleFonts.manrope(
+                color: const Color(0xFFC4D0DC),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.2,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -2831,109 +2947,6 @@ class _ConstellationPainter extends CustomPainter {
   bool shouldRepaint(_ConstellationPainter old) => old.progress != progress;
 }
 
-/// Shield painter for Slide 5 (social proof) — animated protective shield visual
-class _ShieldPainter extends CustomPainter {
-  final double progress;
-  const _ShieldPainter({required this.progress});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final cx = size.width / 2;
-    final cy = size.height / 2;
-    final shieldH = size.height * 0.62;
-    final shieldW = shieldH * 0.72;
-
-    // Pulsing protective rings
-    for (var i = 0; i < 3; i++) {
-      final phase = i / 3;
-      final t = ((progress * 1.2 + phase) % 1.0);
-      final radius = shieldW * (0.8 + i * 0.35) + math.sin(t * 2 * math.pi) * 4;
-      final alpha = (1.0 - t) * 0.22;
-      canvas.drawCircle(
-        Offset(cx, cy * 0.9),
-        radius,
-        Paint()
-          ..color = const Color(0xFF00D4AA).withValues(alpha: alpha)
-          ..strokeWidth = 1.5
-          ..style = PaintingStyle.stroke
-          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6),
-      );
-    }
-
-    // Shield path
-    final path = Path();
-    final top = cy * 0.9 - shieldH * 0.48;
-    final bottom = cy * 0.9 + shieldH * 0.52;
-    final left = cx - shieldW / 2;
-    final right = cx + shieldW / 2;
-    path.moveTo(cx, top);
-    path.cubicTo(right + shieldW * 0.08, top + shieldH * 0.08,
-        right + shieldW * 0.06, top + shieldH * 0.5,
-        cx, bottom);
-    path.cubicTo(left - shieldW * 0.06, top + shieldH * 0.5,
-        left - shieldW * 0.08, top + shieldH * 0.08,
-        cx, top);
-    path.close();
-
-    // Shield glow
-    canvas.drawPath(path, Paint()
-      ..color = const Color(0xFF00D4AA).withValues(alpha: 0.08)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 16));
-
-    // Shield border
-    final pulse = math.sin(progress * 2 * math.pi) * 0.5 + 0.5;
-    canvas.drawPath(path, Paint()
-      ..color = const Color(0xFF00D4AA).withValues(alpha: 0.55 + pulse * 0.25)
-      ..strokeWidth = 2.0
-      ..style = PaintingStyle.stroke);
-
-    // Lock icon in center (simple: circle + rectangle)
-    final lockCx = cx;
-    final lockCy = cy * 0.9 + shieldH * 0.04;
-    // Shackle arc
-    canvas.drawArc(
-      Rect.fromCenter(center: Offset(lockCx, lockCy - 8), width: 16, height: 16),
-      math.pi, math.pi,
-      false,
-      Paint()
-        ..color = const Color(0xFF00D4AA).withValues(alpha: 0.9)
-        ..strokeWidth = 2.5
-        ..style = PaintingStyle.stroke,
-    );
-    // Body
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(lockCx, lockCy + 5), width: 18, height: 14),
-        const Radius.circular(3),
-      ),
-      Paint()..color = const Color(0xFF00D4AA).withValues(alpha: 0.85),
-    );
-
-    // Blocked threat dots (4 positions)
-    final threats = [
-      Offset(left - 22, top + shieldH * 0.15),
-      Offset(right + 20, top + shieldH * 0.25),
-      Offset(left - 18, bottom - shieldH * 0.28),
-      Offset(right + 16, bottom - shieldH * 0.38),
-    ];
-    for (var i = 0; i < threats.length; i++) {
-      final blink = (math.sin(progress * 2 * math.pi + i * 1.5) * 0.5 + 0.5);
-      canvas.drawCircle(threats[i], 6, Paint()
-        ..color = const Color(0xFFFF3B30).withValues(alpha: 0.15 + blink * 0.1));
-      final xPaint = Paint()
-        ..color = const Color(0xFFFF3B30).withValues(alpha: 0.5 + blink * 0.4)
-        ..strokeWidth = 1.5
-        ..strokeCap = StrokeCap.round;
-      canvas.drawLine(threats[i] + const Offset(-3.5, -3.5),
-          threats[i] + const Offset(3.5, 3.5), xPaint);
-      canvas.drawLine(threats[i] + const Offset(3.5, -3.5),
-          threats[i] + const Offset(-3.5, 3.5), xPaint);
-    }
-  }
-
-  @override
-  bool shouldRepaint(_ShieldPainter old) => old.progress != progress;
-}
 
 /// Screen 8: Energy arcs rotating around a center
 class _EnergyArcPainter extends CustomPainter {

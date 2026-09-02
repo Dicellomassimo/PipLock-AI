@@ -84,6 +84,16 @@ class KillswitchOverlayService : Service() {
             startService(context, durationMinutes, reason, skipWarning = false)
         }
 
+        /**
+         * Blocco orari di trading: nessuna fase di avviso, nessun token unlock.
+         * Si auto-dismiss quando scadono i minuti fino all'apertura del mercato.
+         */
+        fun showTradingHoursBlock(context: Context, minutesUntilStart: Int) {
+            if (!Settings.canDrawOverlays(context)) return
+            if (isRunning) return
+            startService(context, minutesUntilStart, "trading_hours", skipWarning = true)
+        }
+
         fun hide(context: Context) {
             context.stopService(Intent(context, KillswitchOverlayService::class.java))
         }
@@ -388,24 +398,16 @@ class KillswitchOverlayService : Service() {
             )
         }
 
-        // Transparent spacer at top — account switcher area in MT5 stays reachable
-        val topSpacer = View(ctx).apply {
-            setBackgroundColor(Color.TRANSPARENT)
-            isClickable  = false
-            isFocusable  = false
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(80)
-            )
-        }
-
         // Content area carries the gradient background and all visible UI
+        // Trading hours: dark navy; Killswitch: dark red
+        val bgTop    = if (reason == "trading_hours") "#00050F" else "#0D0000"
+        val bgBottom = if (reason == "trading_hours") "#0A1020" else "#1A0000"
         val contentLayout = LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
             gravity     = Gravity.CENTER_HORIZONTAL
             background  = android.graphics.drawable.GradientDrawable(
                 android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
-                intArrayOf(Color.parseColor("#0D0000"), Color.parseColor("#1A0000"))
+                intArrayOf(Color.parseColor(bgTop), Color.parseColor(bgBottom))
             )
             setPadding(dp(28), 0, dp(28), 0)
             layoutParams = LinearLayout.LayoutParams(
@@ -427,16 +429,16 @@ class KillswitchOverlayService : Service() {
 
         contentLayout.addView(spacer(1f))
 
-        // ── Lock icon ─────────────────────────────────────────────────────────
+        // ── Icon ──────────────────────────────────────────────────────────────
         contentLayout.addView(TextView(ctx).apply {
-            text    = "🔒"
+            text     = if (reason == "trading_hours") "🕐" else "🔒"
             textSize = 48f
-            gravity = Gravity.CENTER_HORIZONTAL
+            gravity  = Gravity.CENTER_HORIZONTAL
         })
 
         // ── Title ─────────────────────────────────────────────────────────────
         contentLayout.addView(TextView(ctx).apply {
-            text          = "KILLSWITCH ACTIVE"
+            text          = if (reason == "trading_hours") "TRADING HOURS BLOCK" else "KILLSWITCH ACTIVE"
             textSize      = 20f
             setTextColor(Color.WHITE)
             setTypeface(null, Typeface.BOLD)
@@ -484,7 +486,7 @@ class KillswitchOverlayService : Service() {
             )
         }
         countdownBlock.addView(TextView(ctx).apply {
-            text          = "UNLOCKS IN"
+            text          = if (reason == "trading_hours") "OPENS IN" else "UNLOCKS IN"
             textSize      = 9f
             setTextColor(Color.parseColor("#80FFFFFF"))
             gravity       = Gravity.CENTER_HORIZONTAL
@@ -503,6 +505,16 @@ class KillswitchOverlayService : Service() {
         countdownTextView = countdownTv
         contentLayout.addView(countdownBlock)
 
+        if (reason == "trading_hours") {
+            // ── Trading hours: info text only — no token unlock ───────────────
+            contentLayout.addView(TextView(ctx).apply {
+                text     = "Wait until your trading window opens."
+                textSize = 12f
+                setTextColor(Color.parseColor("#AAFFFFFF"))
+                gravity  = Gravity.CENTER_HORIZONTAL
+                setPadding(0, dp(18), 0, dp(14))
+            })
+        } else {
         // ── Info text ─────────────────────────────────────────────────────────
         contentLayout.addView(TextView(ctx).apply {
             text     = "Hold the button below to unlock early with a token."
@@ -586,6 +598,7 @@ class KillswitchOverlayService : Service() {
             true
         }
         contentLayout.addView(tokenBtn)
+        } // end else (not trading_hours)
 
         // ── Exit MT5 button ───────────────────────────────────────────────────
         contentLayout.addView(Button(ctx).apply {
@@ -624,8 +637,6 @@ class KillswitchOverlayService : Service() {
 
         contentLayout.addView(spacer(1.2f))
 
-        // Assemble: transparent spacer on top, content below
-        root.addView(topSpacer)
         root.addView(contentLayout)
         return root
     }
@@ -672,6 +683,7 @@ class KillswitchOverlayService : Service() {
         "max_trades"      -> "Maximum trades limit reached"
         "revenge_pattern" -> "Revenge trading pattern detected"
         "overleveraging"  -> "Excessive drawdown detected"
+        "trading_hours"   -> "Outside your trading hours"
         else              -> "Risk limit reached"
     }
 
@@ -743,9 +755,10 @@ class KillswitchOverlayService : Service() {
             packageManager.getLaunchIntentForPackage(packageName),
             PendingIntent.FLAG_IMMUTABLE
         )
-        val text = when (phase) {
-            Phase.WARNING  -> "⚠️ Close losing positions — lockdown in $WARNING_SECONDS s"
-            Phase.LOCKDOWN -> "🔒 Killswitch active. Open PipLock to unlock."
+        val text = when {
+            reason == "trading_hours" -> "🕐 Outside trading hours. MT5 blocked until market opens."
+            phase == Phase.WARNING    -> "⚠️ Close losing positions — lockdown in $WARNING_SECONDS s"
+            else                      -> "🔒 Killswitch active. Open PipLock to unlock."
         }
         return Notification.Builder(this, CHANNEL_ID)
             .setContentTitle("PipLock Killswitch")

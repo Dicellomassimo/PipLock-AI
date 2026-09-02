@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
@@ -100,6 +101,14 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _showPermissionCooldown(VoidCallback onConfirm) async {
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => _PermissionCooldownDialog(onConfirm: onConfirm),
     );
   }
 
@@ -221,9 +230,19 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen>
                 if (mounted) _showPermissionLockedDialog();
                 return;
               }
-              AccessibilityService.openSettings();
-              SharedPreferences.getInstance().then(
-                  (p) => p.setBool(_kPermAccessibility, true));
+              final isCurrentlyEnabled = await AccessibilityService.isEnabled();
+              if (isCurrentlyEnabled && mounted) {
+                // User is trying to DISABLE — require 60s cooldown
+                _showPermissionCooldown(() {
+                  AccessibilityService.openSettings();
+                  SharedPreferences.getInstance()
+                      .then((p) => p.setBool(_kPermAccessibility, false));
+                });
+              } else {
+                AccessibilityService.openSettings();
+                SharedPreferences.getInstance()
+                    .then((p) => p.setBool(_kPermAccessibility, true));
+              }
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.accent,
@@ -309,9 +328,19 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen>
               if (mounted) _showPermissionLockedDialog();
               return;
             }
-            AccessibilityService.requestOverlayPermission();
-            SharedPreferences.getInstance().then(
-                (p) => p.setBool('perm_overlay_granted', true));
+            final isCurrentlyEnabled = await AccessibilityService.canDrawOverlays();
+            if (isCurrentlyEnabled && mounted) {
+              // User is trying to DISABLE — require 60s cooldown
+              _showPermissionCooldown(() {
+                AccessibilityService.requestOverlayPermission();
+                SharedPreferences.getInstance()
+                    .then((p) => p.setBool('perm_overlay_granted', false));
+              });
+            } else {
+              AccessibilityService.requestOverlayPermission();
+              SharedPreferences.getInstance()
+                  .then((p) => p.setBool('perm_overlay_granted', true));
+            }
           }),
           const SizedBox(height: 16),
           _FcmPermissionCard(refreshKey: _refreshKey, s: s),
@@ -733,6 +762,250 @@ class _FcmPermissionCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+// ── 60-second cooldown before disabling an active permission ──────────────────
+
+class _PermissionCooldownDialog extends ConsumerStatefulWidget {
+  final VoidCallback onConfirm;
+  const _PermissionCooldownDialog({required this.onConfirm});
+
+  @override
+  ConsumerState<_PermissionCooldownDialog> createState() =>
+      _PermissionCooldownDialogState();
+}
+
+class _PermissionCooldownDialogState extends ConsumerState<_PermissionCooldownDialog> {
+  static const _totalSeconds = 60;
+  int _secondsLeft = _totalSeconds;
+  int _breathTick = 0; // increments every second
+  Timer? _timer;
+
+  // Breathing phases: 4s inhale, 4s hold, 4s exhale → 12s cycle
+  int get _breathPhase => (_breathTick ~/ 4) % 3;
+
+  @override
+  void initState() {
+    super.initState();
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() {
+        if (_secondsLeft > 0) _secondsLeft--;
+        _breathTick++;
+      });
+    });
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = ref.watch(appStringsProvider);
+    final done = _secondsLeft == 0;
+    final phase = _breathPhase;
+    final breathLabels = s.permCooldownBreathLabels;
+    final questions = s.permCooldownQuestions;
+
+    return AlertDialog(
+      backgroundColor: AppColors.cardBg,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      contentPadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+      title: Row(
+        children: [
+          const Icon(Icons.self_improvement_rounded,
+              color: AppColors.warning, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              s.permCooldownTitle,
+              style: GoogleFonts.manrope(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16),
+            ),
+          ),
+        ],
+      ),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 12),
+            // Warning box
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: AppColors.danger.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                    color: AppColors.danger.withValues(alpha: 0.25)),
+              ),
+              child: Text(
+                s.permCooldownWarning,
+                style: GoogleFonts.manrope(
+                    color: AppColors.danger, fontSize: 12, height: 1.4),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Breathing exercise
+            Center(
+              child: Container(
+                width: 110,
+                height: 110,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: _breathPhaseColor(phase),
+                    width: 3,
+                  ),
+                  color: _breathPhaseColor(phase).withValues(alpha: 0.08),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      phase == 0
+                          ? Icons.arrow_upward_rounded
+                          : phase == 1
+                              ? Icons.pause_rounded
+                              : Icons.arrow_downward_rounded,
+                      color: _breathPhaseColor(phase),
+                      size: 26,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      breathLabels[phase],
+                      style: GoogleFonts.manrope(
+                        color: _breathPhaseColor(phase),
+                        fontWeight: FontWeight.w700,
+                        fontSize: 13,
+                      ),
+                    ),
+                    Text(
+                      '${4 - (_breathTick % 4)}s',
+                      style: GoogleFonts.manrope(
+                          color: AppColors.textSecondary, fontSize: 11),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 20),
+
+            // Introspective questions
+            Text(
+              s.permCooldownAskYourself,
+              style: GoogleFonts.manrope(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13),
+            ),
+            const SizedBox(height: 8),
+            ...List.generate(3, (i) {
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('${i + 1}. ',
+                        style: GoogleFonts.manrope(
+                            color: AppColors.accent,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 12)),
+                    Expanded(
+                      child: Text(
+                        questions[i],
+                        style: GoogleFonts.manrope(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                            height: 1.4),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 16),
+
+            // Countdown
+            Center(
+              child: Text(
+                done
+                    ? s.permCooldownCanProceed
+                    : s.waitSeconds(_secondsLeft),
+                style: GoogleFonts.manrope(
+                  color: done ? AppColors.accent : AppColors.textSecondary,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: 1 - (_secondsLeft / _totalSeconds),
+                backgroundColor: AppColors.divider,
+                valueColor: AlwaysStoppedAnimation<Color>(
+                  done ? AppColors.accent : AppColors.warning,
+                ),
+                minHeight: 6,
+              ),
+            ),
+            const SizedBox(height: 20),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(
+            s.permCooldownCancel,
+            style:
+                GoogleFonts.manrope(color: AppColors.textSecondary),
+          ),
+        ),
+        ElevatedButton(
+          onPressed: done
+              ? () {
+                  Navigator.pop(context);
+                  widget.onConfirm();
+                }
+              : null,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.danger,
+            foregroundColor: Colors.white,
+            disabledBackgroundColor:
+                AppColors.danger.withValues(alpha: 0.25),
+            disabledForegroundColor:
+                AppColors.danger.withValues(alpha: 0.5),
+            shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10)),
+          ),
+          child: Text(
+            s.permCooldownOpenSettings,
+            style:
+                GoogleFonts.manrope(fontWeight: FontWeight.w700),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Color _breathPhaseColor(int phase) {
+    return switch (phase) {
+      0 => AppColors.accent,   // inhale — green
+      1 => AppColors.warning,  // hold — yellow
+      _ => AppColors.fomo,     // exhale — orange/purple
+    };
   }
 }
 

@@ -63,6 +63,11 @@ class _JournalScreenState extends ConsumerState<JournalScreen> {
                 ksEvents: 0,
                 cleanDays: 0,
                 totalTrades: entries.length,
+                title: s.historyShareTitle,
+                ksLabel: s.historyShareKsEvents(0),
+                cleanDaysLabel: s.historyShareCleanDays(0),
+                tradesLabel: s.historyShareTrades(entries.length),
+                tagline: s.historyShareTagline,
               );
               ShareService.shareText(
                 '$text\n\nWin rate: ${notifier.winRate.toStringAsFixed(0)}%',
@@ -567,21 +572,22 @@ class _DateHeader extends ConsumerWidget {
 
 // ─── Entry card ───────────────────────────────────────────────────────────────
 
-class _EntryCard extends StatefulWidget {
+class _EntryCard extends ConsumerStatefulWidget {
   final JournalEntry entry;
   final VoidCallback onDelete;
 
   const _EntryCard({required this.entry, required this.onDelete});
 
   @override
-  State<_EntryCard> createState() => _EntryCardState();
+  ConsumerState<_EntryCard> createState() => _EntryCardState();
 }
 
-class _EntryCardState extends State<_EntryCard> {
+class _EntryCardState extends ConsumerState<_EntryCard> {
   bool _pressed = false;
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(appStringsProvider);
     final entry = widget.entry;
     final pnlColor = entry.pnl == null
         ? AppColors.textSecondary
@@ -700,7 +706,7 @@ class _EntryCardState extends State<_EntryCard> {
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
-                                  '📋 Pianificato',
+                                  s.journalPlanned,
                                   style: GoogleFonts.manrope(
                                     color: AppColors.accent,
                                     fontSize: 10,
@@ -724,7 +730,7 @@ class _EntryCardState extends State<_EntryCard> {
                               )
                             else
                               Text(
-                                'P&L non registrato',
+                                s.journalPnlNotRecorded,
                                 style: GoogleFonts.manrope(
                                   color: AppColors.textSecondary,
                                   fontSize: 13,

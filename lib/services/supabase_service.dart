@@ -179,8 +179,8 @@ class SupabaseService {
       throw ArgumentError('Invalid killswitch duration.');
     }
     if (rules.accountNumber != null && rules.accountNumber!.isNotEmpty) {
-      if (!RegExp(r'^\d{5,10}$').hasMatch(rules.accountNumber!)) {
-        throw ArgumentError('Account number must be 5–10 digits.');
+      if (!RegExp(r'^\d{1,20}$').hasMatch(rules.accountNumber!)) {
+        throw ArgumentError('Account number must contain only digits (max 20).');
       }
     }
   }

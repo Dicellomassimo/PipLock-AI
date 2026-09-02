@@ -48,12 +48,27 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   String? _avatarPath;
   bool _showSetupBanner = false;
   int  _wizardStep = 0; // >0 means wizard was started but not finished
+  bool _monitoringPaused = false; // true when permissions revoked but rules active
   static const _avatarPrefKey = 'profile_avatar_path';
 
   Future<void> _loadAvatar() async {
     final prefs = await SharedPreferences.getInstance();
     final path = prefs.getString(_avatarPrefKey);
     if (mounted) setState(() => _avatarPath = (path != null && File(path).existsSync()) ? path : null);
+  }
+
+  /// Checks if monitoring is silently paused (permissions revoked while rules active).
+  Future<void> _checkMonitoringState() async {
+    final hasRules = ref.read(rulesProvider).rules != null;
+    final brokerState = ref.read(brokerProvider);
+    final usesAccessibility = brokerState.method == BrokerConnectionMethod.accessibility;
+    if (!hasRules || !usesAccessibility) {
+      if (mounted && _monitoringPaused) setState(() => _monitoringPaused = false);
+      return;
+    }
+    final accessibilityOk = await AccessibilityService.isEnabled();
+    final overlayOk = await AccessibilityService.canDrawOverlays();
+    if (mounted) setState(() => _monitoringPaused = !accessibilityOk || !overlayOk);
   }
 
   Future<void> _checkSetupBanner() async {
@@ -78,6 +93,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     WidgetsBinding.instance.addObserver(this);
     _loadAvatar();
     _checkSetupBanner();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _checkMonitoringState());
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_checkinDone) {
         CheckinModal.showIfNeeded(context).then((result) async {
@@ -114,7 +130,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) _loadAvatar();
+    if (state == AppLifecycleState.resumed) {
+      _loadAvatar();
+      _checkMonitoringState(); // detect if user revoked permissions from Android Settings
+    }
   }
 
   Future<void> _loadActiveChallenge() async {
@@ -247,15 +266,29 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
     final tradesToday = metaState.isConnected
         ? (metaState.tradesToday ?? rulesState.tradesToday)
         : rulesState.tradesToday;
-    // Use effectiveMaxTrades which accounts for low check-in score (reduces by 30%)
-    final maxTrades = rulesState.effectiveMaxTrades;
+
+    // Limiti: usa regole personali se disponibili, altrimenti piano challenge attivo.
+    // Questo permette di vedere i limiti corretti anche quando si usa solo la challenge.
+    final challengePlan = _activeChallenge?.aiPlan;
+    final challengeMaxTrades = (challengePlan?['recommendedTradesPerDay'] as num?)?.toInt();
+    final challengeHardPct = (challengePlan?['hardKillswitchThreshold'] as num?)?.toDouble();
+    final challengeMaxLossUsd = (challengeHardPct != null && _activeChallenge != null)
+        ? _activeChallenge!.accountSize * challengeHardPct / 100
+        : null;
+
+    final hasPersonalRules = rulesState.rules != null;
+    final maxTrades = hasPersonalRules
+        ? rulesState.effectiveMaxTrades
+        : (challengeMaxTrades ?? 0);
 
     // P&L: da MetaAPI se connesso (positivo = profitto, negativo = perdita)
     // Guardia NaN/Infinity: l'accessibility service può inviare Double.NaN per il profit
     // se la schermata MT5 era a metà transizione. Senza guardia, (NaN*100).round() crasha.
     final rawPnl = metaState.isConnected ? (metaState.dailyPnl ?? 0.0) : 0.0;
     final pnlToday = (rawPnl.isNaN || rawPnl.isInfinite) ? 0.0 : rawPnl;
-    final pnlLimit = -(rulesState.rules?.maxDailyLoss ?? 200.0);
+    final pnlLimit = hasPersonalRules
+        ? -(rulesState.rules!.maxDailyLoss ?? 0.0)
+        : -(challengeMaxLossUsd ?? 0.0);
 
     final rawTradePercent = maxTrades > 0 ? tradesToday / maxTrades : 0.0;
     final tradePercent = (rawTradePercent.isNaN || rawTradePercent.isInfinite)
@@ -303,6 +336,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               children: [
                 // ── Killswitch banner (non bloccante — PipLock resta usabile) ──
                 _KillswitchBanner(),
+                // ── Monitoring paused banner (permissions revoked) ──────────
+                if (_monitoringPaused)
+                  _MonitoringPausedBanner(
+                    onFix: () async {
+                      await Navigator.of(context).pushNamed('/permissions');
+                      _checkMonitoringState();
+                    },
+                  ),
                 // ── Setup wizard banner ─────────────────────────────────────
                 if (_showSetupBanner)
                   _SetupWizardBanner(
@@ -1722,7 +1763,48 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
             ),
           ),
           const SizedBox(height: 14),
-          if (rulesState.rules == null)
+          if (rulesState.rules == null && _activeChallenge?.aiPlan != null) ...[
+            // ── Challenge plan limits (no personal rules configured) ───────
+            Builder(builder: (context) {
+              final plan = _activeChallenge!.aiPlan!;
+              final hardPct = (plan['hardKillswitchThreshold'] as num?)?.toDouble()
+                  ?? _activeChallenge!.maxDailyLoss;
+              final softPct = (plan['softKillswitchThreshold'] as num?)?.toDouble()
+                  ?? (hardPct * 0.6);
+              final maxTradesFromPlan = (plan['recommendedTradesPerDay'] as num?)?.toInt() ?? 2;
+              final hardUsd = _activeChallenge!.accountSize * hardPct / 100;
+              final softUsd = _activeChallenge!.accountSize * softPct / 100;
+              final pnlNow = (metaState.dailyPnl ?? 0.0);
+              final lossNow = pnlNow < 0 ? pnlNow.abs() : 0.0;
+              final tradesNow = metaState.tradesToday ?? rulesState.tradesToday;
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildLimitRow(
+                    label: 'Max loss / day (${_activeChallenge!.propFirmName ?? 'Challenge'})',
+                    value: '\$${hardUsd.toStringAsFixed(0)} (${hardPct.toStringAsFixed(1)}%)',
+                    progress: hardUsd > 0 ? (lossNow / hardUsd).clamp(0.0, 1.0) : 0.0,
+                  ),
+                  const SizedBox(height: 12),
+                  _buildLimitRow(
+                    label: s.dashMaxTradesLabel,
+                    value: '$tradesNow / $maxTradesFromPlan',
+                    progress: maxTradesFromPlan > 0
+                        ? (tradesNow / maxTradesFromPlan).clamp(0.0, 1.0)
+                        : 0.0,
+                  ),
+                  if (softUsd > 0) ...[
+                    const SizedBox(height: 12),
+                    _buildLimitRowIcon(
+                      label: 'Soft killswitch',
+                      value: '\$${softUsd.toStringAsFixed(0)} (${softPct.toStringAsFixed(1)}%)',
+                      icon: Icons.warning_amber_rounded,
+                    ),
+                  ],
+                ],
+              );
+            }),
+          ] else if (rulesState.rules == null) ...[
             Row(
               children: [
                 Expanded(
@@ -1746,8 +1828,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                   ),
                 ),
               ],
-            )
-          else ...[
+            ),
+          ] else ...[
             // Riga 1 — Max perdita
             _buildLimitRow(
               label: s.dashMaxLossLabel,
@@ -2672,6 +2754,64 @@ class _QuickLogSheetState extends ConsumerState<QuickLogSheet> {
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+// ── Monitoring Paused Banner ───────────────────────────────────────────────────
+
+class _MonitoringPausedBanner extends ConsumerWidget {
+  final VoidCallback onFix;
+  const _MonitoringPausedBanner({required this.onFix});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(appStringsProvider);
+    return GestureDetector(
+      onTap: onFix,
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        decoration: BoxDecoration(
+          color: AppColors.danger.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: AppColors.danger.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.gpp_bad_rounded, color: AppColors.danger, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.t('⚠️ Monitoring paused', '⚠️ Monitoraggio in pausa'),
+                    style: GoogleFonts.manrope(
+                      color: AppColors.danger,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                    ),
+                  ),
+                  Text(
+                    s.t(
+                      'Permissions were disabled — your rules are not enforced. Tap to fix.',
+                      'I permessi sono stati disabilitati — le tue regole non vengono applicate. Tocca per risolvere.',
+                    ),
+                    style: GoogleFonts.manrope(
+                      color: AppColors.danger.withValues(alpha: 0.8),
+                      fontSize: 11,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(Icons.arrow_forward_ios_rounded,
+                color: AppColors.danger, size: 14),
+          ],
         ),
       ),
     );

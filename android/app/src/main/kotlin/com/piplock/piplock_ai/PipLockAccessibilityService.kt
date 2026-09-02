@@ -61,35 +61,37 @@ class PipLockAccessibilityService : AccessibilityService() {
     private val BROKER_DEBOUNCE_MS = 1000L
 
     // ---- FOMO detection state -----------------------------------
+    // Finestra FOMO post-news (basata su trading psychology research):
+    // T+0 → T+2 min: spike algoritmico — il retail non riesce ad eseguire qui
+    // T+2 → T+30 min: finestra FOMO primaria — il retail vede il movimento e lo insegue
+    // T+30 → T+45 min: finestra FOMO secondaria — chasers del secondo onda
+    // Oltre T+45 min: segnale FOMO troppo debole per essere affidabile
     private var lastPositionCount: Int = -1
-    private var lastEquity: Double = -1.0
-    private var lastEquityChangeTime: Long = 0
     private var lastFomoAlertTime: Long = 0
-    private val FOMO_EQUITY_CHANGE_THRESHOLD = 0.003  // 0.3% di variazione dell'equity
-    private val FOMO_WINDOW_MS = 60_000L               // finestra 60s per rilevare FOMO
-    private val FOMO_ALERT_COOLDOWN_MS = 5 * 60_000L   // 5 min cooldown tra alert FOMO
+    private val FOMO_MIN_AFTER_NEWS_MS = 2 * 60_000L        // ignora i primi 2 min (spike algo)
+    private val FOMO_MAX_AFTER_NEWS_MS = 30 * 60_000L       // finestra primaria: entro 30 min
+    private val FOMO_ALERT_COOLDOWN_MS = 5 * 60_000L        // 5 min cooldown tra alert FOMO
 
     // ---- Revenge trading detection state --------------------------------
     private var lastBalanceForRevenge: Double = -1.0
     private var lastPositionCountForRevenge: Int = -1
+    private var consecutiveLosses: Int = 0                  // perdite consecutive senza profitto
     private var lastLossTime: Long = 0
     private var lastRevengeAlertTime: Long = 0
-    private val REVENGE_WINDOW_MS = 5 * 60_000L
+    private val REVENGE_WINDOW_MS = 5 * 60_000L             // la nuova pos deve aprirsi entro 5min dall'ultima perdita
     private val REVENGE_ALERT_COOLDOWN_MS = 10 * 60_000L
 
     // ---- Overleveraging detection state ---------------------------------
+    private var lastDetectedTradeMarginDelta: Double = 0.0  // margin del trade appena aperto
     private var lastOverleveragingAlertTime: Long = 0
     private val OVERLEVERAGING_ALERT_COOLDOWN_MS = 10 * 60_000L
 
     // ---- Overtrading soft warning state ---------------------------------
-    private var positionIncreaseTimes: MutableList<Long> = mutableListOf()
     private var lastOvertradingAlertTime: Long = 0
-    private val OVERTRADING_SOFT_WINDOW_MS = 60_000L
-    private val OVERTRADING_SOFT_THRESHOLD = 3
     private val OVERTRADING_ALERT_COOLDOWN_MS = 30 * 60_000L
 
     // ---- Multi-account switch detection state ---------------------------
-    // Tracks the last confirmed account number seen on screen.
+    // Traccia l'ultimo numero account confermato visibile su schermo.
     // When this changes, an "account_switched" event is broadcast to Flutter.
     private var lastActiveAccountNumber: String? = null
 
@@ -244,10 +246,6 @@ class PipLockAccessibilityService : AccessibilityService() {
             Log.w(TAG, "rootInActiveWindow è null — canRetrieveWindowContent potrebbe non essere attivo")
             return
         }
-        val texts = mutableListOf<String>()
-        collectTexts(root, texts)
-        Log.d(TAG, "Testi raccolti: ${texts.size} — pkg: $currentBrokerPackage")
-        if (texts.isNotEmpty()) Log.d(TAG, "Primi 5: ${texts.take(5)}")
         extractBrokerData(root)
     }
 
@@ -258,9 +256,11 @@ class PipLockAccessibilityService : AccessibilityService() {
 
         val pkg = currentBrokerPackage ?: return
         val appName = resolveBrokerName(pkg) ?: ""
+
+        // MT5: prova prima la lettura per resource-ID (stabile, non dipende dal testo)
         val result = when {
             appName.contains("MetaTrader") || pkg.contains("metatrader") || pkg.contains("metaquotes") ->
-                extractMT5Data(texts)
+                extractMT5ByViewId(root, pkg) ?: extractMT5Data(texts)
             appName.contains("cTrader") || pkg.contains("ctrader") || pkg.contains("spotware") ->
                 extractCTraderData(texts)
             else -> extractGenericData(texts)
@@ -343,7 +343,15 @@ class PipLockAccessibilityService : AccessibilityService() {
 
         if (savedKey == todayKey) {
             val ref = prefs.getFloat("reference_balance", -1f).toDouble()
-            if (ref > 0) return ref
+            // Sanity: il reference deve essere entro ±50% del balance corrente.
+            // Se è fuori da questo range è quasi certamente corrotto (es. valore di margine
+            // salvato per errore da una versione precedente del service).
+            if (ref > 0 && ref >= currentBalance * 0.5 && ref <= currentBalance * 1.5) {
+                return ref
+            } else if (ref > 0) {
+                Log.w(TAG, "Reference balance corrotto (ref=$ref, balance=$currentBalance) — reset")
+                // non fare return: scendi a resettare il reference
+            }
         }
 
         // Nuovo giorno: imposta il reference con il balance corrente
@@ -367,6 +375,114 @@ class PipLockAccessibilityService : AccessibilityService() {
             putLong("reference_set_time", System.currentTimeMillis())
             apply()
         }
+    }
+
+    // ── Contatore trade giornalieri ──────────────────────────────────────────
+    // Traccia quante posizioni sono state aperte OGGI (non quelle correnti).
+    // Resetta a mezzanotte. Non diminuisce quando le posizioni vengono chiuse.
+    // Usa il delta del margine (id/margin) invece del childCount del ListView —
+    // il childCount funziona solo per ≤9 posizioni visibili (limite ListView recycling),
+    // mentre il margine cresce ogni volta che si apre una nuova posizione, indipendentemente
+    // da quante sono visibili sullo schermo.
+
+    private var lastKnownMargin: Double = -1.0
+    private var estimatedMarginPerTrade: Double = -1.0
+    private val MARGIN_INCREASE_THRESHOLD = 0.50  // $0.50 minimo per considerare un nuovo trade
+    private var tradesOpenedToday: Int = 0
+    private var tradeCounterDate: String = ""
+
+    private fun resetTradeCounterIfNewDay() {
+        val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault())
+            .format(java.util.Date())
+        if (tradeCounterDate != today) {
+            tradeCounterDate = today
+            tradesOpenedToday = 0
+            lastKnownMargin = -1.0
+            estimatedMarginPerTrade = -1.0
+        }
+    }
+
+    /**
+     * Estrae dati MT5 tramite resource-ID stabili (non dipende dal testo visibile).
+     * Molto più affidabile del text-matching in lingue diverse o layout variabili.
+     * Fallback su extractMT5Data(texts) se la lettura per ID fallisce.
+     */
+    private fun extractMT5ByViewId(root: AccessibilityNodeInfo, pkg: String): ExtractedData? {
+        fun nodeText(id: String): String? =
+            try { root.findAccessibilityNodeInfosByViewId("$pkg:id/$id").firstOrNull()?.text?.toString() }
+            catch (_: Exception) { null }
+
+        fun parseId(id: String): Double? = nodeText(id)?.let { parseFinancialNumber(it) }
+
+        val balance = parseId("balance")
+        val equity  = parseId("equity")
+        if (balance == null && equity == null) return null  // non siamo sulla schermata Trade
+
+        // P&L floating in left_subtitle appare come "10.75 EUR" o "-3.20 USD" — rimuovi valuta
+        val pnlRaw = nodeText("left_subtitle")?.trim() ?: ""
+        val profit  = parseFinancialNumber(pnlRaw.replace(Regex("[A-Za-zА-Яа-я€$£¥%]+"), "").trim())
+
+        // ── Conteggio posizioni aperte ATTUALMENTE ────────────────────────────
+        // Il ListView 'trades' ha childCount = 2 fixed (account summary + header) + N per posizione.
+        // Empiricamente: ogni posizione aggiunge ~3 RelativeLayout (riga, separatore, action panel).
+        // Formula: positionCount ≈ (relLayoutCount) / 3
+        // LIMITE: ListView recycling tiene in memoria solo ~9 righe visibili → undercount con >9 trade.
+        // Usiamo currentOpenPositions SOLO per self-calibrare il margine per trade.
+        resetTradeCounterIfNewDay()
+        var currentOpenPositions: Int? = null
+        try {
+            val tradesList = root.findAccessibilityNodeInfosByViewId("$pkg:id/trades").firstOrNull()
+            if (tradesList != null) {
+                val childCount = tradesList.childCount
+                val relCount = (0 until childCount)
+                    .mapNotNull { try { tradesList.getChild(it) } catch (_: Exception) { null } }
+                    .count { it.className?.contains("RelativeLayout") == true }
+                currentOpenPositions = if (relCount > 0) Math.round(relCount / 3.0).toInt() else 0
+            }
+        } catch (_: Exception) {}
+
+        // ── Trade aperti OGGI via delta-margine ───────────────────────────────
+        // Il margine (id/margin) aumenta ogni volta che si apre una nuova posizione, indipendentemente
+        // da quante posizioni sono visibili nel ListView. Ogni volta che il margine sale di una
+        // quantità >= MARGIN_INCREASE_THRESHOLD, stimiamo quanti trade sono stati aperti.
+        // Autocalibrazione: stimatedMarginPerTrade = media mobile (85/15) di (margin / posizioni visibili).
+        val margin = parseId("margin")
+        if (margin != null && margin > 0) {
+            // Autocalibrazione: aggiorna la stima del margine per singolo trade
+            if (currentOpenPositions != null && currentOpenPositions > 0) {
+                val est = margin / currentOpenPositions
+                estimatedMarginPerTrade = if (estimatedMarginPerTrade < 0) est
+                    else estimatedMarginPerTrade * 0.85 + est * 0.15
+            }
+
+            if (lastKnownMargin < 0) {
+                // Prima lettura della sessione: init contatore con le posizioni visibili correnti
+                lastKnownMargin = margin
+                if (tradesOpenedToday == 0 && currentOpenPositions != null)
+                    tradesOpenedToday = currentOpenPositions
+                Log.d(TAG, "Trade oggi (init): $tradesOpenedToday, margine=$margin, est/trade=$estimatedMarginPerTrade")
+            } else {
+                val delta = margin - lastKnownMargin
+                if (delta >= MARGIN_INCREASE_THRESHOLD && estimatedMarginPerTrade > 0) {
+                    val newTrades = maxOf(1, Math.round(delta / estimatedMarginPerTrade).toInt())
+                    tradesOpenedToday += newTrades
+                    lastDetectedTradeMarginDelta = delta  // usato da checkOverleveraging
+                    Log.d(TAG, "Nuovi trade (Δmargin=$delta, est/trade=$estimatedMarginPerTrade): +$newTrades → oggi=$tradesOpenedToday")
+                } else {
+                    lastDetectedTradeMarginDelta = 0.0
+                }
+                lastKnownMargin = margin
+            }
+        }
+
+        Log.d(TAG, "ViewID: eq=$equity bal=$balance pnl=$profit openNow=$currentOpenPositions today=$tradesOpenedToday margin=$margin")
+        return ExtractedData(
+            equity    = equity,
+            balance   = balance,
+            profit    = profit,
+            positions = currentOpenPositions,                                       // posizioni CORRENTI per FOMO/revenge
+            tradesToday = if (tradesOpenedToday > 0) tradesOpenedToday else null   // trade OGGI per killswitch/dashboard
+        )
     }
 
     // Etichette MT5 che NON devono mai essere lette come balance/equity/profit.
@@ -703,6 +819,31 @@ class PipLockAccessibilityService : AccessibilityService() {
             // ma solo se i dati sembrano plausibili (la validazione sotto protegge)
         }
 
+        // ── Trading hours check (priority — blocks regardless of P&L) ────────────
+        val tradingHoursEnabled = prefs.getBoolean("trading_hours_enabled", false)
+        if (tradingHoursEnabled && !KillswitchOverlayService.isRunning) {
+            val startStr  = prefs.getString("trading_hours_start", "") ?: ""
+            val endStr    = prefs.getString("trading_hours_end",   "") ?: ""
+            val startMins = parseTimeMins(startStr)
+            val endMins   = parseTimeMins(endStr)
+            if (startMins >= 0 && endMins >= 0) {
+                val cal     = java.util.Calendar.getInstance()
+                val nowMins = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 +
+                              cal.get(java.util.Calendar.MINUTE)
+                val isOutside = nowMins < startMins || nowMins >= endMins
+                if (isOutside) {
+                    val minutesUntilStart = if (nowMins < startMins) {
+                        startMins - nowMins
+                    } else {
+                        (24 * 60 - nowMins) + startMins
+                    }
+                    Log.w(TAG, "Fuori orario di trading — blocco per $minutesUntilStart min")
+                    KillswitchOverlayService.showTradingHoursBlock(this, minutesUntilStart)
+                    return
+                }
+            }
+        }
+
         val maxLossAmount = prefs.getFloat("max_daily_loss_amount", -1f).toDouble()
         val maxLossPct    = prefs.getFloat("max_daily_loss_pct",    -1f).toDouble()
         val maxTrades     = prefs.getInt("max_trades_per_day", -1)
@@ -725,14 +866,19 @@ class PipLockAccessibilityService : AccessibilityService() {
             if (ratio < 0.80 || ratio > 1.25) return
         }
 
-        // Se il P&L è positivo l'utente è in profitto → MAI attivare il killswitch
-        if (data.profit != null && data.profit > 0) return
-
         var reason: String? = null
 
-        // Controllo perdita giornaliera (solo se configurata dall'utente)
-        // data.profit = dailyPnl = equity - referenceBalance (negativo = perdita)
-        if (data.profit != null && data.profit < 0) {
+        // ── Overtrading: limite trade giornalieri (indipendente dal P&L — vale anche in profitto) ──
+        // Bug fix: maxTrades era letto ma mai usato per triggerare il killswitch.
+        if (maxTrades > 0 && tradesOpenedToday >= maxTrades) {
+            reason = "max_trades"
+            Log.w(TAG, "Limite trade raggiunto: $tradesOpenedToday/$maxTrades — killswitch")
+        }
+
+        // ── Perdita giornaliera (solo quando in perdita) ──────────────────────────
+        // Se il P&L è positivo l'utente è in profitto → non triggerare per perdita,
+        // ma il check max_trades sopra può comunque aver già settato reason.
+        if (reason == null && data.profit != null && data.profit < 0) {
             val lossUsd = -data.profit
 
             if (maxLossAmount > 0 && lossUsd >= maxLossAmount) {
@@ -743,27 +889,6 @@ class PipLockAccessibilityService : AccessibilityService() {
                 val divBal = if (refBal > 0) refBal else (balance ?: equity ?: return)
                 val lossPct = lossUsd / divBal * 100
                 if (lossPct >= maxLossPct) reason = "daily_loss"
-            }
-        }
-
-        // ── Trading hours check ─────────────────────────────────────────────
-        if (reason == null) {
-            val tradingHoursEnabled = prefs.getBoolean("trading_hours_enabled", false)
-            if (tradingHoursEnabled) {
-                val startStr = prefs.getString("trading_hours_start", "") ?: ""
-                val endStr   = prefs.getString("trading_hours_end",   "") ?: ""
-                val startMins = parseTimeMins(startStr)
-                val endMins   = parseTimeMins(endStr)
-                if (startMins >= 0 && endMins >= 0) {
-                    val cal = java.util.Calendar.getInstance()
-                    val nowMins = cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 +
-                                  cal.get(java.util.Calendar.MINUTE)
-                    val isOutside = nowMins < startMins || nowMins >= endMins
-                    // Blocca solo se ci sono posizioni aperte fuori orario
-                    if (isOutside && (data.positions ?: 0) > 0) {
-                        reason = "trading_hours"
-                    }
-                }
             }
         }
 
@@ -794,133 +919,223 @@ class PipLockAccessibilityService : AccessibilityService() {
     // ---- FOMO detection -----------------------------------------
 
     /**
-     * Rileva possibili pattern FOMO:
-     * - Una nuova posizione viene aperta (positions count aumenta rispetto all'ultimo valore STABILE)
-     * - E c'è stata una variazione significativa dell'equity negli ultimi 60s
-     * - Con cooldown di 5 minuti tra alert consecutivi per evitare spam
+     * Rileva possibili pattern FOMO (Fear Of Missing Out).
      *
-     * Nota: lastPositionCount viene aggiornato SOLO quando le posizioni diminuiscono
-     * (trade chiuso) o rimangono stabili, non ad ogni incremento — questo previene
-     * falsi negativi se le posizioni salgono gradualmente.
+     * Il FOMO nel trading = aprire una posizione DOPO che un movimento significativo
+     * è già avvenuto, o aprire durante un evento di mercato ad alto impatto senza
+     * un setup valido — guidati dalla paura di "perdere il treno".
+     *
+     * Trigger implementati (in ordine di affidabilità):
+     * 1. Nuova posizione aperta entro 5 min da un evento news ad alto impatto
+     *    (Flutter scrive i timestamp delle news in piplock_news_cache.upcoming_events)
+     * 2. Nuova posizione aperta con punteggio readiness basso (check-in pre-sessione ≤4/10)
+     *
+     * NON usiamo più la variazione di equity come segnale FOMO: l'equity cambia ad
+     * ogni tick di ogni posizione aperta → troppi falsi positivi.
      */
     private fun checkFomoNatively(data: ExtractedData) {
         if (FomoGatekeeperOverlayService.isRunning) return
         if (KillswitchOverlayService.isRunning) return
 
         val now = System.currentTimeMillis()
-        val currentEquity = data.equity ?: return
         val currentPositions = data.positions ?: return
 
-        // Cooldown: non mostrare più di un alert FOMO ogni 5 minuti
         if (now - lastFomoAlertTime < FOMO_ALERT_COOLDOWN_MS) {
-            lastPositionCount = currentPositions
-            lastEquity = currentEquity
+            if (currentPositions <= lastPositionCount || lastPositionCount < 0) lastPositionCount = currentPositions
             return
         }
 
-        // Rileva variazione equity significativa
-        if (lastEquity > 0 && currentEquity > 0) {
-            val changePct = Math.abs(currentEquity - lastEquity) / lastEquity
-            if (changePct >= FOMO_EQUITY_CHANGE_THRESHOLD) {
-                lastEquityChangeTime = now
-                Log.d(TAG, "Variazione equity rilevata: ${String.format("%.2f", changePct * 100)}%")
-            }
-        }
-        lastEquity = currentEquity
+        // Nuova posizione appena aperta?
+        val newPositionOpened = lastPositionCount >= 0 && currentPositions > lastPositionCount
 
-        // If new position opened + recent equity change → FOMO
-        if (lastPositionCount >= 0 && currentPositions > lastPositionCount) {
-            val timeSinceEquityChange = now - lastEquityChangeTime
-            if (lastEquityChangeTime > 0 && timeSinceEquityChange <= FOMO_WINDOW_MS) {
-                Log.w(TAG, "Pattern FOMO rilevato: nuova posizione ${timeSinceEquityChange}ms dopo variazione equity")
-                lastFomoAlertTime = now
-                FomoGatekeeperOverlayService.show(this, "new_pos_after_move")
-                // Broadcast FOMO event to Flutter
-                val fomoIntent = Intent("com.piplock.ACTION_BROKER_DETECTED")
-                fomoIntent.setPackage(packageName)
-                fomoIntent.putExtra("event_type", "fomo_detected")
-                fomoIntent.putExtra("fomo_detected", true)
-                sendBroadcast(fomoIntent)
-            }
-        }
+        if (newPositionOpened) {
+            // ── Trigger 1: nuova posizione T+2→T+30 dopo evento news high-impact ───
+            //
+            // Flutter scrive i timestamp degli eventi high-impact (ultimi 45 min + prossime 24h)
+            // in SharedPreferences con chiave 'flutter.piplock_news_upcoming'.
+            // Il file è 'FlutterSharedPreferences' (default Flutter SharedPreferences).
+            //
+            // Finestra di rilevamento (da trading psychology research):
+            //   T+0→T+2 min: spike algoritmico — ignoriamo (retail non esegue qui)
+            //   T+2→T+30 min: finestra FOMO primaria — retail insegue il movimento
+            //   T+30→T+45 min: finestra secondaria (chasers del secondo wave)
+            val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            val newsJson = flutterPrefs.getString("flutter.piplock_news_upcoming", null)
+            val isInFomoWindow = if (newsJson != null) {
+                try {
+                    val arr = org.json.JSONArray(newsJson)
+                    (0 until arr.length()).any { i ->
+                        val eventTime = arr.getLong(i)
+                        val elapsed = now - eventTime   // ms trascorsi dall'evento (negativo = evento futuro)
+                        elapsed in FOMO_MIN_AFTER_NEWS_MS..FOMO_MAX_AFTER_NEWS_MS
+                    }
+                } catch (_: Exception) { false }
+            } else false
 
-        // Extended FOMO: low readiness check-in score + new position
-        if (lastPositionCount >= 0 && currentPositions > lastPositionCount) {
-            val checkinPrefs = getSharedPreferences("piplock_checkin", Context.MODE_PRIVATE)
-            val scoreToday = checkinPrefs.getInt("score_today", -1)
-            if (scoreToday in 1..4 && now - lastFomoAlertTime > FOMO_ALERT_COOLDOWN_MS) {
-                Log.w(TAG, "FOMO low_readiness: score=$scoreToday")
+            if (isInFomoWindow) {
+                Log.w(TAG, "FOMO rilevato: nuova posizione nella finestra T+2→T+30 dopo evento high-impact")
                 lastFomoAlertTime = now
-                FomoGatekeeperOverlayService.show(this, "low_readiness")
-                // Broadcast FOMO low_readiness event to Flutter
-                val fomoIntent2 = Intent("com.piplock.ACTION_BROKER_DETECTED")
-                fomoIntent2.setPackage(packageName)
-                fomoIntent2.putExtra("event_type", "fomo_detected")
-                fomoIntent2.putExtra("fomo_detected", true)
-                sendBroadcast(fomoIntent2)
+                FomoGatekeeperOverlayService.show(this, "news_event")
+                sendFomoEvent("news_event")
+            }
+
+            // ── Trigger 2: readiness score basso (check-in pre-sessione) ─────────
+            if (now - lastFomoAlertTime > FOMO_ALERT_COOLDOWN_MS) {
+                val checkinPrefs = getSharedPreferences("piplock_checkin", Context.MODE_PRIVATE)
+                val scoreToday = checkinPrefs.getInt("score_today", -1)
+                // score_today è su scala 1-10; score ≤ 4 = prontezza bassa
+                if (scoreToday in 1..4) {
+                    Log.w(TAG, "FOMO rilevato: nuova posizione con readiness=$scoreToday/10")
+                    lastFomoAlertTime = now
+                    FomoGatekeeperOverlayService.show(this, "low_readiness")
+                    sendFomoEvent("low_readiness")
+                }
             }
         }
 
         // Aggiorna baseline SOLO se le posizioni sono stabili o diminuite
-        // (così un incremento successivo è sempre rilevato come "nuova" posizione)
         if (currentPositions <= lastPositionCount || lastPositionCount < 0) {
             lastPositionCount = currentPositions
         }
     }
 
+    private fun sendFomoEvent(subtype: String) {
+        sendBroadcast(Intent(ACTION_BROKER_DETECTED).apply {
+            setPackage(this@PipLockAccessibilityService.packageName)
+            putExtra("event_type", "fomo_detected")
+            putExtra("fomo_subtype", subtype)
+            putExtra("fomo_detected", true)
+            putExtra("timestamp", System.currentTimeMillis())
+        })
+    }
+
+    /**
+     * Rileva il revenge trading: aprire nuove posizioni subito dopo N perdite consecutive,
+     * mossi dall'emozione di "rifarsi" invece che da un setup valido.
+     *
+     * Soglia dinamica basata su max_trades_per_day configurato dall'utente:
+     * - Max trade ≤ 3 → non rilevabile (troppo pochi dati per distinguere pattern)
+     * - Max trade 4-6 → 2 perdite consecutive
+     * - Max trade 7-12 → 3 perdite consecutive
+     * - Max trade > 12 → max(3, maxTrades/4) perdite consecutive
+     *
+     * Il contatore perdite si azzera quando un trade si chiude in profitto.
+     * L'alert scatta quando: consecutiveLosses ≥ soglia AND nuova posizione aperta
+     * entro REVENGE_WINDOW_MS dall'ultima perdita.
+     */
     private fun checkRevengeTrading(data: ExtractedData) {
         if (FomoGatekeeperOverlayService.isRunning) return
         if (KillswitchOverlayService.isRunning) return
         val now = System.currentTimeMillis()
         if (now - lastRevengeAlertTime < REVENGE_ALERT_COOLDOWN_MS) return
+
         val currentBalance = data.balance ?: return
         val currentPositions = data.positions ?: return
-        // Detect a trade closed at a loss: positions decreased AND balance dropped
+
+        val prefs = getSharedPreferences(RULES_PREFS, Context.MODE_PRIVATE)
+        val maxTrades = prefs.getInt("max_trades_per_day", -1)
+
+        // Con ≤ 3 trade massimi non ha senso rilevare il revenge (troppo pochi per un pattern)
+        if (maxTrades in 1..3) {
+            lastPositionCountForRevenge = currentPositions
+            lastBalanceForRevenge = currentBalance
+            return
+        }
+
+        // Soglia: quante perdite consecutive = revenge
+        val revengeThreshold = when {
+            maxTrades <= 0 -> 3      // nessun limite configurato → usa default 3
+            maxTrades <= 6 -> 2
+            maxTrades <= 12 -> 3
+            else -> maxOf(3, maxTrades / 4)
+        }
+
+        // ── Rilevamento chiusura trade ────────────────────────────────────────────
         if (lastPositionCountForRevenge >= 0 && currentPositions < lastPositionCountForRevenge) {
-            if (lastBalanceForRevenge > 0 && currentBalance < lastBalanceForRevenge - 0.01) {
-                lastLossTime = now
-                Log.d(TAG, "Revenge: loss detected, balance $lastBalanceForRevenge -> $currentBalance")
+            if (lastBalanceForRevenge > 0) {
+                if (currentBalance < lastBalanceForRevenge - 0.01) {
+                    // Trade chiuso in perdita
+                    consecutiveLosses++
+                    lastLossTime = now
+                    Log.d(TAG, "Revenge: perdita #$consecutiveLosses (soglia=$revengeThreshold), balance $lastBalanceForRevenge → $currentBalance")
+                } else if (currentBalance >= lastBalanceForRevenge - 0.01) {
+                    // Trade chiuso in profitto o pareggio → reset counter
+                    if (consecutiveLosses > 0) Log.d(TAG, "Revenge: trade profittevole, reset counter (era $consecutiveLosses)")
+                    consecutiveLosses = 0
+                }
             }
         }
-        // Detect new position opened within the revenge window after a loss
+
+        // ── Rilevamento nuova apertura dopo perdite consecutive ───────────────────
         if (lastPositionCountForRevenge >= 0 && currentPositions > lastPositionCountForRevenge) {
-            if (lastLossTime > 0 && (now - lastLossTime) < REVENGE_WINDOW_MS) {
-                Log.w(TAG, "Revenge trading pattern detected: new pos ${now - lastLossTime}ms after loss")
+            if (consecutiveLosses >= revengeThreshold &&
+                lastLossTime > 0 &&
+                (now - lastLossTime) < REVENGE_WINDOW_MS) {
+                Log.w(TAG, "Revenge trading: $consecutiveLosses perdite consecutive (soglia=$revengeThreshold), nuova pos a ${now - lastLossTime}ms dall'ultima perdita")
                 lastRevengeAlertTime = now
+                consecutiveLosses = 0  // reset dopo alert
                 FomoGatekeeperOverlayService.show(this, "revenge_trading")
-                // Broadcast revenge event to Flutter
-                val intent = Intent("com.piplock.ACTION_BROKER_DETECTED")
-                intent.setPackage(packageName)
-                intent.putExtra("event_type", "revenge_detected")
-                intent.putExtra("revenge_detected", true)
-                sendBroadcast(intent)
+                sendBroadcast(Intent(ACTION_BROKER_DETECTED).apply {
+                    setPackage(this@PipLockAccessibilityService.packageName)
+                    putExtra("event_type", "revenge_detected")
+                    putExtra("revenge_detected", true)
+                    putExtra("timestamp", now)
+                })
             }
         }
+
         lastPositionCountForRevenge = currentPositions
         lastBalanceForRevenge = currentBalance
     }
 
+    /**
+     * Rileva overleveraging: aprire un trade con un lot size molto più grande
+     * di quello consigliato o della media della sessione.
+     *
+     * MT5 non espone il lot size via accessibility (righe custom-drawn).
+     * Usiamo il margin delta come proxy: quando si apre un nuovo trade,
+     * il margine richiesto è proporzionale al lot size → se il Δmargin del nuovo
+     * trade è > 2x la media della sessione, è probabile overleveraging.
+     *
+     * Se Flutter ha scritto recommended_margin_per_trade (dal AI Planner),
+     * quello ha priorità: soglia = 1.5x il valore raccomandato.
+     *
+     * Flutter può scrivere recommended_margin_per_trade in piplock_rules
+     * quando genera il piano AI (calcolato da recommendedLotSize × leverage).
+     */
     private fun checkOverleveraging(data: ExtractedData) {
         if (FomoGatekeeperOverlayService.isRunning) return
         if (KillswitchOverlayService.isRunning) return
         val now = System.currentTimeMillis()
         if (now - lastOverleveragingAlertTime < OVERLEVERAGING_ALERT_COOLDOWN_MS) return
-        val profit = data.profit ?: return
-        if (profit >= 0) return // only trigger when in loss
-        val currentLoss = -profit
+
+        // Controlliamo solo se c'è stato un nuovo trade rilevato in questo ciclo
+        val tradeMargin = lastDetectedTradeMarginDelta
+        if (tradeMargin <= 0) return
+        lastDetectedTradeMarginDelta = 0.0  // consuma il segnale
+
+        // Serve la media calibrata (almeno qualche ciclo di calibrazione)
+        if (estimatedMarginPerTrade <= 0) return
+
         val prefs = getSharedPreferences(RULES_PREFS, Context.MODE_PRIVATE)
-        val maxLossAmount = prefs.getFloat("max_daily_loss_amount", -1f).toDouble()
-        val maxLossPct = prefs.getFloat("max_daily_loss_pct", -1f).toDouble()
-        val isOverleveraged = when {
-            maxLossAmount > 0 -> currentLoss > maxLossAmount * 0.5
-            maxLossPct > 0 -> {
-                val balance = data.balance ?: data.equity ?: return
-                (currentLoss / balance * 100.0) > maxLossPct * 0.5
-            }
-            else -> false
+        // Flutter SharedPreferences usa il file 'FlutterSharedPreferences' con prefisso 'flutter.'
+        val flutterPrefs = getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+
+        // Soglia 1 (prioritaria): margine consigliato dal AI Planner (scritto da Flutter)
+        val recommendedMargin = prefs.getFloat("recommended_margin_per_trade", -1f).toDouble()
+        val isOverleveraged = if (recommendedMargin > 0) {
+            // Nuovo trade usa >1.5x il margine raccomandato dall'AI Planner
+            tradeMargin > recommendedMargin * 1.5
+        } else {
+            // Fallback: nuovo trade usa >2x la media della sessione
+            tradeMargin > estimatedMarginPerTrade * 2.0
         }
+
         if (isOverleveraged) {
-            Log.w(TAG, "Overleveraging detected: currentLoss=$currentLoss")
+            val ratio = if (recommendedMargin > 0) tradeMargin / recommendedMargin else tradeMargin / estimatedMarginPerTrade
+            // Log anche il lot size raccomandato dal AI Planner (se disponibile)
+            val recLot = flutterPrefs.getFloat("flutter.recommended_lot_size", -1f)
+            Log.w(TAG, "Overleveraging: trade margin=$tradeMargin, avg/recommended=${if (recommendedMargin > 0) recommendedMargin else estimatedMarginPerTrade}, ratio=${String.format("%.1f", ratio)}x, AI plan lot=$recLot")
             lastOverleveragingAlertTime = now
             FomoGatekeeperOverlayService.show(this, "overleveraging")
         }
@@ -935,22 +1150,33 @@ class PipLockAccessibilityService : AccessibilityService() {
         return h * 60 + m
     }
 
+    /**
+     * Avviso soft di overtrading: scatta quando tradesOpenedToday raggiunge
+     * l'80% del limite giornaliero configurato (o a 1 trade dal limite se è piccolo).
+     *
+     * Il killswitch hard scatta in checkLimitsNatively quando si raggiunge il 100%.
+     * Questo serve come "early warning" prima del blocco definitivo.
+     *
+     * Esempio: max 6 trade → soft warning al 5° (83%)
+     *          max 10 trade → soft warning all'8° (80%)
+     */
     private fun checkOvertradingSoft(data: ExtractedData) {
         if (FomoGatekeeperOverlayService.isRunning) return
         if (KillswitchOverlayService.isRunning) return
         val now = System.currentTimeMillis()
         if (now - lastOvertradingAlertTime < OVERTRADING_ALERT_COOLDOWN_MS) return
-        val currentPositions = data.positions ?: return
-        // Track each new position opening within the time window
-        if (lastPositionCount >= 0 && currentPositions > lastPositionCount) {
-            positionIncreaseTimes.add(now)
-        }
-        // Remove entries older than the window
-        positionIncreaseTimes.removeAll { now - it > OVERTRADING_SOFT_WINDOW_MS }
-        if (positionIncreaseTimes.size >= OVERTRADING_SOFT_THRESHOLD) {
-            Log.w(TAG, "Overtrading soft warning: ${positionIncreaseTimes.size} position increases in 60s")
+
+        val prefs = getSharedPreferences(RULES_PREFS, Context.MODE_PRIVATE)
+        val maxTrades = prefs.getInt("max_trades_per_day", -1)
+        if (maxTrades <= 0) return
+
+        // Soglia soft: 80% del limite, ma almeno 1 trade prima del limite
+        val softThreshold = maxOf(maxTrades - 1, (maxTrades * 0.8).toInt()).coerceAtLeast(1)
+
+        if (tradesOpenedToday >= softThreshold && tradesOpenedToday < maxTrades) {
+            val remaining = maxTrades - tradesOpenedToday
+            Log.w(TAG, "Overtrading soft: $tradesOpenedToday/$maxTrades trade oggi (rimane $remaining)")
             lastOvertradingAlertTime = now
-            positionIncreaseTimes.clear()
             FomoGatekeeperOverlayService.show(this, "overtrading")
         }
     }
@@ -1042,23 +1268,25 @@ class PipLockAccessibilityService : AccessibilityService() {
         // Flutter li legge all'avvio per popolare la dashboard subito
         if (data.equity != null || data.balance != null) {
             getSharedPreferences("piplock_broker_data", Context.MODE_PRIVATE).edit().apply {
-                putFloat("equity",    data.equity?.toFloat()  ?: -1f)
-                putFloat("balance",   data.balance?.toFloat() ?: -1f)
-                putFloat("profit",    data.profit?.toFloat()  ?: Float.NaN)
-                putInt("positions",   data.positions          ?: -1)
-                putLong("timestamp",  ts)
+                putFloat("equity",       data.equity?.toFloat()   ?: -1f)
+                putFloat("balance",      data.balance?.toFloat()  ?: -1f)
+                putFloat("profit",       data.profit?.toFloat()   ?: Float.NaN)
+                putInt("positions",      data.positions           ?: -1)
+                putInt("trades_today",   data.tradesToday         ?: -1)
+                putLong("timestamp",     ts)
                 apply()
             }
         }
         sendBroadcast(Intent(ACTION_BROKER_DETECTED).apply {
             setPackage(this@PipLockAccessibilityService.packageName)
-            putExtra("event_type", "broker_data")
-            putExtra("equity",    data.equity    ?: -1.0)
-            putExtra("balance",   data.balance   ?: -1.0)
-            putExtra("profit",    data.profit    ?: Double.NaN)
-            putExtra("positions", data.positions ?: -1)
+            putExtra("event_type",    "broker_data")
+            putExtra("equity",        data.equity      ?: -1.0)
+            putExtra("balance",       data.balance     ?: -1.0)
+            putExtra("profit",        data.profit      ?: Double.NaN)
+            putExtra("positions",     data.positions   ?: -1)
+            putExtra("trades_today",  data.tradesToday ?: -1)
             putExtra("account_number", data.accountNumber ?: "")
-            putExtra("timestamp", ts)
+            putExtra("timestamp",     ts)
         })
     }
 
@@ -1066,7 +1294,8 @@ class PipLockAccessibilityService : AccessibilityService() {
         val equity: Double?,
         val balance: Double?,
         val profit: Double?,
-        val positions: Int?,
+        val positions: Int?,           // posizioni CORRENTEMENTE aperte (per FOMO/revenge)
+        val tradesToday: Int? = null,  // trade aperti OGGI cumulativi (per killswitch/dashboard)
         val accountNumber: String? = null
     )
 }

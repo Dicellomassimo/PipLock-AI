@@ -325,21 +325,29 @@ For recommendedLotSize: calculate based on accountSize and riskPerTradeUsd (assu
 You are an AI Planner for personal account traders.
 Generate a daily trading plan in EXACT JSON format, no extra text.
 
+CALCULATION RULES (follow exactly):
+1. riskPerTrade (%): derived from maxDailyLoss / maxTradesPerDay / equity * 100, capped at 2% max
+2. dailyTarget: calculate from riskPerTrade using expected value formula: riskPerTrade * maxTradesPerDay * 0.375 (55% win rate, 1.5:1 RR). Express as "+\$X". NEVER use a fixed 0.5% of equity — must be proportional to actual risk taken.
+3. maxDailyLossUsd: MUST match the user's exact max_daily_loss rule
+4. softKillswitchThreshold: maxDailyLoss * 0.5 / equity * 100 (as % of equity)
+5. hardKillswitchThreshold: maxDailyLoss * 0.9 / equity * 100 (as % of equity)
+6. If maxDailyLoss > 10% of equity: successPercentage ≤ 60, add warning in riskWarnings about account sustainability
+7. recommendedLotSize: riskPerTradeUsd / 100 (standard forex: \$100 risk ≈ 1.0 lot with 10pip SL), rounded to 2 decimals
+
 JSON format (ALL fields required):
 {
-  "successPercentage": <int 0-100, estimated probability of a profitable session>,
-  "recommendedLotSize": <double, recommended lot size>,
+  "successPercentage": <int 0-100>,
+  "recommendedLotSize": <double>,
   "recommendedTradesPerDay": <int>,
-  "riskPerTrade": <double percentage of capital per trade>,
-  "softKillswitchThreshold": <double percentage loss for soft alert>,
-  "hardKillswitchThreshold": <double percentage loss for hard block>,
-  "maxDailyLossUsd": "<string e.g. \$200>",
-  "dailyTarget": "<string e.g. +0.5% or \$100>",
-  "sessionAdvice": "<brief advice for today's session>",
-  "riskWarnings": ["<warning 1>", "<warning 2>"]
+  "riskPerTrade": <double, % of equity per trade>,
+  "softKillswitchThreshold": <double, % of equity for soft alert>,
+  "hardKillswitchThreshold": <double, % of equity for hard block>,
+  "maxDailyLossUsd": "<string, e.g. \$200>",
+  "dailyTarget": "<string, e.g. +\$12>",
+  "sessionAdvice": "<brief concrete advice for today>",
+  "riskWarnings": ["<warning>", ...]
 }
 
-If insufficient data, use conservative defaults.
 RESPOND ONLY WITH THE JSON.
 ''';
 
@@ -389,24 +397,42 @@ Generate the daily JSON plan.
   static Map<String, dynamic> _mockPersonalPlan(
       Map<String, dynamic> rules, Map<String, dynamic>? brokerData) {
     final maxLoss = (rules['max_daily_loss'] as num?)?.toDouble() ?? 200.0;
-    final maxTrades = rules['max_trades_per_day'] as int? ?? 3;
+    final maxTrades = (rules['max_trades_per_day'] as num?)?.toInt() ?? 3;
     final equity = (brokerData?['equity'] as num?)?.toDouble() ?? 10000.0;
-    final riskPct = 0.5;
-    final lotSize = double.parse(((equity / 100000) * riskPct * 2).toStringAsFixed(2)).clamp(0.01, 10.0);
-    final target = (equity * 0.005).toStringAsFixed(0);
-    final softKs = maxLoss / equity * 100 * 0.5;
-    final hardKs = maxLoss / equity * 100 * 0.9;
+
+    // Risk per trade: divide daily loss budget among trades, cap at 2% of equity
+    final riskPerTradeRaw = maxLoss / maxTrades;
+    final riskPerTradeCapped = riskPerTradeRaw.clamp(0.0, equity * 0.02);
+    final riskPct = double.parse((riskPerTradeCapped / equity * 100).toStringAsFixed(2));
+
+    // Lot size: ~$10/pip standard lot, 10 pip SL → 1 lot = $100 risk. Scale from there.
+    final lotSize = double.parse((riskPerTradeCapped / 100).clamp(0.01, 10.0).toStringAsFixed(2));
+
+    // Daily target: 55% win rate, 1.5:1 RR → EV = 0.55*1.5 - 0.45 = 0.375 per trade
+    final dailyTargetUsd = (riskPerTradeCapped * maxTrades * 0.375).clamp(0.0, maxLoss * 2);
+    final targetStr = '+\$${dailyTargetUsd.toStringAsFixed(0)}';
+
+    // Killswitch thresholds as % of equity
+    final softKs = double.parse((maxLoss * 0.5 / equity * 100).toStringAsFixed(2));
+    final hardKs = double.parse((maxLoss * 0.9 / equity * 100).toStringAsFixed(2));
+
+    // Warn if daily loss > 10% of equity (account at risk)
+    final highRisk = maxLoss / equity > 0.10;
+
     return {
-      'successPercentage': rules.isEmpty ? 65 : 75,
+      'successPercentage': rules.isEmpty ? 65 : (highRisk ? 58 : 74),
       'recommendedLotSize': lotSize,
       'recommendedTradesPerDay': maxTrades,
       'riskPerTrade': riskPct,
-      'softKillswitchThreshold': double.parse(softKs.toStringAsFixed(2)),
-      'hardKillswitchThreshold': double.parse(hardKs.toStringAsFixed(2)),
+      'softKillswitchThreshold': softKs,
+      'hardKillswitchThreshold': hardKs,
       'maxDailyLossUsd': '\$${maxLoss.toStringAsFixed(0)}',
-      'dailyTarget': '+0.5% (\$$target)',
-      'sessionAdvice': 'Stay disciplined. Follow your setup, not your emotions.',
+      'dailyTarget': targetStr,
+      'sessionAdvice': highRisk
+          ? 'Your daily loss limit (${(maxLoss / equity * 100).toStringAsFixed(0)}% of account) is very high — consider reducing it to 2–5% for long-term sustainability.'
+          : 'Stay disciplined. Follow your setup, not your emotions.',
       'riskWarnings': [
+        if (highRisk) 'Max daily loss is ${(maxLoss / equity * 100).toStringAsFixed(0)}% of equity — reduce to ≤5% for better account longevity',
         'Never increase lot size after a loss',
         'Stop at the first sign of revenge trading',
       ],
@@ -418,9 +444,12 @@ Generate the daily JSON plan.
         : challenge.style == 'aggressive' ? 1.5 : 0.5;
     final successPct = challenge.style == 'conservative' ? 82
         : challenge.style == 'aggressive' ? 58 : 74;
+    // Lot size: riskUSD / 100 (standard forex: 1 lot = $10/pip × 10 pip SL = $100 risk)
+    final riskUsd = challenge.accountSize * riskPerTrade / 100;
+    final lotSize = double.parse((riskUsd / 100).clamp(0.01, 10.0).toStringAsFixed(2));
     return {
       'successPercentage': successPct,
-      'recommendedLotSize': challenge.accountSize / 100000 * riskPerTrade * 2,
+      'recommendedLotSize': lotSize,
       'recommendedTradesPerDay': challenge.style == 'aggressive' ? 4 : 2,
       'riskPerTrade': riskPerTrade,
       'softKillswitchThreshold': challenge.maxDailyLoss / 2,
@@ -434,6 +463,140 @@ Generate the daily JSON plan.
       'generatedAt': DateTime.now().toIso8601String(),
       'lastAdjustedAt': null,
     };
+  }
+
+  /// Genera il briefing giornaliero per una challenge attiva.
+  /// Restituisce testo human-readable (non JSON), da mostrare come primo messaggio
+  /// della sessione AI Planner di quel giorno.
+  static Future<String> generateDailyChallengeBriefing({
+    required Challenge challenge,
+    required int currentDay,
+    Map<String, dynamic>? brokerData,
+    String locale = 'it',
+  }) async {
+    final daysRemaining = challenge.durationDays - currentDay + 1;
+    final plan = challenge.aiPlan;
+    final equity = (brokerData?['equity'] as num?)?.toDouble();
+    final dailyPnl = (brokerData?['dailyPnl'] as num?)?.toDouble();
+    final tradesToday = brokerData?['tradesToday'] as int?;
+
+    // Calcola obiettivo giornaliero minimo (profit rimanente / giorni rimanenti)
+    final profitTargetUsd = challenge.accountSize * challenge.profitTarget / 100;
+    final currentProfit = equity != null ? equity - challenge.accountSize : 0.0;
+    final remainingProfit = (profitTargetUsd - currentProfit).clamp(0.0, profitTargetUsd);
+    final dailyTargetUsd = daysRemaining > 0 ? remainingProfit / daysRemaining : 0.0;
+
+    final hardKsPct = (plan?['hardKillswitchThreshold'] as num?)?.toDouble() ?? challenge.maxDailyLoss;
+    final maxLossUsd = challenge.accountSize * hardKsPct / 100;
+    final recTrades = (plan?['recommendedTradesPerDay'] as num?)?.toInt() ?? 2;
+    final recLot = plan?['recommendedLotSize'] ?? '—';
+
+    final isItalian = locale.startsWith('it');
+
+    final systemPrompt = isItalian
+        ? '''Sei PipLock AI, il coach giornaliero per trader in challenge prop firm.
+Scrivi un briefing quotidiano breve e concreto. MASSIMO 160 parole. Tono: diretto, professionale, motivante.
+Struttura:
+1. Saluto con giorno corrente
+2. Obiettivo del giorno
+3. Limiti da rispettare
+4. Un consiglio psicologico chiave
+5. Chiusura motivazionale breve
+NON usare JSON. Scrivi solo testo normale.'''
+        : '''You are PipLock AI, a daily coach for prop firm challenge traders.
+Write a concise daily briefing. MAXIMUM 160 words. Tone: direct, professional, motivating.
+Structure:
+1. Greeting with current day
+2. Today's target
+3. Limits to respect
+4. One key psychological advice
+5. Brief motivational closing
+Do NOT use JSON. Plain text only.''';
+
+    final perfNote = dailyPnl != null
+        ? (isItalian ? '\nP&L di ieri: ${dailyPnl > 0 ? '+' : ''}\$${dailyPnl.toStringAsFixed(0)}' : '\nYesterday P&L: ${dailyPnl > 0 ? '+' : ''}\$${dailyPnl.toStringAsFixed(0)}')
+        : '';
+    final tradesNote = tradesToday != null && tradesToday > 0
+        ? (isItalian ? '\nTrade fatti ieri: $tradesToday' : '\nTrades yesterday: $tradesToday')
+        : '';
+
+    final userPrompt = isItalian
+        ? '''Challenge: ${challenge.propFirmName ?? 'Prop Firm'}
+Capitale: \$${challenge.accountSize.toStringAsFixed(0)}
+Giorno: $currentDay di ${challenge.durationDays}
+Giorni rimanenti: $daysRemaining
+Target profit totale: ${challenge.profitTarget}%
+Obiettivo giornaliero stimato: +\$${dailyTargetUsd.toStringAsFixed(0)}
+Max perdita giornaliera: \$${maxLossUsd.toStringAsFixed(0)} (${hardKsPct.toStringAsFixed(1)}%)
+Trade massimi al giorno: $recTrades
+Lot size consigliato: $recLot$perfNote$tradesNote
+
+Genera il briefing del Giorno $currentDay.'''
+        : '''Challenge: ${challenge.propFirmName ?? 'Prop Firm'}
+Capital: \$${challenge.accountSize.toStringAsFixed(0)}
+Day: $currentDay of ${challenge.durationDays}
+Days remaining: $daysRemaining
+Total profit target: ${challenge.profitTarget}%
+Estimated daily target: +\$${dailyTargetUsd.toStringAsFixed(0)}
+Max daily loss: \$${maxLossUsd.toStringAsFixed(0)} (${hardKsPct.toStringAsFixed(1)}%)
+Max trades/day: $recTrades
+Recommended lot size: $recLot$perfNote$tradesNote
+
+Generate the Day $currentDay briefing.''';
+
+    if (_apiKey == null || _apiKey!.isEmpty) {
+      return isItalian
+          ? '📋 Giorno $currentDay di ${challenge.durationDays}\n\n'
+            'Obiettivo di oggi: +\$${dailyTargetUsd.toStringAsFixed(0)}\n'
+            'Limite perdita: \$${maxLossUsd.toStringAsFixed(0)}\n'
+            'Trade massimi: $recTrades\n\n'
+            'Rimani disciplinato. Segui il piano, non le emozioni.'
+          : '📋 Day $currentDay of ${challenge.durationDays}\n\n'
+            "Today's target: +\$${dailyTargetUsd.toStringAsFixed(0)}\n"
+            'Loss limit: \$${maxLossUsd.toStringAsFixed(0)}\n'
+            'Max trades: $recTrades\n\n'
+            'Stay disciplined. Follow the plan, not your emotions.';
+    }
+
+    try {
+      for (final model in [_model, _modelFallback]) {
+        final response = await _postWithRetry(
+          Uri.parse(_baseUrl),
+          headers: _headers,
+          body: jsonEncode({
+            'model': model,
+            'messages': [
+              {'role': 'system', 'content': systemPrompt},
+              {'role': 'user', 'content': userPrompt},
+            ],
+            'temperature': 0.5,
+            'max_tokens': 300,
+          }),
+        );
+        if (response.statusCode == 200) {
+          final data = jsonDecode(response.body) as Map<String, dynamic>;
+          final choices = data['choices'] as List?;
+          if (choices != null && choices.isNotEmpty) {
+            final content = choices[0]['message']?['content'] as String?;
+            if (content != null && content.trim().isNotEmpty) return content.trim();
+          }
+        }
+        if (response.statusCode != 404 && response.statusCode != 400) break;
+      }
+    } catch (_) {}
+
+    // Fallback
+    return isItalian
+        ? '📋 Giorno $currentDay di ${challenge.durationDays}\n\n'
+          'Obiettivo di oggi: +\$${dailyTargetUsd.toStringAsFixed(0)}\n'
+          'Limite perdita: \$${maxLossUsd.toStringAsFixed(0)}\n'
+          'Trade massimi: $recTrades\n\n'
+          'Rimani disciplinato. Segui il piano, non le emozioni.'
+        : '📋 Day $currentDay of ${challenge.durationDays}\n\n'
+          "Today's target: +\$${dailyTargetUsd.toStringAsFixed(0)}\n"
+          'Loss limit: \$${maxLossUsd.toStringAsFixed(0)}\n'
+          'Max trades: $recTrades\n\n'
+          'Stay disciplined. Follow the plan, not your emotions.';
   }
 
   static Future<String> chat(
