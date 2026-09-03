@@ -251,17 +251,21 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
   Future<void> _confirm() async {
     final userId = ref.read(currentUserIdProvider);
     final accountNum = _brokerController.text.trim();
-    if (accountNum.isEmpty) {
-      // L'account number è obbligatorio — mostra errore e torna allo step 6
+    final s = ref.read(appStringsProvider);
+    // Account number: 5-12 cifre numeriche (formato MT5/MT4/cTrader standard)
+    final accountNumValid = RegExp(r'^\d{5,12}$').hasMatch(accountNum);
+    if (accountNum.isEmpty || !accountNumValid) {
       _controller.animateToPage(
-        5, // index dello step 6 (0-based)
+        5,
         duration: const Duration(milliseconds: 300),
         curve: Curves.easeInOut,
       );
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            ref.read(appStringsProvider).t('MT5 account number is required.', 'Il numero account MT5 è obbligatorio.'),
+            accountNum.isEmpty
+                ? s.t('MT5 account number is required.', 'Il numero account MT5 è obbligatorio.')
+                : s.t('Account number must be 5–12 digits (e.g. 123456).', 'Il numero account deve avere 5–12 cifre (es. 123456).'),
             style: GoogleFonts.manrope(),
           ),
           backgroundColor: AppColors.danger,

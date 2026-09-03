@@ -1,10 +1,11 @@
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 
-/// Blob animati in background che si muovono lentamente (drift)
-class AmbientBlobs extends StatefulWidget {
-  final bool showViolet;
+/// Background premium minimal — sostituisce i blob animati.
+/// Effetto: vignetta argento negli angoli + sottile glow silver top-right.
+/// Nessuna animazione: look fintech premium, non cheap.
+class AmbientBlobs extends StatelessWidget {
+  final bool showViolet; // mantenuto per compatibilità — ignorato
   final bool showSilver;
   final bool showDanger;
 
@@ -16,81 +17,79 @@ class AmbientBlobs extends StatefulWidget {
   });
 
   @override
-  State<AmbientBlobs> createState() => _AmbientBlobsState();
-}
-
-class _AmbientBlobsState extends State<AmbientBlobs>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 12),
-    )..repeat();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (_, __) {
-        final t = _ctrl.value;
-        final sin1 = math.sin(t * 2 * math.pi);
-        final cos1 = math.cos(t * 2 * math.pi);
-        final sin2 = math.sin(t * 2 * math.pi + 2.1);
-        return Stack(
-          children: [
-            if (widget.showViolet)
-              Positioned(
-                top: -80 + 30 * sin1,
-                right: -80 + 20 * cos1,
-                child: Container(
-                  width: 280,
-                  height: 280,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: AppColors.blobAccent(opacity: 0.09),
-                  ),
-                ),
-              ),
-            if (widget.showSilver)
-              Positioned(
-                bottom: -60 + 25 * sin2,
-                left: -60 + 15 * cos1,
-                child: Container(
-                  width: 260,
-                  height: 260,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: AppColors.blobSilver(opacity: 0.06),
-                  ),
-                ),
-              ),
-            if (widget.showDanger)
-              Positioned(
-                top: 100 + 20 * cos1,
-                left: -40 + 10 * sin1,
-                child: Container(
-                  width: 200,
-                  height: 200,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: AppColors.blobDanger(opacity: 0.07),
-                  ),
-                ),
-              ),
-          ],
-        );
-      },
+    return RepaintBoundary(
+      child: CustomPaint(
+        painter: _PremiumBgPainter(showDanger: showDanger),
+        child: const SizedBox.expand(),
+      ),
     );
   }
+}
+
+class _PremiumBgPainter extends CustomPainter {
+  final bool showDanger;
+  const _PremiumBgPainter({this.showDanger = false});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // ── Glow silver in alto a destra ────────────────────────────────────────
+    final topRightGlow = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          AppColors.accent.withValues(alpha: 0.055),
+          Colors.transparent,
+        ],
+        radius: 0.7,
+      ).createShader(Rect.fromCircle(
+        center: Offset(size.width * 1.05, size.height * -0.05),
+        radius: size.width * 0.7,
+      ));
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), topRightGlow);
+
+    // ── Vignetta silver in basso a sinistra ──────────────────────────────────
+    final bottomLeftGlow = Paint()
+      ..shader = RadialGradient(
+        colors: [
+          AppColors.silver.withValues(alpha: 0.03),
+          Colors.transparent,
+        ],
+        radius: 0.8,
+      ).createShader(Rect.fromCircle(
+        center: Offset(size.width * -0.1, size.height * 1.1),
+        radius: size.width * 0.65,
+      ));
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bottomLeftGlow);
+
+    // ── Linee griglia orizzontali (stile trading terminal) ───────────────────
+    final gridPaint = Paint()
+      ..color = AppColors.accent.withValues(alpha: 0.022)
+      ..strokeWidth = 0.5;
+
+    const lines = 8;
+    final step = size.height / lines;
+    for (int i = 1; i < lines; i++) {
+      final y = step * i;
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), gridPaint);
+    }
+
+    // ── Glow danger (solo killswitch screen) ─────────────────────────────────
+    if (showDanger) {
+      final dangerGlow = Paint()
+        ..shader = RadialGradient(
+          colors: [
+            AppColors.danger.withValues(alpha: 0.07),
+            Colors.transparent,
+          ],
+          radius: 0.8,
+        ).createShader(Rect.fromCircle(
+          center: Offset(size.width * 0.5, 0),
+          radius: size.width * 0.7,
+        ));
+      canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), dangerGlow);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_PremiumBgPainter old) => old.showDanger != showDanger;
 }

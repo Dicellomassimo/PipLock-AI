@@ -335,6 +335,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
   // ── GRAFICO ──────────────────────────────────────────────────────
 
   Widget _buildEmptyPlaceholder() {
+    final s = ref.read(appStringsProvider);
     return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -354,7 +355,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           ),
           const SizedBox(height: 20),
           Text(
-            'No killswitch events',
+            s.t('No killswitch events', 'Nessun evento killswitch'),
             style: GoogleFonts.manrope(
               color: AppColors.textPrimary,
               fontSize: 16,
@@ -363,7 +364,7 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
           ),
           const SizedBox(height: 8),
           Text(
-            'You\'re respecting your rules. Keep it up.',
+            s.t('You\'re respecting your rules. Keep it up.', 'Stai rispettando le tue regole. Continua così.'),
             textAlign: TextAlign.center,
             style: GoogleFonts.manrope(
               color: AppColors.textSecondary,

@@ -463,8 +463,10 @@ class PipLockAccessibilityService : AccessibilityService() {
                 Log.d(TAG, "Trade oggi (init): $tradesOpenedToday, margine=$margin, est/trade=$estimatedMarginPerTrade")
             } else {
                 val delta = margin - lastKnownMargin
-                if (delta >= MARGIN_INCREASE_THRESHOLD && estimatedMarginPerTrade > 0) {
-                    val newTrades = maxOf(1, Math.round(delta / estimatedMarginPerTrade).toInt())
+                if (delta >= MARGIN_INCREASE_THRESHOLD) {
+                    val newTrades = if (estimatedMarginPerTrade > 0)
+                        maxOf(1, Math.round(delta / estimatedMarginPerTrade).toInt())
+                    else 1  // non ancora calibrato: conta almeno 1 trade per delta significativo
                     tradesOpenedToday += newTrades
                     lastDetectedTradeMarginDelta = delta  // usato da checkOverleveraging
                     Log.d(TAG, "Nuovi trade (Δmargin=$delta, est/trade=$estimatedMarginPerTrade): +$newTrades → oggi=$tradesOpenedToday")

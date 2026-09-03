@@ -13,6 +13,200 @@ import '../../config/constants.dart';
 import '../../providers/auth_provider.dart';
 import '../../services/supabase_service.dart';
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Change Password Dialog
+// ─────────────────────────────────────────────────────────────────────────────
+
+Future<void> showChangePasswordDialog(BuildContext context, AppStrings s) async {
+  final newPassCtrl = TextEditingController();
+  final confirmCtrl = TextEditingController();
+  bool obscureNew = true;
+  bool obscureConfirm = true;
+  bool isLoading = false;
+  String? errorText;
+
+  await showDialog(
+    context: context,
+    barrierDismissible: !isLoading,
+    builder: (ctx) {
+      return StatefulBuilder(builder: (ctx, setState) {
+        return AlertDialog(
+          backgroundColor: AppColors.cardBg,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+          title: Text(
+            s.profileChangePassword,
+            style: GoogleFonts.manrope(
+                color: AppColors.textPrimary, fontWeight: FontWeight.w700),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (errorText != null) ...[
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.danger.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(errorText!,
+                      style: GoogleFonts.manrope(
+                          color: AppColors.danger, fontSize: 13)),
+                ),
+                const SizedBox(height: 12),
+              ],
+              TextField(
+                controller: newPassCtrl,
+                obscureText: obscureNew,
+                style: GoogleFonts.manrope(
+                    color: AppColors.textPrimary, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: s.t('New password', 'Nuova password'),
+                  hintStyle:
+                      GoogleFonts.manrope(color: AppColors.textTertiary),
+                  filled: true,
+                  fillColor: AppColors.cardBg2,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.border)),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.border)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide:
+                          const BorderSide(color: AppColors.accent, width: 1.5)),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                        obscureNew
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                        color: AppColors.textSecondary,
+                        size: 18),
+                    onPressed: () =>
+                        setState(() => obscureNew = !obscureNew),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmCtrl,
+                obscureText: obscureConfirm,
+                style: GoogleFonts.manrope(
+                    color: AppColors.textPrimary, fontSize: 14),
+                decoration: InputDecoration(
+                  hintText: s.t('Confirm password', 'Conferma password'),
+                  hintStyle:
+                      GoogleFonts.manrope(color: AppColors.textTertiary),
+                  filled: true,
+                  fillColor: AppColors.cardBg2,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.border)),
+                  enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: const BorderSide(color: AppColors.border)),
+                  focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide:
+                          const BorderSide(color: AppColors.accent, width: 1.5)),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                        obscureConfirm
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                        color: AppColors.textSecondary,
+                        size: 18),
+                    onPressed: () =>
+                        setState(() => obscureConfirm = !obscureConfirm),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: isLoading ? null : () => Navigator.pop(ctx),
+              child: Text(s.t('Cancel', 'Annulla'),
+                  style:
+                      GoogleFonts.manrope(color: AppColors.textSecondary)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.accent,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              ),
+              onPressed: isLoading
+                  ? null
+                  : () async {
+                      final newPass = newPassCtrl.text.trim();
+                      final confirm = confirmCtrl.text.trim();
+                      if (newPass.length < 8) {
+                        setState(() => errorText = s.t(
+                            'Password must be at least 8 characters.',
+                            'La password deve avere almeno 8 caratteri.'));
+                        return;
+                      }
+                      if (newPass != confirm) {
+                        setState(() => errorText = s.t(
+                            'Passwords do not match.',
+                            'Le password non coincidono.'));
+                        return;
+                      }
+                      setState(() {
+                        isLoading = true;
+                        errorText = null;
+                      });
+                      try {
+                        await Supabase.instance.client.auth
+                            .updateUser(UserAttributes(password: newPass));
+                        if (ctx.mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                            content: Text(
+                                s.t('Password updated successfully.',
+                                    'Password aggiornata con successo.'),
+                                style: GoogleFonts.manrope()),
+                            backgroundColor: AppColors.success,
+                            behavior: SnackBarBehavior.floating,
+                            margin: const EdgeInsets.all(16),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(10)),
+                          ));
+                        }
+                      } catch (e) {
+                        setState(() {
+                          isLoading = false;
+                          errorText = s.t(
+                              'Failed to update password. Please try again.',
+                              'Errore nell\'aggiornamento. Riprova.');
+                        });
+                      }
+                    },
+              child: isLoading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.black))
+                  : Text(s.t('Update', 'Aggiorna'),
+                      style: GoogleFonts.manrope(
+                          fontWeight: FontWeight.w700)),
+            ),
+          ],
+        );
+      });
+    },
+  );
+
+  newPassCtrl.dispose();
+  confirmCtrl.dispose();
+}
+
 class ProfileScreen extends ConsumerStatefulWidget {
   const ProfileScreen({super.key});
 
@@ -69,8 +263,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final ext = picked.path.split('.').last.toLowerCase();
     if (!['jpg', 'jpeg', 'png', 'webp'].contains(ext)) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Unsupported file type. Use JPG, PNG or WebP.'),
+        final s = ref.read(appStringsProvider);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(s.t('Unsupported file type. Use JPG, PNG or WebP.', 'Tipo di file non supportato. Usa JPG, PNG o WebP.')),
           backgroundColor: Colors.red,
         ));
       }
@@ -81,8 +276,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final bytes = await picked.readAsBytes();
     if (bytes.lengthInBytes > 5 * 1024 * 1024) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Image too large. Max 5 MB.'),
+        final s = ref.read(appStringsProvider);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(s.t('Image too large. Max 5 MB.', 'Immagine troppo grande. Max 5 MB.')),
           backgroundColor: Colors.red,
         ));
       }
@@ -92,8 +288,9 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     // Valida MIME reale tramite magic bytes — l'estensione può essere falsificata
     if (!_isValidImageMime(bytes)) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Invalid image file. Use a real JPG, PNG or WebP.'),
+        final s = ref.read(appStringsProvider);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text(s.t('Invalid image file. Use a real JPG, PNG or WebP.', 'File immagine non valido. Usa un vero JPG, PNG o WebP.')),
           backgroundColor: Colors.red,
         ));
       }
@@ -322,7 +519,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     icon: Icons.lock_reset_outlined,
                     label: s.profileChangePassword,
                     value: '',
-                    onTap: () => Navigator.pushNamed(context, '/forgot_password'),
+                    onTap: () => showChangePasswordDialog(context, s),
                     trailing: const Icon(Icons.chevron_right_rounded, color: AppColors.textSecondary, size: 16),
                   ),
                 ]),

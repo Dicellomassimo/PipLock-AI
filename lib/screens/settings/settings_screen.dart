@@ -11,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/locale_provider.dart';
 import '../../providers/personal_accounts_provider.dart';
 import '../../widgets/ambient_blobs.dart';
+import '../help/feedback_screen.dart';
 import '../help/help_faq_screen.dart';
 import '../help/privacy_policy_screen.dart';
 
@@ -264,6 +265,15 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               onTap: () => Navigator.push(
                 context,
                 MaterialPageRoute(builder: (_) => const HelpFaqScreen()),
+              ),
+            ),
+            _SettingRow(
+              icon: Icons.feedback_outlined,
+              color: AppColors.textSecondary,
+              title: s.t('Feedback', 'Feedback'),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const FeedbackScreen()),
               ),
             ),
             _SettingRow(

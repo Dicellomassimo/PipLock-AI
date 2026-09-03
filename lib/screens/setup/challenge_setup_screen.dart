@@ -1282,13 +1282,13 @@ class _ChallengeSetupScreenState extends ConsumerState<ChallengeSetupScreen> {
                         ],
                       ),
                     )),
-                const Padding(
-                  padding: EdgeInsets.only(bottom: 4),
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('❌  ', style: TextStyle(fontSize: 12)),
-                      Expanded(child: Text('No daily profit obligation')),
+                      const Text('❌  ', style: TextStyle(fontSize: 12)),
+                      Expanded(child: Text(s.t('No daily profit obligation', 'Nessun obbligo di profitto giornaliero'))),
                     ],
                   ),
                 ),

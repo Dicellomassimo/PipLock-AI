@@ -166,6 +166,17 @@ class NotificationService {
 
   static final Set<String> _sentNotificationIds = {};
 
+  /// Returns true if the user's saved locale is Italian.
+  static Future<bool> _isIt() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return (prefs.getString('locale') ?? 'en') == 'it';
+    } catch (_) {
+      return false;
+    }
+  }
+  static String _t(bool isIt, String en, String it) => isIt ? it : en;
+
   // 30-day event cache — TTL 60 minutes
   static List<EconomicEvent>? _cachedMonthEvents;
   static DateTime? _cacheTime;
@@ -375,6 +386,7 @@ class NotificationService {
 
   static Future<void> _checkUpcomingEvents() async {
     try {
+      final isIt = await _isIt();
       final events = await _fetchMonth();
       final now = DateTime.now();
 
@@ -387,14 +399,16 @@ class NotificationService {
         if (_sentNotificationIds.contains(notifId)) continue;
         _sentNotificationIds.add(notifId);
 
-        final minLabel = 'in ${diff.inMinutes} min';
+        final minLabel = _t(isIt, 'in ${diff.inMinutes} min', 'tra ${diff.inMinutes} min');
         final isHigh = e.impact == 'high';
         await showLocalNotification(
           id: e.time.millisecondsSinceEpoch.remainder(100000),
           title: isHigh
-              ? '⚠️ Upcoming news: ${e.event}'
-              : '📊 News coming up: ${e.event}',
-          body: '${e.country.toUpperCase()} · $minLabel · Watch out for volatility.',
+              ? _t(isIt, '⚠️ Upcoming news: ${e.event}', '⚠️ Notizie imminenti: ${e.event}')
+              : _t(isIt, '📊 News coming up: ${e.event}', '📊 Notizie in arrivo: ${e.event}'),
+          body: _t(isIt,
+              '${e.country.toUpperCase()} · $minLabel · Watch out for volatility.',
+              '${e.country.toUpperCase()} · $minLabel · Attenzione alla volatilità.'),
         );
         debugPrint('[NotificationService] Alert: ${e.event} $minLabel');
       }
@@ -417,6 +431,7 @@ class NotificationService {
   // ---------------------------------------------------------------------------
   static Future<void> scheduleUpcomingNotifications() async {
     try {
+      final isIt = await _isIt();
       // Cancel previously scheduled economic calendar notifications
       final pending = await _fln.pendingNotificationRequests();
       for (final n in pending) {
@@ -446,8 +461,8 @@ class NotificationService {
             final id60 = _stableId(e, suffix: 60);
             await _scheduleExact(
               id: id60,
-              title: '📅 High-impact news in 1 hour: ${e.event}',
-              body: '${e.country.toUpperCase()} · $timeLabel · Prepare your plan.',
+              title: _t(isIt, '📅 High-impact news in 1 hour: ${e.event}', '📅 Notizie ad alto impatto tra 1 ora: ${e.event}'),
+              body: _t(isIt, '${e.country.toUpperCase()} · $timeLabel · Prepare your plan.', '${e.country.toUpperCase()} · $timeLabel · Prepara il tuo piano.'),
               scheduledTime: notif60,
             );
             scheduled++;
@@ -461,9 +476,9 @@ class NotificationService {
           await _scheduleExact(
             id: id15,
             title: isHigh
-                ? '⚠️ News in 15 minutes: ${e.event}'
-                : '📊 Medium-impact news in 15 min: ${e.event}',
-            body: '${e.country.toUpperCase()} · $timeLabel · Watch for volatility.',
+                ? _t(isIt, '⚠️ News in 15 minutes: ${e.event}', '⚠️ Notizie tra 15 minuti: ${e.event}')
+                : _t(isIt, '📊 Medium-impact news in 15 min: ${e.event}', '📊 Notizie a medio impatto tra 15 min: ${e.event}'),
+            body: _t(isIt, '${e.country.toUpperCase()} · $timeLabel · Watch for volatility.', '${e.country.toUpperCase()} · $timeLabel · Attenzione alla volatilità.'),
             scheduledTime: notif15,
           );
           scheduled++;
@@ -930,8 +945,9 @@ class NotificationService {
 
   static Future<void> scheduleUnlockReminder(DateTime unlockAt) async {
     try {
+      final isIt = await _isIt();
       final tzTime = tz.TZDateTime.from(unlockAt, tz.local);
-      const androidDetails = AndroidNotificationDetails(
+      final androidDetails = AndroidNotificationDetails(
         _channelId,
         _channelName,
         channelDescription: _channelDesc,
@@ -939,14 +955,14 @@ class NotificationService {
         priority: Priority.high,
         icon: '@mipmap/ic_launcher',
         playSound: true,
-        ticker: 'Killswitch ending soon',
+        ticker: _t(isIt, 'Killswitch ending soon', 'Killswitch in scadenza'),
       );
       await _fln.zonedSchedule(
         8002,
-        '🔓 Killswitch ending in 30 minutes',
-        'Your trading block will be lifted soon. Prepare your plan.',
+        _t(isIt, '🔓 Killswitch ending in 30 minutes', '🔓 Killswitch in scadenza tra 30 minuti'),
+        _t(isIt, 'Your trading block will be lifted soon. Prepare your plan.', 'Il blocco di trading sarà rimosso presto. Prepara il tuo piano.'),
         tzTime,
-        const NotificationDetails(android: androidDetails),
+        NotificationDetails(android: androidDetails),
         uiLocalNotificationDateInterpretation:
             UILocalNotificationDateInterpretation.absoluteTime,
         androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
@@ -958,6 +974,31 @@ class NotificationService {
 
   static Future<void> cancelUnlockReminder() async {
     await _fln.cancel(8002);
+  }
+
+  /// Notifica immediata quando il killswitch scade naturalmente (non con token).
+  static Future<void> sendKillswitchLiftedNotification() async {
+    try {
+      final isIt = await _isIt();
+      final androidDetails = AndroidNotificationDetails(
+        _channelId,
+        _channelName,
+        channelDescription: _channelDesc,
+        importance: Importance.max,
+        priority: Priority.high,
+        icon: '@mipmap/ic_launcher',
+        playSound: true,
+        ticker: _t(isIt, 'Killswitch lifted', 'Killswitch rimosso'),
+      );
+      await _fln.show(
+        8003,
+        _t(isIt, '🔓 Killswitch lifted — you can trade again', '🔓 Killswitch rimosso — puoi tornare a fare trading'),
+        _t(isIt, 'Your trading block has expired. Stay disciplined.', 'Il blocco di trading è scaduto. Rimani disciplinato.'),
+        NotificationDetails(android: androidDetails),
+      );
+    } catch (e) {
+      debugPrint('[NotificationService] sendKillswitchLiftedNotification error: $e');
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -990,11 +1031,12 @@ class NotificationService {
     );
 
     try {
+      final isIt = await _isIt();
       final scheduledDate = tz.TZDateTime.from(notifTime, tz.local);
       await _fln.zonedSchedule(
         id,
-        '⏰ Session starts in 15 minutes',
-        'Your trading session is about to begin. Do you have a plan for today? 📋',
+        _t(isIt, '⏰ Session starts in 15 minutes', '⏰ La sessione inizia tra 15 minuti'),
+        _t(isIt, 'Your trading session is about to begin. Do you have a plan for today? 📋', 'La tua sessione di trading sta per iniziare. Hai un piano per oggi? 📋'),
         scheduledDate,
         const NotificationDetails(android: androidDetails),
         uiLocalNotificationDateInterpretation:

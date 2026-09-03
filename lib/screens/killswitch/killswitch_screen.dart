@@ -34,6 +34,7 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
   late Animation<double> _holdProgress;
 
   bool _holding = false;
+  late final AnimationStatusListener _holdStatusListener;
 
   // Countdown state
   Duration _remaining = Duration.zero;
@@ -79,9 +80,10 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
     // Hold-to-unlock
     _holdCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 2000));
     _holdProgress = CurvedAnimation(parent: _holdCtrl, curve: Curves.easeOut);
-    _holdCtrl.addStatusListener((s) {
+    _holdStatusListener = (s) {
       if (s == AnimationStatus.completed) _tryUnlock();
-    });
+    };
+    _holdCtrl.addStatusListener(_holdStatusListener);
 
     _entryCtrl.forward();
     HapticFeedback.heavyImpact();
@@ -120,6 +122,7 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
     _breatheCtrl.dispose();
     _pulseCtrl.dispose();
     _entryCtrl.dispose();
+    _holdCtrl.removeStatusListener(_holdStatusListener);
     _holdCtrl.dispose();
     _countdownTimer?.cancel();
     _overrideWaitTimer?.cancel();
@@ -596,7 +599,7 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
                     color: AppColors.textSecondary, size: 16),
                 const SizedBox(width: 8),
                 Text(
-                  '2 new tokens reset every Sunday',
+                  s.t('2 new tokens reset every Sunday', '2 nuovi token si resettano ogni domenica'),
                   style: GoogleFonts.manrope(
                     color: AppColors.textSecondary,
                     fontSize: 13,
@@ -629,7 +632,7 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
                 const Icon(Icons.key_rounded, color: AppColors.accent, size: 16),
                 const SizedBox(width: 8),
                 Text(
-                  'Override available: $tokens this week',
+                  s.t('Override available: $tokens this week', 'Override disponibile: $tokens questa settimana'),
                   style: GoogleFonts.manrope(
                     color: AppColors.textSecondary,
                     fontSize: 13,
@@ -660,7 +663,7 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
                       color: Colors.white70, size: 18),
                   const SizedBox(width: 10),
                   Text(
-                    'Use Override — tap to start the process',
+                    s.t('Use Override — tap to start the process', 'Usa Override — tocca per iniziare il processo'),
                     style: GoogleFonts.manrope(
                       color: Colors.white70,
                       fontSize: 14,
@@ -704,7 +707,7 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
                 const SizedBox(width: 10),
                 Flexible(
                   child: Text(
-                    'Confirming override intent... ${_overrideWaitSeconds}s remaining',
+                    s.t('Confirming override intent... ${_overrideWaitSeconds}s remaining', 'Confermando l\'intenzione di override... ${_overrideWaitSeconds}s rimanenti'),
                     overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.manrope(
                       color: AppColors.warning,
@@ -748,7 +751,7 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
                   color: Color(0xFF4CAF50), size: 18),
               const SizedBox(width: 10),
               Text(
-                'Ready to override — hold to confirm',
+                s.t('Ready to override — hold to confirm', 'Pronto per l\'override — tieni premuto per confermare'),
                 style: GoogleFonts.manrope(
                   color: const Color(0xFF4CAF50),
                   fontSize: 13,
@@ -972,23 +975,19 @@ class _HoldToUnlockButton extends StatelessWidget {
 }
 
 // ── Override Reason Sheet ────────────────────────────────────────────────────
-class _OverrideReasonSheet extends StatefulWidget {
+class _OverrideReasonSheet extends ConsumerStatefulWidget {
   const _OverrideReasonSheet();
 
   @override
-  State<_OverrideReasonSheet> createState() => _OverrideReasonSheetState();
+  ConsumerState<_OverrideReasonSheet> createState() => _OverrideReasonSheetState();
 }
 
-class _OverrideReasonSheetState extends State<_OverrideReasonSheet> {
-  static const _presetReasons = [
-    'Strong valid setup',
-    'Risk management exception',
-    'News play',
-    'Other',
-  ];
-
-  String? _selected;
+class _OverrideReasonSheetState extends ConsumerState<_OverrideReasonSheet> {
+  // Internal key stored in DB — always English
+  String? _selectedKey;
   final _otherController = TextEditingController();
+
+  static const _otherKey = 'Other';
 
   @override
   void dispose() {
@@ -997,17 +996,26 @@ class _OverrideReasonSheetState extends State<_OverrideReasonSheet> {
   }
 
   String? get _resolvedReason {
-    if (_selected == null) return null;
-    if (_selected == 'Other') {
+    if (_selectedKey == null) return null;
+    if (_selectedKey == _otherKey) {
       final text = _otherController.text.trim();
       return text.isEmpty ? null : text;
     }
-    return _selected;
+    return _selectedKey;
   }
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(appStringsProvider);
     final canContinue = _resolvedReason != null;
+
+    // (EN key, translated display label)
+    final reasons = [
+      ('Strong valid setup', s.t('Strong valid setup', 'Setup valido e solido')),
+      ('Risk management exception', s.t('Risk management exception', 'Eccezione gestione rischio')),
+      ('News play', s.t('News play', 'Play sulle notizie')),
+      (_otherKey, s.t('Other', 'Altro')),
+    ];
 
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
@@ -1025,7 +1033,7 @@ class _OverrideReasonSheetState extends State<_OverrideReasonSheet> {
           children: [
             // Title
             Text(
-              'Why are you overriding?',
+              s.t('Why are you overriding?', 'Perché stai facendo un override?'),
               style: GoogleFonts.manrope(
                 color: Colors.white,
                 fontSize: 18,
@@ -1035,7 +1043,10 @@ class _OverrideReasonSheetState extends State<_OverrideReasonSheet> {
             ),
             const SizedBox(height: 6),
             Text(
-              'This will be recorded in your weekly discipline report.',
+              s.t(
+                'This will be recorded in your weekly discipline report.',
+                'Verrà registrato nel tuo report settimanale di disciplina.',
+              ),
               style: GoogleFonts.manrope(
                 color: Colors.white.withValues(alpha: 0.55),
                 fontSize: 13,
@@ -1047,12 +1058,14 @@ class _OverrideReasonSheetState extends State<_OverrideReasonSheet> {
             Wrap(
               spacing: 10,
               runSpacing: 10,
-              children: _presetReasons.map((reason) {
-                final isSelected = _selected == reason;
+              children: reasons.map(((String, String) r) {
+                final key = r.$1;
+                final label = r.$2;
+                final isSelected = _selectedKey == key;
                 return GestureDetector(
                   onTap: () => setState(() {
-                    _selected = reason;
-                    if (reason != 'Other') _otherController.clear();
+                    _selectedKey = key;
+                    if (key != _otherKey) _otherController.clear();
                   }),
                   child: AnimatedContainer(
                     duration: const Duration(milliseconds: 180),
@@ -1069,7 +1082,7 @@ class _OverrideReasonSheetState extends State<_OverrideReasonSheet> {
                       ),
                     ),
                     child: Text(
-                      reason,
+                      label,
                       style: GoogleFonts.manrope(
                         color: isSelected ? AppColors.accent : Colors.white70,
                         fontSize: 13,
@@ -1081,7 +1094,7 @@ class _OverrideReasonSheetState extends State<_OverrideReasonSheet> {
               }).toList(),
             ),
             // "Other" text field
-            if (_selected == 'Other') ...[
+            if (_selectedKey == _otherKey) ...[
               const SizedBox(height: 16),
               TextField(
                 controller: _otherController,
@@ -1090,7 +1103,7 @@ class _OverrideReasonSheetState extends State<_OverrideReasonSheet> {
                 onChanged: (_) => setState(() {}),
                 style: GoogleFonts.manrope(color: Colors.white, fontSize: 13),
                 decoration: InputDecoration(
-                  hintText: 'Describe your reason...',
+                  hintText: s.t('Describe your reason...', 'Descrivi il tuo motivo...'),
                   hintStyle: GoogleFonts.manrope(
                     color: Colors.white.withValues(alpha: 0.35),
                     fontSize: 13,
@@ -1131,7 +1144,7 @@ class _OverrideReasonSheetState extends State<_OverrideReasonSheet> {
                   elevation: 0,
                 ),
                 child: Text(
-                  'Continue',
+                  s.t('Continue', 'Continua'),
                   style: GoogleFonts.manrope(
                     fontWeight: FontWeight.w700,
                     fontSize: 15,
@@ -1264,13 +1277,14 @@ class _BreathingWidgetState extends State<_BreathingWidget>
 // Disclaimer sheet — mostrato una sola volta al primo killswitch
 // ─────────────────────────────────────────────────────────────────────────────
 
-class _DisclaimerSheet extends StatelessWidget {
+class _DisclaimerSheet extends ConsumerWidget {
   final VoidCallback onConfirm;
 
   const _DisclaimerSheet({required this.onConfirm});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(appStringsProvider);
     return Container(
       margin: const EdgeInsets.all(16),
       padding: const EdgeInsets.fromLTRB(24, 28, 24, 32),
@@ -1298,7 +1312,7 @@ class _DisclaimerSheet extends StatelessWidget {
               const SizedBox(width: 14),
               Expanded(
                 child: Text(
-                  'Before you continue',
+                  s.t('Before you continue', 'Prima di continuare'),
                   style: GoogleFonts.manrope(
                     color: Colors.white,
                     fontSize: 17,
@@ -1310,10 +1324,10 @@ class _DisclaimerSheet extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 20),
-          _bullet('PipLock does NOT close positions automatically on your behalf.'),
-          _bullet('You are solely responsible for managing your trades and any financial losses.'),
-          _bullet('This app is a discipline tool only — not financial advice.'),
-          _bullet('Always close losing positions manually before the lockdown activates.'),
+          _bullet(s.t('PipLock does NOT close positions automatically on your behalf.', 'PipLock NON chiude posizioni automaticamente per tuo conto.')),
+          _bullet(s.t('You are solely responsible for managing your trades and any financial losses.', 'Sei l\'unico responsabile della gestione dei tuoi trade e di eventuali perdite finanziarie.')),
+          _bullet(s.t('This app is a discipline tool only — not financial advice.', 'Questa app è solo uno strumento di disciplina — non un consiglio finanziario.')),
+          _bullet(s.t('Always close losing positions manually before the lockdown activates.', 'Chiudi sempre manualmente le posizioni in perdita prima che il blocco si attivi.')),
           const SizedBox(height: 24),
           SizedBox(
             width: double.infinity,
@@ -1328,7 +1342,7 @@ class _DisclaimerSheet extends StatelessWidget {
                 ),
               ),
               child: Text(
-                'I understand — Continue',
+                s.t('I understand — Continue', 'Ho capito — Continua'),
                 style: GoogleFonts.manrope(
                   fontWeight: FontWeight.w700,
                   fontSize: 15,

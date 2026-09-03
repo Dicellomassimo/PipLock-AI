@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/app_colors.dart';
+import '../../config/app_strings.dart';
 import '../../config/app_theme.dart';
 import '../../providers/broker_provider.dart';
 import '../../providers/challenge_provider.dart';
@@ -223,6 +224,7 @@ class _SetupWizardScreenState extends ConsumerState<SetupWizardScreen>
   }
 
   Widget _buildTopBar() {
+    final s = ref.watch(appStringsProvider);
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 16, 0),
       child: Row(
@@ -247,7 +249,7 @@ class _SetupWizardScreenState extends ConsumerState<SetupWizardScreen>
           ),
           const SizedBox(width: 4),
           Text(
-            'Quick Setup',
+            s.t('Quick Setup', 'Configurazione rapida'),
             style: GoogleFonts.manrope(
               color: AppColors.textPrimary,
               fontSize: 17,
@@ -259,7 +261,7 @@ class _SetupWizardScreenState extends ConsumerState<SetupWizardScreen>
           TextButton(
             onPressed: _skip,
             child: Text(
-              'Skip all',
+              s.t('Skip all', 'Salta tutto'),
               style: GoogleFonts.manrope(
                 color: AppColors.textSecondary,
                 fontSize: 13,
@@ -273,7 +275,13 @@ class _SetupWizardScreenState extends ConsumerState<SetupWizardScreen>
   }
 
   Widget _buildProgressBar() {
-    final stepLabels = ['Permissions', 'Connect', 'Rules', 'Notifications'];
+    final s = ref.watch(appStringsProvider);
+    final stepLabels = [
+      s.t('Permissions', 'Permessi'),
+      s.t('Connect', 'Connetti'),
+      s.t('Rules', 'Regole'),
+      s.t('Notifications', 'Notifiche'),
+    ];
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
       child: Column(
@@ -362,15 +370,15 @@ class _SetupWizardScreenState extends ConsumerState<SetupWizardScreen>
 
 // ── Step 0: Permissions ────────────────────────────────────────────────────────
 
-class _PermissionsStep extends StatefulWidget {
+class _PermissionsStep extends ConsumerStatefulWidget {
   final VoidCallback onContinue;
   final VoidCallback onOpenSettings;
   const _PermissionsStep({required this.onContinue, required this.onOpenSettings});
   @override
-  State<_PermissionsStep> createState() => _PermissionsStepState();
+  ConsumerState<_PermissionsStep> createState() => _PermissionsStepState();
 }
 
-class _PermissionsStepState extends State<_PermissionsStep> {
+class _PermissionsStepState extends ConsumerState<_PermissionsStep> {
   bool _accessOk = false;
   bool _overlayOk = false;
   bool _checking = true;
@@ -395,6 +403,7 @@ class _PermissionsStepState extends State<_PermissionsStep> {
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(appStringsProvider);
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
       child: Column(
@@ -403,7 +412,7 @@ class _PermissionsStepState extends State<_PermissionsStep> {
           _stepIcon(Icons.shield_rounded, AppColors.accent),
           const SizedBox(height: 20),
           Text(
-            'Two permissions\nto activate PipLock',
+            s.t('Two permissions\nto activate PipLock', 'Due permessi\nper attivare PipLock'),
             style: GoogleFonts.manrope(
               color: AppColors.textPrimary,
               fontSize: 28,
@@ -414,7 +423,7 @@ class _PermissionsStepState extends State<_PermissionsStep> {
           ),
           const SizedBox(height: 8),
           Text(
-            'These let PipLock read your MT5 data and show the block screen on top of it.',
+            s.t('These let PipLock read your MT5 data and show the block screen on top of it.', 'Permettono a PipLock di leggere i dati MT5 e mostrare la schermata di blocco sopra di essi.'),
             style: GoogleFonts.manrope(
               color: AppColors.textSecondary,
               fontSize: 14,
@@ -427,8 +436,8 @@ class _PermissionsStepState extends State<_PermissionsStep> {
           else ...[
             _PermissionRow(
               icon: Icons.accessibility_new_rounded,
-              title: 'Accessibility Service',
-              subtitle: 'Reads equity, P&L, open positions from MT5',
+              title: s.t('Accessibility Service', 'Servizio di accessibilità'),
+              subtitle: s.t('Reads equity, P&L, open positions from MT5', 'Legge equity, P&L, posizioni aperte da MT5'),
               granted: _accessOk,
               onTap: () async {
                 await AccessibilityService.openSettings();
@@ -440,8 +449,8 @@ class _PermissionsStepState extends State<_PermissionsStep> {
             const SizedBox(height: 12),
             _PermissionRow(
               icon: Icons.layers_rounded,
-              title: 'Display over other apps',
-              subtitle: 'Shows the killswitch block screen on top of MT5',
+              title: s.t('Display over other apps', 'Visualizza sopra altre app'),
+              subtitle: s.t('Shows the killswitch block screen on top of MT5', 'Mostra la schermata di blocco killswitch sopra MT5'),
               granted: _overlayOk,
               onTap: () async {
                 await AccessibilityService.requestOverlayPermission();
@@ -452,14 +461,14 @@ class _PermissionsStepState extends State<_PermissionsStep> {
             const SizedBox(height: 10),
             if (_accessOk && _overlayOk)
               _infoChip(Icons.check_circle_outline_rounded,
-                  'Both permissions granted — PipLock is fully active.',
+                  s.t('Both permissions granted — PipLock is fully active.', 'Entrambi i permessi concessi — PipLock è completamente attivo.'),
                   const Color(0xFF4CAF50)),
             if (!_accessOk || !_overlayOk)
               _infoChip(Icons.info_outline_rounded,
-                  'You can still continue and grant permissions later from Settings.',
+                  s.t('You can still continue and grant permissions later from Settings.', 'Puoi continuare e concedere i permessi in seguito dalle Impostazioni.'),
                   AppColors.textSecondary),
             const SizedBox(height: 32),
-            _primaryButton('Continue', widget.onContinue),
+            _primaryButton(s.t('Continue', 'Continua'), widget.onContinue),
           ],
         ],
       ),
@@ -536,12 +545,13 @@ class _PermissionRow extends StatelessWidget {
 
 // ── Step 1: Account Type ───────────────────────────────────────────────────────
 
-class _AccountTypeStep extends StatelessWidget {
+class _AccountTypeStep extends ConsumerWidget {
   final void Function(String type) onSelected;
   const _AccountTypeStep({required this.onSelected});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(appStringsProvider);
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
       child: Column(
@@ -550,7 +560,7 @@ class _AccountTypeStep extends StatelessWidget {
           _stepIcon(Icons.account_balance_wallet_rounded, AppColors.accent),
           const SizedBox(height: 20),
           Text(
-            'Which account are\nyou setting up?',
+            s.t('Which account are\nyou setting up?', 'Quale account stai\nconfigurando?'),
             style: GoogleFonts.manrope(
               color: AppColors.textPrimary,
               fontSize: 28,
@@ -561,23 +571,23 @@ class _AccountTypeStep extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Choose one — you can add more accounts later from your profile.',
+            s.t('Choose one — you can add more accounts later from your profile.', 'Scegline uno — puoi aggiungere altri account in seguito dal tuo profilo.'),
             style: GoogleFonts.manrope(
               color: AppColors.textSecondary, fontSize: 14, height: 1.5),
           ),
           const SizedBox(height: 32),
           _TypeCard(
             icon: Icons.person_rounded,
-            title: 'Personal Account',
-            subtitle: 'Your own capital — set daily loss limits, trade count, and trading hours.',
+            title: s.t('Personal Account', 'Account Personale'),
+            subtitle: s.t('Your own capital — set daily loss limits, trade count, and trading hours.', 'Il tuo capitale — imposta limiti di perdita giornalieri, numero di trade e orari di trading.'),
             color: AppColors.accent,
             onTap: () => onSelected('personal'),
           ),
           const SizedBox(height: 14),
           _TypeCard(
             icon: Icons.military_tech_rounded,
-            title: 'Challenge / Prop Firm',
-            subtitle: 'FTMO, FundedNext, etc. — AI Planner generates a custom strategy with success probability.',
+            title: s.t('Challenge / Prop Firm', 'Challenge / Prop Firm'),
+            subtitle: s.t('FTMO, FundedNext, etc. — AI Planner generates a custom strategy with success probability.', 'FTMO, FundedNext, ecc. — l\'AI Planner genera una strategia personalizzata con probabilità di successo.'),
             color: const Color(0xFFFFB74D),
             onTap: () => onSelected('challenge'),
           ),
@@ -648,7 +658,7 @@ class _TypeCard extends StatelessWidget {
 
 // ── Step 2: Connect Broker ─────────────────────────────────────────────────────
 
-class _ConnectBrokerStep extends StatelessWidget {
+class _ConnectBrokerStep extends ConsumerWidget {
   final bool         brokerConnected;
   final VoidCallback onOpenBroker;
   final VoidCallback onContinue;
@@ -659,7 +669,8 @@ class _ConnectBrokerStep extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(appStringsProvider);
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
       child: Column(
@@ -668,7 +679,7 @@ class _ConnectBrokerStep extends StatelessWidget {
           _stepIcon(Icons.link_rounded, const Color(0xFF26A69A)),
           const SizedBox(height: 20),
           Text(
-            'Connect your\nMT5 account',
+            s.t('Connect your\nMT5 account', 'Connetti il tuo\naccount MT5'),
             style: GoogleFonts.manrope(
               color: AppColors.textPrimary, fontSize: 28,
               fontWeight: FontWeight.w900, letterSpacing: -1.2, height: 1.1,
@@ -676,7 +687,7 @@ class _ConnectBrokerStep extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'PipLock reads equity, P&L, and open positions. It never executes or closes trades.',
+            s.t('PipLock reads equity, P&L, and open positions. It never executes or closes trades.', 'PipLock legge equity, P&L e posizioni aperte. Non esegue mai né chiude trade.'),
             style: GoogleFonts.manrope(
               color: AppColors.textSecondary, fontSize: 14, height: 1.5),
           ),
@@ -698,7 +709,7 @@ class _ConnectBrokerStep extends StatelessWidget {
                     ),
                     const SizedBox(width: 10),
                     Text(
-                      brokerConnected ? 'Account connected' : 'Not connected yet',
+                      brokerConnected ? s.t('Account connected', 'Account connesso') : s.t('Not connected yet', 'Non ancora connesso'),
                       style: GoogleFonts.manrope(
                         color: brokerConnected
                             ? const Color(0xFF4CAF50)
@@ -712,7 +723,7 @@ class _ConnectBrokerStep extends StatelessWidget {
                 const SizedBox(height: 14),
                 _outlineButton(
                   Icons.add_link_rounded,
-                  brokerConnected ? 'Change connection' : 'Set up connection',
+                  brokerConnected ? s.t('Change connection', 'Cambia connessione') : s.t('Set up connection', 'Configura connessione'),
                   onOpenBroker,
                 ),
               ],
@@ -721,11 +732,11 @@ class _ConnectBrokerStep extends StatelessWidget {
           const SizedBox(height: 12),
           _infoChip(
             Icons.info_outline_rounded,
-            'You can also skip this and connect later from the Profile → Broker page.',
+            s.t('You can also skip this and connect later from the Profile → Broker page.', 'Puoi anche saltare questo passaggio e connetterti in seguito dalla pagina Profilo → Broker.'),
             AppColors.textSecondary,
           ),
           const SizedBox(height: 32),
-          _primaryButton('Continue', onContinue),
+          _primaryButton(s.t('Continue', 'Continua'), onContinue),
         ],
       ),
     );
@@ -734,7 +745,7 @@ class _ConnectBrokerStep extends StatelessWidget {
 
 // ── Step 3: Rules Setup ────────────────────────────────────────────────────────
 
-class _RulesStep extends StatelessWidget {
+class _RulesStep extends ConsumerWidget {
   final String       accountType;
   final bool         rulesConfigured;
   final bool         challengeConfigured;
@@ -753,7 +764,8 @@ class _RulesStep extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(appStringsProvider);
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
       child: Column(
@@ -763,8 +775,8 @@ class _RulesStep extends StatelessWidget {
           const SizedBox(height: 20),
           Text(
             accountType == 'challenge'
-                ? 'Set up your\nchallenge'
-                : 'Set your\ntrading rules',
+                ? s.t('Set up your\nchallenge', 'Configura la tua\nchallenge')
+                : s.t('Set your\ntrading rules', 'Imposta le tue\nregole di trading'),
             style: GoogleFonts.manrope(
               color: AppColors.textPrimary, fontSize: 28,
               fontWeight: FontWeight.w900, letterSpacing: -1.2, height: 1.1,
@@ -773,8 +785,8 @@ class _RulesStep extends StatelessWidget {
           const SizedBox(height: 8),
           Text(
             accountType == 'challenge'
-                ? 'Enter your prop firm parameters — the AI generates a day-by-day plan with a success probability.'
-                : 'These limits activate the killswitch. You can change them anytime (with a 24h lock to keep you accountable).',
+                ? s.t('Enter your prop firm parameters — the AI generates a day-by-day plan with a success probability.', 'Inserisci i parametri della prop firm — l\'AI genera un piano giorno per giorno con probabilità di successo.')
+                : s.t('These limits activate the killswitch. You can change them anytime (with a 24h lock to keep you accountable).', 'Questi limiti attivano il killswitch. Puoi cambiarli in qualsiasi momento (con un blocco di 24h per mantenerti responsabile).'),
             style: GoogleFonts.manrope(
               color: AppColors.textSecondary, fontSize: 14, height: 1.5),
           ),
@@ -782,10 +794,10 @@ class _RulesStep extends StatelessWidget {
           if (accountType == 'challenge') ...[
             _ActionCard(
               icon: Icons.military_tech_rounded,
-              title: challengeConfigured ? 'Challenge configured' : 'Configure challenge',
+              title: challengeConfigured ? s.t('Challenge configured', 'Challenge configurata') : s.t('Configure challenge', 'Configura challenge'),
               subtitle: challengeConfigured
-                  ? 'AI plan generated. Tap to view or edit.'
-                  : 'Enter prop firm parameters (account size, profit target, max drawdown…)',
+                  ? s.t('AI plan generated. Tap to view or edit.', 'Piano AI generato. Tocca per visualizzare o modificare.')
+                  : s.t('Enter prop firm parameters (account size, profit target, max drawdown…)', 'Inserisci i parametri della prop firm (dimensione account, target di profitto, max drawdown…)'),
               color: const Color(0xFFFFB74D),
               done: challengeConfigured,
               onTap: onOpenChallengeSetup,
@@ -793,10 +805,10 @@ class _RulesStep extends StatelessWidget {
           ] else ...[
             _ActionCard(
               icon: Icons.tune_rounded,
-              title: rulesConfigured ? 'Rules configured' : 'Set rules manually',
+              title: rulesConfigured ? s.t('Rules configured', 'Regole configurate') : s.t('Set rules manually', 'Imposta regole manualmente'),
               subtitle: rulesConfigured
-                  ? 'Your limits are saved. Tap to review.'
-                  : 'Set daily loss limit, max trades, trading hours, killswitch duration.',
+                  ? s.t('Your limits are saved. Tap to review.', 'I tuoi limiti sono salvati. Tocca per rivedere.')
+                  : s.t('Set daily loss limit, max trades, trading hours, killswitch duration.', 'Imposta limite di perdita giornaliero, max trade, orari di trading, durata killswitch.'),
               color: AppColors.accent,
               done: rulesConfigured,
               onTap: onOpenPersonalRules,
@@ -804,8 +816,8 @@ class _RulesStep extends StatelessWidget {
             const SizedBox(height: 14),
             _ActionCard(
               icon: Icons.auto_awesome_rounded,
-              title: 'Use AI Planner instead',
-              subtitle: 'Let the AI generate your daily limits based on your trading style and goals.',
+              title: s.t('Use AI Planner instead', 'Usa invece l\'AI Planner'),
+              subtitle: s.t('Let the AI generate your daily limits based on your trading style and goals.', 'Lascia che l\'AI generi i tuoi limiti giornalieri in base al tuo stile e obiettivi di trading.'),
               color: const Color(0xFF26A69A),
               done: false,
               onTap: onOpenAiPlanner,
@@ -814,12 +826,12 @@ class _RulesStep extends StatelessWidget {
           const SizedBox(height: 12),
           _infoChip(
             Icons.info_outline_rounded,
-            'You can configure this later from Profile → ${accountType == 'challenge' ? 'Challenges' : 'Rules'}.',
+            s.t('You can configure this later from Profile → ${accountType == 'challenge' ? 'Challenges' : 'Rules'}.', 'Puoi configurarlo in seguito da Profilo → ${accountType == 'challenge' ? 'Challenge' : 'Regole'}.'),
             AppColors.textSecondary,
           ),
           const SizedBox(height: 32),
           _primaryButton(
-            (rulesConfigured || challengeConfigured) ? 'Continue' : 'Skip for now',
+            (rulesConfigured || challengeConfigured) ? s.t('Continue', 'Continua') : s.t('Skip for now', 'Salta per ora'),
             onContinue,
           ),
         ],
@@ -901,14 +913,15 @@ class _ActionCard extends StatelessWidget {
 
 // ── Step 4: Notifications ──────────────────────────────────────────────────────
 
-class _NotificationsStep extends StatelessWidget {
+class _NotificationsStep extends ConsumerWidget {
   final VoidCallback onOpenSettings;
   final Future<void> Function() onContinue;
   const _NotificationsStep({
     required this.onOpenSettings, required this.onContinue});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(appStringsProvider);
     return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 32),
       child: Column(
@@ -917,7 +930,7 @@ class _NotificationsStep extends StatelessWidget {
           _stepIcon(Icons.notifications_rounded, const Color(0xFF7E57C2)),
           const SizedBox(height: 20),
           Text(
-            'Stay informed,\nnot distracted',
+            s.t('Stay informed,\nnot distracted', 'Rimani informato,\nnon distratto'),
             style: GoogleFonts.manrope(
               color: AppColors.textPrimary, fontSize: 28,
               fontWeight: FontWeight.w900, letterSpacing: -1.2, height: 1.1,
@@ -925,16 +938,16 @@ class _NotificationsStep extends StatelessWidget {
           ),
           const SizedBox(height: 8),
           Text(
-            'Choose which alerts matter to you — NFP, FOMC, session changes, risk warnings.',
+            s.t('Choose which alerts matter to you — NFP, FOMC, session changes, risk warnings.', 'Scegli quali alert sono importanti per te — NFP, FOMC, cambi di sessione, avvisi di rischio.'),
             style: GoogleFonts.manrope(
               color: AppColors.textSecondary, fontSize: 14, height: 1.5),
           ),
           const SizedBox(height: 28),
           for (final item in [
-            (Icons.newspaper_rounded,     'Economic news',      'NFP, CPI, central bank decisions'),
-            (Icons.access_time_rounded,   'Session changes',    'London, New York, Tokyo, Sydney'),
-            (Icons.warning_amber_rounded, 'Risk warnings',      '80% of daily limit, soft killswitch'),
-            (Icons.psychology_rounded,    'FOMO / Revenge',     'Behavioral pattern alerts'),
+            (Icons.newspaper_rounded,     s.t('Economic news', 'Notizie economiche'),      s.t('NFP, CPI, central bank decisions', 'NFP, CPI, decisioni banche centrali')),
+            (Icons.access_time_rounded,   s.t('Session changes', 'Cambi di sessione'),     s.t('London, New York, Tokyo, Sydney', 'Londra, New York, Tokyo, Sydney')),
+            (Icons.warning_amber_rounded, s.t('Risk warnings', 'Avvisi di rischio'),       s.t('80% of daily limit, soft killswitch', '80% del limite giornaliero, soft killswitch')),
+            (Icons.psychology_rounded,    s.t('FOMO / Revenge', 'FOMO / Revenge'),         s.t('Behavioral pattern alerts', 'Alert su pattern comportamentali')),
           ]) ...[
             GlassCard(
               child: Row(
@@ -960,9 +973,9 @@ class _NotificationsStep extends StatelessWidget {
           ],
           const SizedBox(height: 8),
           _outlineButton(
-            Icons.tune_rounded, 'Configure notifications', onOpenSettings),
+            Icons.tune_rounded, s.t('Configure notifications', 'Configura notifiche'), onOpenSettings),
           const SizedBox(height: 32),
-          _primaryButton('Finish setup', onContinue),
+          _primaryButton(s.t('Finish setup', 'Completa configurazione'), onContinue),
         ],
       ),
     );

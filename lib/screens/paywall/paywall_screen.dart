@@ -533,7 +533,10 @@ class _PlanTab extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Row(
+              Wrap(
+                spacing: 6,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Text(
                     label,
@@ -543,8 +546,7 @@ class _PlanTab extends StatelessWidget {
                       fontWeight: FontWeight.w700,
                     ),
                   ),
-                  if (badge != null) ...[
-                    const SizedBox(width: 6),
+                  if (badge != null)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                       decoration: BoxDecoration(
@@ -560,7 +562,6 @@ class _PlanTab extends StatelessWidget {
                         ),
                       ),
                     ),
-                  ],
                 ],
               ),
               const SizedBox(height: 4),

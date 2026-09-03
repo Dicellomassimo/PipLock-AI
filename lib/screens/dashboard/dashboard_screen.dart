@@ -49,6 +49,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   bool _showSetupBanner = false;
   int  _wizardStep = 0; // >0 means wizard was started but not finished
   bool _monitoringPaused = false; // true when permissions revoked but rules active
+  ProviderSubscription<List<Challenge>>? _challengeSub;
   static const _avatarPrefKey = 'profile_avatar_path';
 
   Future<void> _loadAvatar() async {
@@ -112,7 +113,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       }
       _loadActiveChallenge();
       // Aggiorna la challenge quando il provider cambia (es. dopo setup)
-      ref.listenManual(challengeListProvider, (_, next) {
+      _challengeSub = ref.listenManual(challengeListProvider, (_, next) {
         if (!mounted || next.isEmpty) return;
         if (_activeChallenge == null) {
           setState(() => _activeChallenge = next.firstWhere(
@@ -124,6 +125,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
   @override
   void dispose() {
+    _challengeSub?.close();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }

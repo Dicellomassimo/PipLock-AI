@@ -134,7 +134,7 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Choose how to connect your broker account',
+                      s.t('Choose how to connect your broker account', 'Scegli come collegare il tuo conto broker'),
                       style: GoogleFonts.manrope(
                           color: AppColors.textPrimary,
                           fontWeight: FontWeight.bold,
@@ -142,7 +142,7 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'PipLock reads account data — never executes orders.',
+                      s.t('PipLock reads account data — never executes orders.', 'PipLock legge i dati del conto — non esegue mai ordini.'),
                       style: GoogleFonts.manrope(
                           color: AppColors.textSecondary,
                           fontSize: 12,
@@ -161,18 +161,20 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
         _MethodCard(
           icon: Icons.computer_outlined,
           title: 'EA MQL5',
-          subtitle: 'Desktop / VPS',
-          accuracyBadge: '100% Accurate',
+          subtitle: s.t('Desktop / VPS', 'Desktop / VPS'),
+          accuracyBadge: s.t('100% Accurate', '100% Preciso'),
           accuracyColor: AppColors.accent,
-          description:
-              'An Expert Advisor runs inside MetaTrader 5 and sends real account data to PipLock via webhook. The most precise method — reads actual equity, drawdown and trade count.',
-          setupGuide: const [
-            'Download MetaTrader 5 for Windows from metatrader5.com (free)',
-            'Open MetaEditor (F4 inside MT5) and create a new Expert Advisor',
-            'Copy the PipLock EA code (tap "Activate EA Connection" below)',
-            'Enable WebRequest in MT5: Tools → Options → Expert Advisors → check "Allow WebRequest for listed URL" → add your Supabase URL',
-            'Compile the EA (F7) and attach it to any chart',
-            'Enter your webhook secret in PipLock — your trades will be monitored in real time via Supabase Realtime.',
+          description: s.t(
+            'An Expert Advisor runs inside MetaTrader 5 and sends real account data to PipLock via webhook. The most precise method — reads actual equity, drawdown and trade count.',
+            'Un Expert Advisor gira dentro MetaTrader 5 e invia i dati reali del conto a PipLock via webhook. Il metodo più preciso — legge equity, drawdown e numero di trade.',
+          ),
+          setupGuide: [
+            s.t('Download MetaTrader 5 for Windows from metatrader5.com (free)', 'Scarica MetaTrader 5 per Windows da metatrader5.com (gratis)'),
+            s.t('Open MetaEditor (F4 inside MT5) and create a new Expert Advisor', 'Apri MetaEditor (F4 dentro MT5) e crea un nuovo Expert Advisor'),
+            s.t('Copy the PipLock EA code (tap "Activate EA Connection" below)', 'Copia il codice EA di PipLock (premi "Attiva Connessione EA" sotto)'),
+            s.t('Enable WebRequest in MT5: Tools → Options → Expert Advisors → check "Allow WebRequest for listed URL" → add your Supabase URL', 'Abilita WebRequest in MT5: Strumenti → Opzioni → Expert Advisor → spunta "Consenti WebRequest per URL" → aggiungi il tuo URL Supabase'),
+            s.t('Compile the EA (F7) and attach it to any chart', 'Compila l\'EA (F7) e collegalo a qualsiasi grafico'),
+            s.t('Enter your webhook secret in PipLock — your trades will be monitored in real time via Supabase Realtime.', 'Inserisci il webhook secret in PipLock — i tuoi trade saranno monitorati in tempo reale via Supabase Realtime.'),
           ],
           onTap: () => setState(() => _selectedMethod = BrokerConnectionMethod.ea),
         ),
@@ -183,17 +185,19 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
         _MethodCard(
           icon: Icons.cloud_sync_outlined,
           title: 'MetaAPI Cloud',
-          subtitle: 'Most MT4/MT5 brokers',
-          accuracyBadge: '98% Accurate',
+          subtitle: s.t('Most MT4/MT5 brokers', 'La maggior parte dei broker MT4/MT5'),
+          accuracyBadge: s.t('98% Accurate', '98% Preciso'),
           accuracyColor: AppColors.accent,
-          description:
-              'Connect your MT4/MT5 account via MetaAPI Cloud. Enter your MetaAPI Account ID to read equity, P&L and positions in real time. Free tier available.',
-          setupGuide: const [
-            'Go to app.metaapi.cloud and create a free account',
-            'Click "Add Account" and enter your MT5 broker credentials',
-            'Copy your MetaAPI Account ID from the dashboard',
-            'Paste it into PipLock below',
-            'Note: MetaAPI free tier has limited requests. Upgrade for continuous monitoring.',
+          description: s.t(
+            'Connect your MT4/MT5 account via MetaAPI Cloud. Enter your MetaAPI Account ID to read equity, P&L and positions in real time. Free tier available.',
+            'Collega il tuo conto MT4/MT5 via MetaAPI Cloud. Inserisci il tuo MetaAPI Account ID per leggere equity, P&L e posizioni in tempo reale. Piano gratuito disponibile.',
+          ),
+          setupGuide: [
+            s.t('Go to app.metaapi.cloud and create a free account', 'Vai su app.metaapi.cloud e crea un account gratuito'),
+            s.t('Click "Add Account" and enter your MT5 broker credentials', 'Clicca "Aggiungi Account" e inserisci le credenziali del tuo broker MT5'),
+            s.t('Copy your MetaAPI Account ID from the dashboard', 'Copia il tuo MetaAPI Account ID dalla dashboard'),
+            s.t('Paste it into PipLock below', 'Incollalo in PipLock qui sotto'),
+            s.t('Note: MetaAPI free tier has limited requests. Upgrade for continuous monitoring.', 'Nota: il piano gratuito MetaAPI ha richieste limitate. Passa al piano a pagamento per monitoraggio continuo.'),
           ],
           onTap: () =>
               setState(() => _selectedMethod = BrokerConnectionMethod.metaApi),
@@ -204,18 +208,20 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
         // Screen Reading (MT5 Mobile)
         _MethodCard(
           icon: Icons.phone_android_outlined,
-          title: 'Screen Reading (MT5 Mobile)',
-          subtitle: 'MetaTrader 5 Android, MetaTrader 4 Android',
-          accuracyBadge: '~85% · Improving',
+          title: s.t('Screen Reading (MT5 Mobile)', 'Lettura Schermo (MT5 Mobile)'),
+          subtitle: s.t('MetaTrader 5 Android, MetaTrader 4 Android', 'MetaTrader 5 Android, MetaTrader 4 Android'),
+          accuracyBadge: s.t('~85% · Improving', '~85% · In miglioramento'),
           accuracyColor: const Color(0xFF4A90E2),
-          description:
-              'PipLock uses the Android Accessibility Service to read equity and P&L directly from the broker app screen. Back and Recents keys are blocked during lockdown. No credentials required.',
-          setupGuide: const [
-            'Tap "Enable Accessibility Service" below',
-            'Find PipLock in the list and enable it',
-            'Open MetaTrader 5 and navigate to your Trade tab',
-            'PipLock will read your account data automatically',
-            'Note: Keep PipLock active in background for continuous monitoring.',
+          description: s.t(
+            'PipLock uses the Android Accessibility Service to read equity and P&L directly from the broker app screen. Back and Recents keys are blocked during lockdown. No credentials required.',
+            'PipLock usa il Servizio di Accessibilità Android per leggere equity e P&L direttamente dallo schermo dell\'app broker. I tasti Indietro e Recenti sono bloccati durante il lockdown. Nessuna credenziale richiesta.',
+          ),
+          setupGuide: [
+            s.t('Tap "Enable Accessibility Service" below', 'Premi "Abilita Servizio Accessibilità" qui sotto'),
+            s.t('Find PipLock in the list and enable it', 'Trova PipLock nell\'elenco e abilitalo'),
+            s.t('Open MetaTrader 5 and navigate to your Trade tab', 'Apri MetaTrader 5 e vai alla scheda Trade'),
+            s.t('PipLock will read your account data automatically', 'PipLock leggerà i dati del tuo conto automaticamente'),
+            s.t('Note: Keep PipLock active in background for continuous monitoring.', 'Nota: mantieni PipLock attivo in background per un monitoraggio continuo.'),
           ],
           onTap: () => setState(
               () => _selectedMethod = BrokerConnectionMethod.accessibility),
@@ -226,17 +232,19 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
         // Manual Entry
         _MethodCard(
           icon: Icons.edit_outlined,
-          title: 'Manual Entry',
-          subtitle: 'Any broker',
-          accuracyBadge: 'You decide',
+          title: s.t('Manual Entry', 'Inserimento Manuale'),
+          subtitle: s.t('Any broker', 'Qualsiasi broker'),
+          accuracyBadge: s.t('You decide', 'Decidi tu'),
           accuracyColor: AppColors.textSecondary,
-          description:
-              'Enter your account data manually after each trading session. PipLock applies your rules to the data you enter. Works with any broker or platform.',
-          setupGuide: const [
-            'Tap "Update Data" below to enter your latest account figures',
-            'You manually enter equity, balance, P&L and open positions',
-            'PipLock checks your limits every time you press Update',
-            'Accuracy depends entirely on your honesty with yourself',
+          description: s.t(
+            'Enter your account data manually after each trading session. PipLock applies your rules to the data you enter. Works with any broker or platform.',
+            'Inserisci i dati del tuo conto manualmente dopo ogni sessione di trading. PipLock applica le tue regole ai dati che inserisci. Funziona con qualsiasi broker o piattaforma.',
+          ),
+          setupGuide: [
+            s.t('Tap "Update Data" below to enter your latest account figures', 'Premi "Aggiorna Dati" qui sotto per inserire i tuoi dati più recenti'),
+            s.t('You manually enter equity, balance, P&L and open positions', 'Inserisci manualmente equity, saldo, P&L e posizioni aperte'),
+            s.t('PipLock checks your limits every time you press Update', 'PipLock controlla i tuoi limiti ogni volta che premi Aggiorna'),
+            s.t('Accuracy depends entirely on your honesty with yourself', 'La precisione dipende interamente dalla tua onestà con te stesso'),
           ],
           onTap: () =>
               setState(() => _selectedMethod = BrokerConnectionMethod.manual),
@@ -626,13 +634,13 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
   String _methodLabel(BrokerConnectionMethod method, AppStrings s) {
     switch (method) {
       case BrokerConnectionMethod.ea:
-        return 'EA MQL5 — Desktop/VPS';
+        return s.t('EA MQL5 — Desktop/VPS', 'EA MQL5 — Desktop/VPS');
       case BrokerConnectionMethod.metaApi:
-        return 'MetaAPI Live';
+        return s.t('MetaAPI Live', 'MetaAPI Live');
       case BrokerConnectionMethod.accessibility:
-        return 'Screen Reading (MT5 Mobile)';
+        return s.t('Screen Reading (MT5 Mobile)', 'Lettura Schermo (MT5 Mobile)');
       case BrokerConnectionMethod.manual:
-        return 'Manual Entry';
+        return s.t('Manual Entry', 'Inserimento Manuale');
       default:
         return 'Broker';
     }
@@ -641,13 +649,13 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
   String _methodDescription(BrokerConnectionMethod method, AppStrings s) {
     switch (method) {
       case BrokerConnectionMethod.ea:
-        return 'Data incoming from EA on MT5';
+        return s.t('Data incoming from EA on MT5', 'Dati in arrivo dall\'EA su MT5');
       case BrokerConnectionMethod.metaApi:
-        return 'Live data via MetaAPI Cloud';
+        return s.t('Live data via MetaAPI Cloud', 'Dati live via MetaAPI Cloud');
       case BrokerConnectionMethod.accessibility:
-        return 'Screen reading MT5 mobile';
+        return s.t('Screen reading MT5 mobile', 'Lettura schermo MT5 mobile');
       case BrokerConnectionMethod.manual:
-        return 'Manually entered data';
+        return s.t('Manually entered data', 'Dati inseriti manualmente');
       default:
         return '';
     }

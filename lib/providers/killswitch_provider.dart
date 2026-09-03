@@ -100,7 +100,11 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
   void _startAutoDeactivateTimer(int durationMinutes) {
     _autoDeactivateTimer?.cancel();
     _autoDeactivateTimer = Timer(Duration(minutes: durationMinutes), () {
-      if (!_disposed) deactivate();
+      if (!_disposed) {
+        // Scaduto naturalmente (non con token) — invia notifica immediata
+        NotificationService.sendKillswitchLiftedNotification();
+        deactivate();
+      }
     });
   }
 

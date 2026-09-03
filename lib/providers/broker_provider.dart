@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
+import '../config/app_strings.dart';
 import '../config/constants.dart';
 import '../models/broker_data.dart';
 import '../models/challenge.dart';
@@ -140,6 +141,14 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
   bool _fastReentryAlertSent = false;
   bool _dailyBriefingTriggered = false;
 
+  // Bug C: balance iniziale del giorno
+  double? _initialBalanceToday;
+  String _initialBalanceDateStr = '';
+
+  // Weekly loss tracking — balance iniziale della settimana (lun–dom)
+  double? _initialBalanceWeek;
+  String _initialBalanceWeekStr = ''; // "yyyy-Www"
+
   BrokerNotifier(this._ref) : super(const BrokerState()) {
     _loadPersistedConnection();
     // Ricarica la connessione broker quando l'auth si risolve,
@@ -200,6 +209,13 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         }
       }
       _dailyBriefingTriggered = false; // reset so next day briefing can fire
+      _initialBalanceToday = null;
+      _initialBalanceDateStr = '';
+      // Reset settimanale se siamo passati a una nuova settimana (lunedì)
+      if (today.weekday == DateTime.monday) {
+        _initialBalanceWeek = null;
+        _initialBalanceWeekStr = '';
+      }
       _triggerDailyChallengeBriefing(); // fire briefing for new day
     }
   }
@@ -529,6 +545,10 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           state = state.copyWith(detectedAccountNumber: toAccount);
 
           // Reset ALL daily tracking state — new account = fresh session
+          _initialBalanceToday = null;
+          _initialBalanceDateStr = '';
+          _initialBalanceWeek = null;
+          _initialBalanceWeekStr = '';
           _positionsBaselineSet = false;
           _lastNonZeroPositions = 0;
           _positionsDroppedToZero = false;
@@ -778,7 +798,38 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     if (validEquity == null && validBalance == null && validProfit == null) return;
 
     final prevBalance = validBalance ?? state.data.balance;
-    final dayLossUsd = validProfit != null && validProfit < 0 ? validProfit.abs() : null;
+
+    // Bug C: memorizza il balance al PRIMO collegamento del giorno.
+    final now = DateTime.now();
+    final todayStr = now.toIso8601String().substring(0, 10);
+    if (validBalance != null && validBalance > 0 &&
+        (_initialBalanceToday == null || _initialBalanceDateStr != todayStr)) {
+      _initialBalanceToday = validBalance;
+      _initialBalanceDateStr = todayStr;
+    }
+
+    // Weekly loss tracking: balance al primo collegamento della settimana (lun-dom).
+    // Usa numero ISO della settimana per rilevare il cambio settimana.
+    final weekNum = _isoWeekNumber(now);
+    final weekStr = '${now.year}-W$weekNum';
+    if (validBalance != null && validBalance > 0 &&
+        (_initialBalanceWeek == null || _initialBalanceWeekStr != weekStr)) {
+      _initialBalanceWeek = validBalance;
+      _initialBalanceWeekStr = weekStr;
+    }
+
+    // Daily P&L = equity corrente - balance iniziale del giorno (include trade chiusi).
+    // Fallback: usa validProfit (floating only) se l'initialBalance non è ancora disponibile.
+    double? computedDailyPnl;
+    if (validEquity != null && _initialBalanceToday != null && _initialBalanceToday! > 0) {
+      computedDailyPnl = validEquity - _initialBalanceToday!;
+    } else {
+      computedDailyPnl = validProfit;
+    }
+
+    final dayLossUsd = validProfit != null
+        ? (computedDailyPnl != null && computedDailyPnl < 0 ? computedDailyPnl.abs() : null)
+        : null;
     final dayLossPct = (dayLossUsd != null && prevBalance != null && prevBalance > 0)
         ? dayLossUsd / prevBalance * 100
         : null;
@@ -843,8 +894,8 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     final newData = state.data.copyWith(
       equity: validEquity ?? state.data.equity,
       balance: validBalance ?? state.data.balance,
-      dailyPnl: validProfit ?? state.data.dailyPnl,
-      dailyLossUsd: dayLossUsd ?? state.data.dailyLossUsd,
+      dailyPnl: computedDailyPnl ?? state.data.dailyPnl,
+      dailyLossUsd: validProfit != null ? dayLossUsd : state.data.dailyLossUsd,
       dailyLossPct: dayLossPct ?? state.data.dailyLossPct,
       drawdownPct: drawdownPct ?? state.data.drawdownPct,
       // When positions = 0, keep the last known non-zero count (MT5 likely backgrounded or tab changed)
@@ -899,9 +950,23 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
   // ── Refresh manuale ─────────────────────────────────────────────────────────
 
   Future<void> refresh() async {
-    // Per EA e accessibility: i dati arrivano in push, non serve polling.
-    // Per manual: non si può aggiornare automaticamente.
-    // Questo metodo esiste per compatibilità con la dashboard (bottone refresh).
+    switch (state.method) {
+      case BrokerConnectionMethod.accessibility:
+        // Forza una lettura immediata da SharedPreferences (Kotlin aggiorna in push)
+        await _checkAccessibilityAndUpdate();
+        break;
+      case BrokerConnectionMethod.metaApi:
+        final accountId = state.metaApiAccountId;
+        if (accountId != null && accountId.isNotEmpty) {
+          await _pollMetaApi(accountId);
+        }
+        break;
+      case BrokerConnectionMethod.ea:
+      case BrokerConnectionMethod.manual:
+      case BrokerConnectionMethod.none:
+        // EA e manual: i dati arrivano in push, nessun polling possibile
+        break;
+    }
   }
 
   // ── FOMO detection ─────────────────────────────────────────────────────────
@@ -916,8 +981,9 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       if (!mounted || signal == null) return;
       state = state.copyWith(fomoSignal: signal);
       // Also surface as a local notification
+      final s = _ref.read(appStringsProvider);
       NotificationService.showLocalNotification(
-        title: '⚠️ FOMO Alert — $symbol',
+        title: s.t('⚠️ FOMO Alert — $symbol', '⚠️ Alert FOMO — $symbol'),
         body: signal.alertMessage,
         id: 8010,
       );
@@ -1101,9 +1167,10 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     // Alert a 3 perdite consecutive
     if (_consecutiveLossesLocal >= 3 && !_consecutiveLossAlertSent) {
       _consecutiveLossAlertSent = true;
+      final s = _ref.read(appStringsProvider);
       NotificationService.showLocalNotification(
-        title: '⚠️ $_consecutiveLossesLocal consecutive losses',
-        body: 'You have lost $_consecutiveLossesLocal trades in a row. Consider stepping back.',
+        title: s.t('⚠️ $_consecutiveLossesLocal consecutive losses', '⚠️ $_consecutiveLossesLocal perdite consecutive'),
+        body: s.t('You have lost $_consecutiveLossesLocal trades in a row. Consider stepping back.', 'Hai perso $_consecutiveLossesLocal trade di fila. Considera di fermarti.'),
         id: 8006,
       );
     }
@@ -1114,10 +1181,12 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       _baselineLotSizeToday ??= lotSize;
       if (!_lotSizeAlertSent && lotSize > (_baselineLotSizeToday! * 2.0)) {
         _lotSizeAlertSent = true;
+        final s = _ref.read(appStringsProvider);
         NotificationService.showLocalNotification(
-          title: '⚠️ Lot size anomaly',
-          body:
+          title: s.t('⚠️ Lot size anomaly', '⚠️ Anomalia nel lot size'),
+          body: s.t(
               'Your position size (${lotSize.toStringAsFixed(2)}) is 2× your usual size today. Check your risk.',
+              'La tua dimensione di posizione (${lotSize.toStringAsFixed(2)}) è 2× rispetto alla tua solita. Controlla il rischio.'),
           id: 8007,
         );
       }
@@ -1137,10 +1206,12 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           DateTime.now().difference(_lastPositionCloseTime!).inSeconds;
       if (secondsFromClose < 120) {
         _fastReentryAlertSent = true;
+        final s = _ref.read(appStringsProvider);
         NotificationService.showLocalNotification(
-          title: '⚡ Fast re-entry',
-          body:
+          title: s.t('⚡ Fast re-entry', '⚡ Rientro rapido'),
+          body: s.t(
               'You re-entered the market ${secondsFromClose}s after closing. Is this intentional?',
+              'Sei rientrato nel mercato ${secondsFromClose}s dopo la chiusura. È intenzionale?'),
           id: 8008,
         );
       }
@@ -1153,9 +1224,10 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       final lossPercent = lossValue / rules.maxDailyLoss!;
       if (lossPercent >= 0.80 && lossPercent < 1.0 && !_soft80AlertSent) {
         _soft80AlertSent = true;
+        final s = _ref.read(appStringsProvider);
         NotificationService.showLocalNotification(
-          title: '⚠️ 80% of daily limit reached',
-          body: 'You are close to your daily loss limit. Consider stopping.',
+          title: s.t('⚠️ 80% of daily limit reached', '⚠️ 80% del limite giornaliero raggiunto'),
+          body: s.t('You are close to your daily loss limit. Consider stopping.', 'Sei vicino al limite di perdita giornaliero. Considera di fermarti.'),
           id: 8001,
         );
       }
@@ -1169,6 +1241,25 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         if (dayLossPct >= rules.maxDailyLoss!) reason = 'daily_loss';
       } else {
         if (dayLossUsd >= rules.maxDailyLoss!) reason = 'daily_loss';
+      }
+    }
+
+    // ── Weekly loss check ────────────────────────────────────────────────────
+    if (reason == null && rules.maxWeeklyLoss != null && rules.maxWeeklyLoss! > 0) {
+      final currentEquity = data.equity;
+      if (currentEquity != null && _initialBalanceWeek != null && _initialBalanceWeek! > 0) {
+        final weeklyLossUsd = (_initialBalanceWeek! - currentEquity).clamp(0.0, double.infinity);
+        if (weeklyLossUsd >= rules.maxWeeklyLoss!) {
+          reason = 'weekly_loss';
+        } else if (weeklyLossUsd >= rules.maxWeeklyLoss! * 0.80 && !_soft80AlertSent) {
+          // Avviso all'80% della perdita settimanale (riusa il flag daily per semplicità)
+          final s = _ref.read(appStringsProvider);
+          NotificationService.showLocalNotification(
+            title: s.t('⚠️ 80% of weekly limit reached', '⚠️ 80% del limite settimanale raggiunto'),
+            body: s.t('You are close to your weekly loss limit. Stay disciplined.', 'Sei vicino al limite di perdita settimanale. Rimani disciplinato.'),
+            id: 8001,
+          );
+        }
       }
     }
 
@@ -1486,6 +1577,14 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
   static String _todayBriefingKey() {
     final now = DateTime.now();
     return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
+  /// Numero settimana ISO (1-53, settimana parte il lunedì).
+  static int _isoWeekNumber(DateTime date) {
+    final thursday = date.add(Duration(days: 4 - (date.weekday)));
+    final firstThursday = DateTime(thursday.year, 1, 1)
+        .add(Duration(days: 4 - DateTime(thursday.year, 1, 1).weekday));
+    return ((thursday.difference(firstThursday).inDays) / 7).floor() + 1;
   }
 }
 
