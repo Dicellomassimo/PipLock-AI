@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/app_colors.dart';
+import '../../config/app_strings.dart';
 import '../../config/app_theme.dart';
 import '../../services/accessibility_service.dart';
 import '../../widgets/premium_button.dart';
@@ -83,21 +84,22 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
   Color get _currentAccent =>
       _accentColors[_current.clamp(0, _accentColors.length - 1)];
 
-  String _ctaLabel() {
+  String _ctaLabel(AppStrings s) {
     switch (_current) {
       case 10:
-        return _selectedPlatform != null ? 'Continue →' : 'Select platform';
+        return _selectedPlatform != null ? s.t('Continue →', 'Continua →') : s.t('Select platform', 'Seleziona piattaforma');
       case 11:
-        return 'Continue →';
+        return s.t('Continue →', 'Continua →');
       case 12:
-        return 'Start free trial →';
+        return s.t('Start free trial →', 'Inizia prova gratuita →');
       default:
-        return 'Continue';
+        return s.t('Continue', 'Continua');
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(appStringsProvider);
     final size = MediaQuery.of(context).size;
     final accent = _currentAccent;
 
@@ -158,7 +160,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                     duration: AppTheme.dMedium,
                     child: TextButton(
                       onPressed: _current < _totalSlides - 2 ? _finish : null,
-                      child: Text('Skip',
+                      child: Text(s.t('Skip', 'Salta'),
                         style: GoogleFonts.manrope(
                           color: AppColors.textSecondary, fontSize: 14, fontWeight: FontWeight.w500)),
                     ),
@@ -218,7 +220,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                       ),
                       const SizedBox(height: 24),
                       PremiumButton(
-                        label: _ctaLabel(),
+                        label: _ctaLabel(s),
                         onTap: _nextPage,
                         icon: _current == _totalSlides - 1
                             ? Icons.rocket_launch_rounded
@@ -227,7 +229,7 @@ class _OnboardingScreenState extends ConsumerState<OnboardingScreen>
                       if (_current == _totalSlides - 1) ...[
                         const SizedBox(height: 14),
                         Text(
-                          'Not financial advice. Trading involves substantial risk of loss.\nAll trading decisions are solely your responsibility.',
+                          s.t('Not financial advice. Trading involves substantial risk of loss.\nAll trading decisions are solely your responsibility.', 'Non è una consulenza finanziaria. Il trading comporta un rischio sostanziale di perdita.\nTutte le decisioni di trading sono di tua esclusiva responsabilità.'),
                           textAlign: TextAlign.center,
                           style: GoogleFonts.manrope(
                             color: AppColors.textTertiary,
@@ -302,6 +304,7 @@ class _EmotionalHookSlideState extends State<_EmotionalHookSlide>
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(appStringsProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
       child: Column(
@@ -372,17 +375,17 @@ class _EmotionalHookSlideState extends State<_EmotionalHookSlide>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('90% of traders don\'t fail\ndue to strategy.',
+                  Text(s.t('90% of traders don\'t fail\ndue to strategy.', 'Il 90% dei trader non fallisce\nper la strategia.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textPrimary, fontSize: 36,
                       fontWeight: FontWeight.w900, letterSpacing: -1.8, height: 1.05)),
                   const SizedBox(height: 16),
-                  Text('They fail in 1 hour of tilt.',
+                  Text(s.t('They fail in 1 hour of tilt.', 'Falliscono in 1 ora di tilt.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.danger, fontSize: 22,
                       fontWeight: FontWeight.w800, letterSpacing: -0.8)),
                   const SizedBox(height: 20),
-                  Text('Overtrading, revenge trading, and bad position sizing destroy months of gains in minutes.',
+                  Text(s.t('Overtrading, revenge trading, and bad position sizing destroy months of gains in minutes.', 'Overtrading, revenge trading e position sizing sbagliato distruggono mesi di guadagni in minuti.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textSecondary, fontSize: 15, height: 1.55)),
                 ],
@@ -438,6 +441,7 @@ class _CostSlideState extends State<_CostSlide> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(appStringsProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
       child: FadeTransition(
@@ -458,13 +462,13 @@ class _CostSlideState extends State<_CostSlide> with TickerProviderStateMixin {
                 ],
               ),
               const SizedBox(height: 28),
-              Text('One emotional mistake\ncosts an average of \$1,500.',
+              Text(s.t('One emotional mistake\ncosts an average of \$1,500.', 'Un errore emotivo\ncosta in media \$1.500.'),
                 style: GoogleFonts.manrope(
                   color: AppColors.textPrimary, fontSize: 34,
                   fontWeight: FontWeight.w900, letterSpacing: -1.5, height: 1.05)),
               const SizedBox(height: AppTheme.sp16),
               Text(
-                'Most traders buy \$100k prop challenges only to blow them during their first week from a lack of strict risk controls.',
+                s.t('Most traders buy \$100k prop challenges only to blow them during their first week from a lack of strict risk controls.', 'La maggior parte dei trader compra challenge da \$100k solo per bruciarle nella prima settimana per mancanza di controlli di rischio.'),
                 style: GoogleFonts.manrope(
                   color: AppColors.textSecondary, fontSize: 15,
                   fontWeight: FontWeight.w400, height: 1.55)),
@@ -526,8 +530,11 @@ class _CoinStack extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 4),
-            Text('Losses pile up', style: GoogleFonts.manrope(
-              color: AppColors.textTertiary, fontSize: 11)),
+            Builder(builder: (ctx) {
+              final s = ProviderScope.containerOf(ctx).read(appStringsProvider);
+              return Text(s.t('Losses pile up', 'Le perdite si accumulano'), style: GoogleFonts.manrope(
+                color: AppColors.textTertiary, fontSize: 11));
+            }),
           ],
         );
       },
@@ -624,6 +631,7 @@ class _BrandRevealSlideState extends State<_BrandRevealSlide>
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(appStringsProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
       child: Column(
@@ -681,28 +689,28 @@ class _BrandRevealSlideState extends State<_BrandRevealSlide>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Meet PipLock AI.',
+                  Text(s.t('Meet PipLock AI.', 'Ecco PipLock AI.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textPrimary, fontSize: 40,
                       fontWeight: FontWeight.w900, letterSpacing: -2, height: 1.0)),
-                  Text('Forced discipline.\nBetter trading.',
+                  Text(s.t('Forced discipline.\nBetter trading.', 'Disciplina forzata.\nTrading migliore.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.accent, fontSize: 28,
                       fontWeight: FontWeight.w800, letterSpacing: -1.2, height: 1.1)),
                   const SizedBox(height: 16),
                   Text(
-                    'Active risk infrastructure that monitors your accounts in real-time and intervenes before disaster hits.',
+                    s.t('Active risk infrastructure that monitors your accounts in real-time and intervenes before disaster hits.', 'Infrastruttura di rischio attiva che monitora i tuoi conti in tempo reale e interviene prima che accada il peggio.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textSecondary, fontSize: 15, height: 1.55)),
                   const SizedBox(height: 20),
                   _StaggerChip(delay: 0, ctrl: _contentCtrl, icon: Icons.lock_rounded,
-                    label: 'Hard Killswitch', color: AppColors.danger),
+                    label: s.t('Hard Killswitch', 'Hard Killswitch'), color: AppColors.danger),
                   const SizedBox(height: 10),
                   _StaggerChip(delay: 120, ctrl: _contentCtrl, icon: Icons.auto_awesome_rounded,
-                    label: 'AI Challenge Planner', color: AppColors.accent),
+                    label: s.t('AI Challenge Planner', 'AI Challenge Planner'), color: AppColors.accent),
                   const SizedBox(height: 10),
                   _StaggerChip(delay: 240, ctrl: _contentCtrl, icon: Icons.shield_rounded,
-                    label: 'Real-time Monitoring', color: AppColors.silverBright),
+                    label: s.t('Real-time Monitoring', 'Monitoraggio in tempo reale'), color: AppColors.silverBright),
                 ],
               ),
             ),
@@ -828,6 +836,7 @@ class _KillswitchMockupSlideState extends State<_KillswitchMockupSlide>
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(appStringsProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
       child: Column(
@@ -888,22 +897,22 @@ class _KillswitchMockupSlideState extends State<_KillswitchMockupSlide>
                             Row(children: [
                               const Icon(Icons.lock_rounded, color: AppColors.danger, size: 18),
                               const SizedBox(width: 8),
-                              Text('KILLSWITCH ACTIVATED',
+                              Text(s.t('KILLSWITCH ACTIVATED', 'KILLSWITCH ATTIVATO'),
                                 style: GoogleFonts.manrope(
                                   color: AppColors.danger, fontSize: 13,
                                   fontWeight: FontWeight.w900, letterSpacing: 0.5)),
                             ]),
                             const SizedBox(height: 6),
-                            Text('Daily loss threshold reached (\$400 limit).',
+                            Text(s.t('Daily loss threshold reached (\$400 limit).', 'Soglia di perdita giornaliera raggiunta (limite \$400).'),
                               style: GoogleFonts.manrope(
                                 color: AppColors.textSecondary, fontSize: 12, height: 1.4)),
                             const SizedBox(height: 10),
-                            Text('Capital Protected Today: +\$$counterVal',
+                            Text('${s.t('Capital Protected Today', 'Capitale Protetto Oggi')}: +\$$counterVal',
                               style: GoogleFonts.manrope(
                                 color: AppColors.success, fontSize: 14,
                                 fontWeight: FontWeight.w700)),
                             const SizedBox(height: 8),
-                            Text('05:47:22 remaining',
+                            Text(s.t('05:47:22 remaining', '05:47:22 rimanenti'),
                               style: GoogleFonts.robotoMono(
                                 color: AppColors.textTertiary, fontSize: 12,
                                 letterSpacing: 1)),
@@ -925,13 +934,13 @@ class _KillswitchMockupSlideState extends State<_KillswitchMockupSlide>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Hit your loss limit?\nThe KillSwitch locks you out instantly.',
+                  Text(s.t('Hit your loss limit?\nThe KillSwitch locks you out instantly.', 'Raggiunto il limite di perdita?\nIl KillSwitch ti blocca immediatamente.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textPrimary, fontSize: 28,
                       fontWeight: FontWeight.w900, letterSpacing: -1.2, height: 1.1)),
                   const SizedBox(height: AppTheme.sp16),
                   Text(
-                    'PipLock AI restricts trading app access during your cooling-off period.',
+                    s.t('PipLock AI restricts trading app access during your cooling-off period.', 'PipLock AI limita l\'accesso all\'app di trading durante il tuo periodo di raffreddamento.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textSecondary, fontSize: 15,
                       fontWeight: FontWeight.w400, height: 1.55)),
@@ -1069,6 +1078,7 @@ class _AiPlannerSlideState extends State<_AiPlannerSlide>
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(appStringsProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
       child: Column(
@@ -1099,11 +1109,11 @@ class _AiPlannerSlideState extends State<_AiPlannerSlide>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _msg(0, false,
-                  'Lock my MT5 account if I lose more than \$300 today.',
+                  s.t('Lock my MT5 account if I lose more than \$300 today.', 'Blocca il mio conto MT5 se perdo più di \$300 oggi.'),
                   AppColors.accent),
                 const SizedBox(height: 10),
                 _msg(1, true,
-                  'Rule set. If equity drops below \$9,700, the KillSwitch triggers immediately.',
+                  s.t('Rule set. If equity drops below \$9,700, the KillSwitch triggers immediately.', 'Regola impostata. Se l\'equity scende sotto \$9.700, il KillSwitch si attiva immediatamente.'),
                   AppColors.accent),
               ],
             ),
@@ -1117,13 +1127,13 @@ class _AiPlannerSlideState extends State<_AiPlannerSlide>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Set your risk rules\nby simply chatting with AI.',
+                  Text(s.t('Set your risk rules\nby simply chatting with AI.', 'Imposta le tue regole di rischio\nsemplicemente parlando con l\'AI.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textPrimary, fontSize: 30,
                       fontWeight: FontWeight.w900, letterSpacing: -1.5, height: 1.1)),
                   const SizedBox(height: AppTheme.sp16),
                   Text(
-                    'No complex menus. Tell PipLock AI your guidelines and it converts them into hard execution rules.',
+                    s.t('No complex menus. Tell PipLock AI your guidelines and it converts them into hard execution rules.', 'Nessun menu complesso. Di\' a PipLock AI le tue linee guida e le converte in regole di esecuzione rigide.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textSecondary, fontSize: 15,
                       fontWeight: FontWeight.w400, height: 1.55)),
@@ -1188,6 +1198,7 @@ class _SocialProofSlideState extends State<_SocialProofSlide>
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(appStringsProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
       child: Column(
@@ -1211,7 +1222,7 @@ class _SocialProofSlideState extends State<_SocialProofSlide>
           ),
           FadeTransition(
             opacity: _contentAnim,
-            child: Text('in trading capital protected this month.',
+            child: Text(s.t('in trading capital protected this month.', 'di capitale di trading protetto questo mese.'),
               style: GoogleFonts.manrope(
                 color: AppColors.textSecondary, fontSize: 16, height: 1.4)),
           ),
@@ -1228,16 +1239,16 @@ class _SocialProofSlideState extends State<_SocialProofSlide>
                 Row(children: [
                   const Icon(Icons.verified_rounded, color: AppColors.accent, size: 16),
                   const SizedBox(width: 8),
-                  Expanded(child: Text('Join funded traders who stay in the game longer.',
+                  Expanded(child: Text(s.t('Join funded traders who stay in the game longer.', 'Unisciti ai trader finanziati che rimangono nel gioco più a lungo.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textSecondary, fontSize: 13, height: 1.4))),
                 ]),
                 const SizedBox(height: 16),
                 _StatRow(icon: Icons.shield_rounded, color: AppColors.accent,
-                  text: 'Trading accounts protected: 2,847+'),
+                  text: s.t('Trading accounts protected: 2,847+', 'Conti di trading protetti: 2.847+')),
                 const SizedBox(height: 10),
                 _StatRow(icon: Icons.trending_up_rounded, color: AppColors.success,
-                  text: 'Avg challenge pass rate with PipLock: 3.2x higher'),
+                  text: s.t('Avg challenge pass rate with PipLock: 3.2x higher', 'Tasso medio di superamento challenge con PipLock: 3,2x più alto')),
               ],
             ),
           ),
@@ -1375,11 +1386,11 @@ class _WhyTradersFailState extends State<_WhyTradersFail>
   late List<AnimationController> _barCtrls;
   late Animation<double> _headerAnim;
 
-  static const _failures = [
-    (Icons.repeat_rounded, 'Overtrading', '68% of failed challenges', 0.68, Color(0xFFFF3B30)),
-    (Icons.psychology_rounded, 'Revenge Trading', '61% of blown accounts', 0.61, Color(0xFFFF6B35)),
-    (Icons.trending_up_rounded, 'FOMO Entries', '74% of avoidable losses', 0.74, Color(0xFFFFBD2E)),
-    (Icons.schedule_rounded, 'Wrong trading hours', '45% of overtraders', 0.45, Color(0xFF4A90E2)),
+  List<(IconData, String, String, double, Color)> _getFailures(AppStrings s) => [
+    (Icons.repeat_rounded, s.t('Overtrading', 'Overtrade'), s.t('68% of failed challenges', '68% delle sfide fallite'), 0.68, const Color(0xFFFF3B30)),
+    (Icons.psychology_rounded, s.t('Revenge Trading', 'Revenge Trading'), s.t('61% of blown accounts', '61% dei conti bruciati'), 0.61, const Color(0xFFFF6B35)),
+    (Icons.trending_up_rounded, s.t('FOMO Entries', 'Entrate per FOMO'), s.t('74% of avoidable losses', '74% delle perdite evitabili'), 0.74, const Color(0xFFFFBD2E)),
+    (Icons.schedule_rounded, s.t('Wrong trading hours', 'Orari di trading sbagliati'), s.t('45% of overtraders', '45% degli overtrader'), 0.45, const Color(0xFF4A90E2)),
   ];
 
   @override
@@ -1387,14 +1398,14 @@ class _WhyTradersFailState extends State<_WhyTradersFail>
     super.initState();
     _headerCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
     _headerAnim = CurvedAnimation(parent: _headerCtrl, curve: Curves.easeOut);
-    _barCtrls = List.generate(_failures.length, (_) =>
+    _barCtrls = List.generate(4, (_) =>
       AnimationController(vsync: this, duration: const Duration(milliseconds: 900)));
     if (widget.isActive) _start();
   }
 
   void _start() {
     _headerCtrl.forward(from: 0);
-    for (var i = 0; i < _failures.length; i++) {
+    for (var i = 0; i < 4; i++) {
       Future.delayed(Duration(milliseconds: 300 + i * 180), () {
         if (mounted) _barCtrls[i].forward(from: 0);
       });
@@ -1416,6 +1427,8 @@ class _WhyTradersFailState extends State<_WhyTradersFail>
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(appStringsProvider);
+    final failures = _getFailures(s);
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
       child: Column(
@@ -1440,12 +1453,12 @@ class _WhyTradersFailState extends State<_WhyTradersFail>
                     child: const Icon(Icons.bar_chart_rounded, color: Color(0xFFFF6B35), size: 28),
                   ),
                   const SizedBox(height: 20),
-                  Text('Why 90% of traders\nfail their challenge.',
+                  Text(s.t('Why 90% of traders\nfail their challenge.', 'Perché il 90% dei trader\nfallisce la sua challenge.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textPrimary, fontSize: 32,
                       fontWeight: FontWeight.w900, letterSpacing: -1.5, height: 1.1)),
                   const SizedBox(height: 8),
-                  Text('The patterns are always the same. And they\'re all preventable.',
+                  Text(s.t('The patterns are always the same. And they\'re all preventable.', 'Gli schemi sono sempre gli stessi. E sono tutti prevenibili.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textSecondary, fontSize: 14, height: 1.45)),
                   const SizedBox(height: 24),
@@ -1453,8 +1466,8 @@ class _WhyTradersFailState extends State<_WhyTradersFail>
               ),
             ),
           ),
-          ...List.generate(_failures.length, (i) {
-            final f = _failures[i];
+          ...List.generate(failures.length, (i) {
+            final f = failures[i];
             return AnimatedBuilder(
               animation: _barCtrls[i],
               builder: (_, __) {
@@ -1522,7 +1535,7 @@ class _WhyTradersFailState extends State<_WhyTradersFail>
                   child: Row(children: [
                     const Icon(Icons.lock_rounded, color: Color(0xFF00D4AA), size: 18),
                     const SizedBox(width: 10),
-                    Expanded(child: Text('PipLock detects and blocks all four before they cost you.',
+                    Expanded(child: Text(s.t('PipLock detects and blocks all four before they cost you.', 'PipLock rileva e blocca tutti e quattro prima che ti costino qualcosa.'),
                       style: GoogleFonts.manrope(
                         color: AppColors.textPrimary, fontSize: 13, height: 1.4))),
                   ]),
@@ -1652,6 +1665,7 @@ class _DisciplineEdgeState extends State<_DisciplineEdge>
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(appStringsProvider);
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
       child: Column(
@@ -1677,12 +1691,12 @@ class _DisciplineEdgeState extends State<_DisciplineEdge>
                         color: Color(0xFF00D4AA), size: 28),
                   ),
                   const SizedBox(height: 20),
-                  Text('Your edge isn\'t the setup.\nIt\'s the discipline.',
+                  Text(s.t('Your edge isn\'t the setup.\nIt\'s the discipline.', 'Il tuo vantaggio non è il setup.\nÈ la disciplina.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textPrimary, fontSize: 30,
                       fontWeight: FontWeight.w900, letterSpacing: -1.2, height: 1.1)),
                   const SizedBox(height: 8),
-                  Text('See exactly what changes when PipLock is in your corner.',
+                  Text(s.t('See exactly what changes when PipLock is in your corner.', 'Vedi esattamente cosa cambia quando PipLock è dalla tua parte.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textSecondary, fontSize: 14, height: 1.45)),
                   const SizedBox(height: 22),
@@ -1691,14 +1705,14 @@ class _DisciplineEdgeState extends State<_DisciplineEdge>
             ),
           ),
           _scenario(
-            label: 'WITHOUT PIPLOCK',
+            label: s.t('WITHOUT PIPLOCK', 'SENZA PIPLOCK'),
             labelColor: const Color(0xFFFF3B30),
             borderColor: const Color(0xFFFF3B30).withValues(alpha: 0.25),
             bgColor: const Color(0xFFFF3B30).withValues(alpha: 0.05),
             steps: [
-              (Icons.sentiment_dissatisfied_rounded, 'Bad day → impulse revenge trade', const Color(0xFFFF3B30)),
-              (Icons.trending_down_rounded, 'Exceeded daily loss limit', const Color(0xFFFF6B35)),
-              (Icons.cancel_rounded, 'Challenge failed. Start over.', const Color(0xFFFF3B30)),
+              (Icons.sentiment_dissatisfied_rounded, s.t('Bad day → impulse revenge trade', 'Giornata no → revenge trade impulsivo'), const Color(0xFFFF3B30)),
+              (Icons.trending_down_rounded, s.t('Exceeded daily loss limit', 'Superato il limite di perdita giornaliero'), const Color(0xFFFF6B35)),
+              (Icons.cancel_rounded, s.t('Challenge failed. Start over.', 'Challenge fallita. Si ricomincia da capo.'), const Color(0xFFFF3B30)),
             ],
             ctrl: _beforeCtrl,
           ),
@@ -1724,7 +1738,7 @@ class _DisciplineEdgeState extends State<_DisciplineEdge>
                           child: Row(mainAxisSize: MainAxisSize.min, children: [
                             const Icon(Icons.lock_rounded, color: Color(0xFF00D4AA), size: 14),
                             const SizedBox(width: 6),
-                            Text('PipLock activates',
+                            Text(s.t('PipLock activates', 'PipLock si attiva'),
                               style: GoogleFonts.manrope(
                                 color: const Color(0xFF00D4AA), fontSize: 12,
                                 fontWeight: FontWeight.w700)),
@@ -1738,14 +1752,14 @@ class _DisciplineEdgeState extends State<_DisciplineEdge>
             },
           ),
           _scenario(
-            label: 'WITH PIPLOCK',
+            label: s.t('WITH PIPLOCK', 'CON PIPLOCK'),
             labelColor: const Color(0xFF00D4AA),
             borderColor: const Color(0xFF00D4AA).withValues(alpha: 0.3),
             bgColor: const Color(0xFF00D4AA).withValues(alpha: 0.05),
             steps: [
-              (Icons.sentiment_dissatisfied_rounded, 'Bad day → limit reached', const Color(0xFFFFBD2E)),
-              (Icons.lock_rounded, 'Killswitch activates. Breathing exercise.', const Color(0xFF00D4AA)),
-              (Icons.emoji_events_rounded, 'Capital protected. Challenge on track.', const Color(0xFF00D4AA)),
+              (Icons.sentiment_dissatisfied_rounded, s.t('Bad day → limit reached', 'Giornata no → limite raggiunto'), const Color(0xFFFFBD2E)),
+              (Icons.lock_rounded, s.t('Killswitch activates. Breathing exercise.', 'Killswitch attivo. Esercizio di respirazione.'), const Color(0xFF00D4AA)),
+              (Icons.emoji_events_rounded, s.t('Capital protected. Challenge on track.', 'Capitale protetto. Challenge in carreggiata.'), const Color(0xFF00D4AA)),
             ],
             ctrl: _afterCtrl,
           ),
@@ -1831,6 +1845,7 @@ class _PlatformSlideState extends State<_PlatformSlide>
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(appStringsProvider);
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
       child: Column(
@@ -1855,12 +1870,12 @@ class _PlatformSlideState extends State<_PlatformSlide>
                     child: const Icon(Icons.devices_rounded, color: AppColors.accent, size: 28),
                   ),
                   const SizedBox(height: AppTheme.sp20),
-                  Text('Which platforms do\nyou trade on?',
+                  Text(s.t('Which platforms do\nyou trade on?', 'Su quali piattaforme\nfai trading?'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textPrimary, fontSize: 36,
                       fontWeight: FontWeight.w900, letterSpacing: -2, height: 1.05)),
                   const SizedBox(height: 8),
-                  Text('Tailor your active risk shield to your current broker setup.',
+                  Text(s.t('Tailor your active risk shield to your current broker setup.', 'Adatta il tuo scudo di rischio attivo alla tua configurazione broker attuale.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textSecondary, fontSize: 15, height: 1.4)),
                   const SizedBox(height: AppTheme.sp20),
@@ -1868,20 +1883,20 @@ class _PlatformSlideState extends State<_PlatformSlide>
               ),
             ),
           ),
-          _card(0, Icons.computer_rounded, 'MT5 / MT4 — Desktop or VPS',
-            'Best: EA integration reads live account data directly.',
+          _card(0, Icons.computer_rounded, s.t('MT5 / MT4 — Desktop or VPS', 'MT5 / MT4 — Desktop o VPS'),
+            s.t('Best: EA integration reads live account data directly.', 'Ottimo: l\'EA legge i dati del conto in tempo reale direttamente.'),
             'mt5_desktop', AppColors.accent),
           const SizedBox(height: 10),
-          _card(1, Icons.smartphone_rounded, 'MT5 / MT4 — Mobile',
-            'Accessibility Service monitors the broker app on your phone.',
+          _card(1, Icons.smartphone_rounded, s.t('MT5 / MT4 — Mobile', 'MT5 / MT4 — Mobile'),
+            s.t('Accessibility Service monitors the broker app on your phone.', 'Il servizio di accessibilità monitora l\'app broker sul tuo telefono.'),
             'mt5_mobile', AppColors.accent),
           const SizedBox(height: 10),
           _card(2, Icons.military_tech_rounded, 'FTMO / FundedNext',
-            'Prop firm challenge accounts — EA + killswitch integration.',
+            s.t('Prop firm challenge accounts — EA + killswitch integration.', 'Conti challenge prop firm — integrazione EA + killswitch.'),
             'ftmo', AppColors.warning),
           const SizedBox(height: 10),
-          _card(3, Icons.help_outline_rounded, 'Other / Multiple',
-            'Manual tracking — set limits and log trades in the app.',
+          _card(3, Icons.help_outline_rounded, s.t('Other / Multiple', 'Altro / Multiplo'),
+            s.t('Manual tracking — set limits and log trades in the app.', 'Tracciamento manuale — imposta limiti e registra le operazioni nell\'app.'),
             'other', AppColors.textSecondary),
           const SizedBox(height: 16),
         ],
@@ -1905,20 +1920,20 @@ class _BenefitsSlideState extends State<_BenefitsSlide>
   late List<AnimationController> _itemCtrls;
   late Animation<double> _headerAnim;
 
-  static const _items = [
-    (Icons.lock_rounded, 'Hard Killswitch', 'Full-screen lock when you break your rules. No way around it.', Color(0xFFFF3B30)),
-    (Icons.auto_awesome_rounded, 'AI Challenge Planner', 'Personalized day-by-day plan with estimated success %.', Color(0xFF00C896)),
-    (Icons.warning_amber_rounded, 'FOMO Gatekeeper', 'Real-time alert before you chase a move you already missed.', Color(0xFFFFBD2E)),
-    (Icons.notifications_active_rounded, 'News & Session Alerts', 'NFP, CPI, Fed decisions — notified before they hit.', Color(0xFF4A90E2)),
-    (Icons.bar_chart_rounded, 'MT5 Live Integration', 'EA reads your real equity and drawdown — no guessing.', Color(0xFF00D4AA)),
-    (Icons.self_improvement_rounded, '4-7-8 Breathing', 'Built-in cooldown exercise during your locked period.', Color(0xFF8B98AA)),
+  List<(IconData, String, String, Color)> _getItems(AppStrings s) => [
+    (Icons.lock_rounded, s.t('Hard Killswitch', 'Hard Killswitch'), s.t('Full-screen lock when you break your rules. No way around it.', 'Blocco a schermo intero quando violi le tue regole. Non c\'è via d\'uscita.'), const Color(0xFFFF3B30)),
+    (Icons.auto_awesome_rounded, s.t('AI Challenge Planner', 'AI Challenge Planner'), s.t('Personalized day-by-day plan with estimated success %.', 'Piano giorno per giorno personalizzato con % di successo stimata.'), const Color(0xFF00C896)),
+    (Icons.warning_amber_rounded, s.t('FOMO Gatekeeper', 'FOMO Gatekeeper'), s.t('Real-time alert before you chase a move you already missed.', 'Avviso in tempo reale prima che tu insegua un movimento già mancato.'), const Color(0xFFFFBD2E)),
+    (Icons.notifications_active_rounded, s.t('News & Session Alerts', 'Avvisi Notizie e Sessioni'), s.t('NFP, CPI, Fed decisions — notified before they hit.', 'NFP, CPI, decisioni Fed — notificati prima che arrivino.'), const Color(0xFF4A90E2)),
+    (Icons.bar_chart_rounded, s.t('MT5 Live Integration', 'Integrazione Live MT5'), s.t('EA reads your real equity and drawdown — no guessing.', 'L\'EA legge la tua equity e drawdown reali — nessuna supposizione.'), const Color(0xFF00D4AA)),
+    (Icons.self_improvement_rounded, s.t('4-7-8 Breathing', 'Respirazione 4-7-8'), s.t('Built-in cooldown exercise during your locked period.', 'Esercizio di raffreddamento integrato durante il tuo periodo di blocco.'), const Color(0xFF8B98AA)),
   ];
 
   @override
   void initState() {
     super.initState();
     _headerCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
-    _itemCtrls = List.generate(_items.length, (_) => AnimationController(
+    _itemCtrls = List.generate(6, (_) => AnimationController(
       vsync: this, duration: const Duration(milliseconds: 300)));
     _headerAnim = CurvedAnimation(parent: _headerCtrl, curve: Curves.easeOut);
     if (widget.isActive) _start();
@@ -1926,7 +1941,7 @@ class _BenefitsSlideState extends State<_BenefitsSlide>
 
   void _start() {
     _headerCtrl.forward(from: 0);
-    for (var i = 0; i < _items.length; i++) {
+    for (var i = 0; i < 6; i++) {
       Future.delayed(Duration(milliseconds: 250 + i * 90), () {
         if (mounted) _itemCtrls[i].forward(from: 0);
       });
@@ -1948,6 +1963,8 @@ class _BenefitsSlideState extends State<_BenefitsSlide>
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(appStringsProvider);
+    final items = _getItems(s);
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
       child: Column(
@@ -1968,18 +1985,18 @@ class _BenefitsSlideState extends State<_BenefitsSlide>
                       color: const Color(0xFF00D4AA).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(6),
                     ),
-                    child: Text('PRO PLAN',
+                    child: Text(s.t('PRO PLAN', 'PIANO PRO'),
                       style: GoogleFonts.manrope(
                         color: const Color(0xFF00D4AA), fontSize: 11,
                         fontWeight: FontWeight.w800, letterSpacing: 1.5)),
                   ),
                   const SizedBox(height: 12),
-                  Text('Everything you need\nto stay disciplined.',
+                  Text(s.t('Everything you need\nto stay disciplined.', 'Tutto ciò che ti serve\nper restare disciplinato.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textPrimary, fontSize: 30,
                       fontWeight: FontWeight.w900, letterSpacing: -1.2, height: 1.1)),
                   const SizedBox(height: 6),
-                  Text('Six tools, one goal: protect your capital.',
+                  Text(s.t('Six tools, one goal: protect your capital.', 'Sei strumenti, un obiettivo: proteggere il tuo capitale.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textSecondary, fontSize: 14, height: 1.4)),
                 ],
@@ -1987,10 +2004,10 @@ class _BenefitsSlideState extends State<_BenefitsSlide>
             ),
           ),
           const SizedBox(height: 20),
-          ...List.generate(_items.length, (i) {
-            final (icon, title, desc, color) = _items[i];
+          ...List.generate(items.length, (i) {
+            final (icon, title, desc, color) = items[i];
             return Padding(
-              padding: EdgeInsets.only(bottom: i < _items.length - 1 ? 10 : 0),
+              padding: EdgeInsets.only(bottom: i < items.length - 1 ? 10 : 0),
               child: AnimatedBuilder(
                 animation: _itemCtrls[i],
                 builder: (_, child) {
@@ -2099,6 +2116,7 @@ class _SavingsSlideState extends State<_SavingsSlide>
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(appStringsProvider);
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
       child: Column(
@@ -2113,12 +2131,12 @@ class _SavingsSlideState extends State<_SavingsSlide>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('1 emotional mistake\ncosts \$1,500.',
+                  Text(s.t('1 emotional mistake\ncosts \$1,500.', '1 errore emotivo\ncosta \$1.500.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textPrimary, fontSize: 30,
                       fontWeight: FontWeight.w900, letterSpacing: -1.2, height: 1.1)),
                   const SizedBox(height: 8),
-                  Text('PipLock Pro prevents it for less than you think.',
+                  Text(s.t('PipLock Pro prevents it for less than you think.', 'PipLock Pro lo previene per meno di quanto pensi.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textSecondary, fontSize: 14, height: 1.4)),
                 ],
@@ -2149,7 +2167,7 @@ class _SavingsSlideState extends State<_SavingsSlide>
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Average loss prevented per mistake',
+                    Text(s.t('Average loss prevented per mistake', 'Perdita media prevenuta per errore'),
                       style: GoogleFonts.manrope(
                         color: AppColors.textTertiary, fontSize: 11,
                         fontWeight: FontWeight.w600, letterSpacing: 0.5)),
@@ -2159,7 +2177,7 @@ class _SavingsSlideState extends State<_SavingsSlide>
                         color: AppColors.success, fontSize: 40,
                         fontWeight: FontWeight.w900, letterSpacing: -1.5)),
                     const SizedBox(height: 4),
-                    Text('PipLock stops you before it happens.',
+                    Text(s.t('PipLock stops you before it happens.', 'PipLock ti ferma prima che accada.'),
                       style: GoogleFonts.manrope(
                         color: AppColors.textSecondary, fontSize: 12, height: 1.4)),
                   ],
@@ -2178,23 +2196,23 @@ class _SavingsSlideState extends State<_SavingsSlide>
             child: Row(
               children: [
                 Expanded(child: _CostCard(
-                  label: 'Per day',
+                  label: s.t('Per day', 'Al giorno'),
                   value: '€0.66',
-                  sub: 'Less than a coffee',
+                  sub: s.t('Less than a coffee', 'Meno di un caffè'),
                   color: const Color(0xFF4A90E2),
                 )),
                 const SizedBox(width: 10),
                 Expanded(child: _CostCard(
-                  label: 'Per month',
+                  label: s.t('Per month', 'Al mese'),
                   value: '€19.99',
-                  sub: 'Cancel anytime',
+                  sub: s.t('Cancel anytime', 'Cancella quando vuoi'),
                   color: const Color(0xFFFFBD2E),
                 )),
                 const SizedBox(width: 10),
                 Expanded(child: _CostCard(
-                  label: 'Per year',
+                  label: s.t('Per year', 'All\'anno'),
                   value: '€199',
-                  sub: 'Best value',
+                  sub: s.t('Best value', 'Miglior valore'),
                   color: const Color(0xFF00D4AA),
                 )),
               ],
@@ -2215,7 +2233,7 @@ class _SavingsSlideState extends State<_SavingsSlide>
                 const SizedBox(width: 12),
                 Expanded(
                   child: Text(
-                    '7-day free trial · No charge today · Cancel anytime from Google Play',
+                    s.t('7-day free trial · No charge today · Cancel anytime from Google Play', '7 giorni di prova gratuita · Nessun addebito oggi · Cancella quando vuoi da Google Play'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textSecondary, fontSize: 12, height: 1.4)),
                 ),
@@ -2280,12 +2298,12 @@ class _PaywallSlideState extends State<_PaywallSlide>
   late List<AnimationController> _featureCtrls;
   late Animation<double> _headerAnim;
 
-  static const _features = [
-    (Icons.lock_rounded, 'Hard Killswitch + Overlay on broker app', AppColors.danger),
-    (Icons.auto_awesome_rounded, 'AI Challenge Planner — unlimited', AppColors.accent),
-    (Icons.warning_amber_rounded, 'FOMO Gatekeeper real-time alerts', AppColors.warning),
-    (Icons.notifications_active_rounded, 'News & session notifications', AppColors.silverBright),
-    (Icons.bar_chart_rounded, 'MT5 EA Integration', AppColors.success),
+  List<(IconData, String, Color)> _getFeatures(AppStrings s) => [
+    (Icons.lock_rounded, s.t('Hard Killswitch + Overlay on broker app', 'Hard Killswitch + Overlay sull\'app broker'), AppColors.danger),
+    (Icons.auto_awesome_rounded, s.t('AI Challenge Planner — unlimited', 'AI Challenge Planner — illimitato'), AppColors.accent),
+    (Icons.warning_amber_rounded, s.t('FOMO Gatekeeper real-time alerts', 'Avvisi in tempo reale FOMO Gatekeeper'), AppColors.warning),
+    (Icons.notifications_active_rounded, s.t('News & session notifications', 'Notifiche notizie e sessioni'), AppColors.silverBright),
+    (Icons.bar_chart_rounded, s.t('MT5 EA Integration', 'Integrazione EA MT5'), AppColors.success),
   ];
 
   @override
@@ -2323,6 +2341,8 @@ class _PaywallSlideState extends State<_PaywallSlide>
 
   @override
   Widget build(BuildContext context) {
+    final s = ProviderScope.containerOf(context).read(appStringsProvider);
+    final features = _getFeatures(s);
     return SingleChildScrollView(
       padding: const EdgeInsets.symmetric(horizontal: AppTheme.pagePadding),
       child: Column(
@@ -2370,7 +2390,7 @@ class _PaywallSlideState extends State<_PaywallSlide>
                           ),
                         ),
                         const SizedBox(width: 8),
-                        Text('7-Day Free Trial Enabled',
+                        Text(s.t('7-Day Free Trial Enabled', 'Prova gratuita di 7 giorni attivata'),
                           style: GoogleFonts.manrope(
                             color: AppColors.success, fontSize: 13, fontWeight: FontWeight.w700)),
                       ]),
@@ -2381,7 +2401,7 @@ class _PaywallSlideState extends State<_PaywallSlide>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Text('Today', style: GoogleFonts.manrope(
+                                Text(s.t('Today', 'Oggi'), style: GoogleFonts.manrope(
                                   color: AppColors.textTertiary, fontSize: 11)),
                                 Text('\$0.00', style: GoogleFonts.manrope(
                                   color: AppColors.textPrimary, fontSize: 22,
@@ -2395,7 +2415,7 @@ class _PaywallSlideState extends State<_PaywallSlide>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.end,
                               children: [
-                                Text('In 7 Days', style: GoogleFonts.manrope(
+                                Text(s.t('In 7 Days', 'Tra 7 giorni'), style: GoogleFonts.manrope(
                                   color: AppColors.textTertiary, fontSize: 11)),
                                 Text('\$19.99/mo', style: GoogleFonts.manrope(
                                   color: AppColors.silverBright, fontSize: 18,
@@ -2420,16 +2440,16 @@ class _PaywallSlideState extends State<_PaywallSlide>
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Protect your account\nfor less than a single Stop Loss.',
+                  Text(s.t('Protect your account\nfor less than a single Stop Loss.', 'Proteggi il tuo conto\nper meno di un singolo Stop Loss.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textPrimary, fontSize: 30,
                       fontWeight: FontWeight.w900, letterSpacing: -1.5, height: 1.1)),
                   const SizedBox(height: 8),
-                  Text('Start your 7-day free trial. No charge today.',
+                  Text(s.t('Start your 7-day free trial. No charge today.', 'Inizia la tua prova gratuita di 7 giorni. Nessun addebito oggi.'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textSecondary, fontSize: 14, height: 1.4)),
                   const SizedBox(height: 4),
-                  Text('€9.99/month after trial — cancel anytime',
+                  Text(s.t('€9.99/month after trial — cancel anytime', '€9,99/mese dopo la prova — cancella quando vuoi'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textTertiary, fontSize: 12)),
                 ],
@@ -2437,10 +2457,10 @@ class _PaywallSlideState extends State<_PaywallSlide>
             ),
           ),
           const SizedBox(height: AppTheme.sp20),
-          ...List.generate(_features.length, (i) {
-            final (icon, label, color) = _features[i];
+          ...List.generate(features.length, (i) {
+            final (icon, label, color) = features[i];
             return Padding(
-              padding: EdgeInsets.only(bottom: i < _features.length - 1 ? 10 : 0),
+              padding: EdgeInsets.only(bottom: i < features.length - 1 ? 10 : 0),
               child: AnimatedBuilder(
                 animation: _featureCtrls[i],
                 builder: (_, child) {
@@ -2455,7 +2475,7 @@ class _PaywallSlideState extends State<_PaywallSlide>
           const SizedBox(height: AppTheme.sp20),
           GestureDetector(
             onTap: widget.onSkip,
-            child: Center(child: Text('Continue with free plan →',
+            child: Center(child: Text(s.t('Continue with free plan →', 'Continua con il piano gratuito →'),
               style: GoogleFonts.manrope(
                 color: AppColors.textTertiary, fontSize: 13, fontWeight: FontWeight.w500,
                 decoration: TextDecoration.underline,
@@ -2982,11 +3002,12 @@ class _EnergyArcPainter extends CustomPainter {
 // ══════════════════════════════════════════════════════════════════════════════
 // SCREEN 12 — Permissions slide (Accessibility + Overlay)
 // ══════════════════════════════════════════════════════════════════════════════
-class _PermissionsSlide extends StatelessWidget {
+class _PermissionsSlide extends ConsumerWidget {
   const _PermissionsSlide();
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(appStringsProvider);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 32),
       child: Column(
@@ -3003,7 +3024,7 @@ class _PermissionsSlide extends StatelessWidget {
           ),
           const SizedBox(height: 28),
           Text(
-            'One permission to activate the Killswitch',
+            s.t('One permission to activate the Killswitch', 'Un permesso per attivare il Killswitch'),
             textAlign: TextAlign.center,
             style: GoogleFonts.manrope(
               color: AppColors.textPrimary,
@@ -3015,8 +3036,8 @@ class _PermissionsSlide extends StatelessWidget {
           const SizedBox(height: 16),
           _permRow(
             icon: Icons.picture_in_picture_alt,
-            title: 'Display over apps',
-            desc: 'Shows the Killswitch block screen on top of your broker app. Without this, PipLock cannot enforce the lock.',
+            title: s.t('Display over apps', 'Visualizza sopra le app'),
+            desc: s.t('Shows the Killswitch block screen on top of your broker app. Without this, PipLock cannot enforce the lock.', 'Mostra la schermata di blocco Killswitch sopra la tua app broker. Senza questo, PipLock non può applicare il blocco.'),
           ),
           const SizedBox(height: 28),
           SizedBox(
@@ -3032,14 +3053,14 @@ class _PermissionsSlide extends StatelessWidget {
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
               child: Text(
-                'Enable Overlay — required',
+                s.t('Enable Overlay — required', 'Abilita Overlay — obbligatorio'),
                 style: GoogleFonts.manrope(fontWeight: FontWeight.w700, fontSize: 15),
               ),
             ),
           ),
           const SizedBox(height: 12),
           Text(
-            'Accessibility (for FOMO detection on mobile) can be enabled later in Settings → Permissions when needed.',
+            s.t('Accessibility (for FOMO detection on mobile) can be enabled later in Settings → Permissions when needed.', 'L\'accessibilità (per il rilevamento FOMO su mobile) può essere abilitata in seguito in Impostazioni → Permessi quando necessario.'),
             textAlign: TextAlign.center,
             style: GoogleFonts.manrope(
               color: AppColors.textTertiary,

@@ -1228,7 +1228,7 @@ class _AccessibilityFormState extends ConsumerState<_AccessibilityForm> {
                   ),
                   const SizedBox(height: 12),
                   PremiumButton(
-                    label: 'Grant overlay permission',
+                    label: s.t('Grant overlay permission', 'Concedi permesso overlay'),
                     icon: Icons.open_in_new,
                     variant: PremiumButtonVariant.ghost,
                     onTap: () async {
@@ -1345,20 +1345,20 @@ class _ManualFormState extends ConsumerState<_ManualForm> {
 
         _NumField(
             ctrl: _equityCtrl,
-            label: 'Equity',
-            hint: 'e.g. 10500.00',
+            label: s.t('Equity', 'Equity'),
+            hint: s.t('e.g. 10500.00', 'es. 10500.00'),
             icon: Icons.account_balance_wallet_outlined),
         const SizedBox(height: 10),
         _NumField(
             ctrl: _balanceCtrl,
-            label: 'Balance',
-            hint: 'e.g. 10000.00',
+            label: s.t('Balance', 'Balance'),
+            hint: s.t('e.g. 10000.00', 'es. 10000.00'),
             icon: Icons.savings_outlined),
         const SizedBox(height: 10),
         _NumField(
             ctrl: _pnlCtrl,
-            label: "Today's P&L",
-            hint: 'e.g. +150.00 or -80.00',
+            label: s.t("Today's P&L", 'P&L Oggi'),
+            hint: s.t('e.g. +150.00 or -80.00', 'es. +150.00 o -80.00'),
             icon: Icons.trending_up,
             signed: true),
         const SizedBox(height: 10),
@@ -1378,8 +1378,8 @@ class _ManualFormState extends ConsumerState<_ManualForm> {
         const SizedBox(height: 10),
         _TextField(
             ctrl: _currencyCtrl,
-            label: 'Currency',
-            hint: 'e.g. USD, EUR',
+            label: s.t('Currency', 'Valuta'),
+            hint: s.t('e.g. USD, EUR', 'es. USD, EUR'),
             icon: Icons.currency_exchange),
 
         const SizedBox(height: 24),
@@ -1656,7 +1656,7 @@ class _MetricsGrid extends ConsumerWidget {
           children: [
             Expanded(
               child: _MetricCard(
-                label: 'Equity',
+                label: s.t('Equity', 'Equity'),
                 value:
                     '${state.currency ?? ''} ${state.equity?.toStringAsFixed(2) ?? '—'}',
                 icon: Icons.account_balance_wallet_outlined,
@@ -1666,7 +1666,7 @@ class _MetricsGrid extends ConsumerWidget {
             const SizedBox(width: 12),
             Expanded(
               child: _MetricCard(
-                label: 'Balance',
+                label: s.t('Balance', 'Balance'),
                 value:
                     '${state.currency ?? ''} ${state.balance?.toStringAsFixed(2) ?? '—'}',
                 icon: Icons.savings_outlined,

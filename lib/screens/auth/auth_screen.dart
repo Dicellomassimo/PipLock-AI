@@ -254,7 +254,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
                         ),
                   const OrDivider(),
                   GoogleSignInButton(
-                    label: 'Continue with Google',
+                    label: s.t('Continue with Google', 'Continua con Google'),
                     loading: _googleLoading,
                     onTap: _loginWithGoogle,
                   ),

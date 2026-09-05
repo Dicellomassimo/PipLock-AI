@@ -224,7 +224,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       }
     }
     if (active.isEmpty) return s.dashSessionClosedSub;
-    if (active.length > 1) return 'Overlap · ${_utcToLocal(active.first.open)} – ${_utcToLocal(active.last.close)}';
+    if (active.length > 1) return '${s.t('Overlap', 'Sovrapposizione')} · ${_utcToLocal(active.first.open)} – ${_utcToLocal(active.last.close)}';
     final first = active.first;
     return '${_utcToLocal(first.open)} – ${_utcToLocal(first.close)}';
   }
@@ -377,7 +377,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
-                                    'Today\'s trade limit reduced to $maxTrades (low readiness score)',
+                                    s.t('Today\'s trade limit reduced to $maxTrades (low readiness score)', 'Limite di operazioni odierno ridotto a $maxTrades (punteggio di prontezza basso)'),
                                     style: GoogleFonts.manrope(
                                       color: const Color(0xFFFF6B35),
                                       fontSize: 12,
@@ -1304,7 +1304,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                                         borderRadius: BorderRadius.circular(4),
                                       ),
                                       child: Text(
-                                        'unplanned',
+                                        s.t('unplanned', 'non pianificato'),
                                         style: GoogleFonts.manrope(
                                           color: AppColors.warning,
                                           fontSize: 9,
@@ -1573,14 +1573,14 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               _planChip(s.dashLotSize(lotSize.toString())),
               _planChip(s.dashRiskPerTrade(risk.toString())),
               // Drawdown type badge
-              _planChip(drawdownType == 'trailing_eod' ? '📈 Trailing EOD' : '🔒 Static'),
+              _planChip(drawdownType == 'trailing_eod' ? s.t('📈 Trailing EOD', '📈 Trailing EOD') : s.t('🔒 Static', '🔒 Statico')),
             ],
           ),
           // Monte Carlo probability
           if (mcRange != null && mcPassPct != null) ...[
             const SizedBox(height: 10),
             Text(
-              'Simulated pass probability: $mcRange%',
+              s.t('Simulated pass probability: $mcRange%', 'Probabilità di superamento simulata: $mcRange%'),
               style: GoogleFonts.manrope(
                 color: AppColors.textSecondary,
                 fontSize: 12,
@@ -1639,9 +1639,9 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               children: [
                 if (hasConsistency)
                   _planChip(consistencyPct != null
-                      ? '⚠️ Consistency ≤${consistencyPct.toStringAsFixed(0)}%'
-                      : '⚠️ Consistency rule'),
-                if (hasNews) _planChip('⚠️ News restriction'),
+                      ? '⚠️ ${s.t('Consistency', 'Consistenza')} ≤${consistencyPct.toStringAsFixed(0)}%'
+                      : '⚠️ ${s.t('Consistency rule', 'Regola consistenza')}'),
+                if (hasNews) _planChip('⚠️ ${s.t('News restriction', 'Restrizione notizie')}'),
               ],
             ),
           ],
@@ -1783,7 +1783,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildLimitRow(
-                    label: 'Max loss / day (${_activeChallenge!.propFirmName ?? 'Challenge'})',
+                    label: '${s.t('Max loss / day', 'Perdita max / giorno')} (${_activeChallenge!.propFirmName ?? 'Challenge'})',
                     value: '\$${hardUsd.toStringAsFixed(0)} (${hardPct.toStringAsFixed(1)}%)',
                     progress: hardUsd > 0 ? (lossNow / hardUsd).clamp(0.0, 1.0) : 0.0,
                   ),
@@ -1798,7 +1798,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                   if (softUsd > 0) ...[
                     const SizedBox(height: 12),
                     _buildLimitRowIcon(
-                      label: 'Soft killswitch',
+                      label: s.t('Soft killswitch', 'Killswitch morbido'),
                       value: '\$${softUsd.toStringAsFixed(0)} (${softPct.toStringAsFixed(1)}%)',
                       icon: Icons.warning_amber_rounded,
                     ),
@@ -2501,6 +2501,7 @@ class _QuickLogSheetState extends ConsumerState<QuickLogSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(appStringsProvider);
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;
     return Container(
       decoration: const BoxDecoration(
@@ -2541,7 +2542,7 @@ class _QuickLogSheetState extends ConsumerState<QuickLogSheet> {
                 flex: 2,
                 child: _field(
                   controller: _symbolCtrl,
-                  label: 'Symbol',
+                  label: s.t('Symbol', 'Simbolo'),
                   hint: 'XAUUSD',
                   capitalization: TextCapitalization.characters,
                   onChanged: (_) => setState(() {}),
@@ -2552,7 +2553,7 @@ class _QuickLogSheetState extends ConsumerState<QuickLogSheet> {
                 flex: 2,
                 child: _field(
                   controller: _pnlCtrl,
-                  label: 'P&L (optional)',
+                  label: s.t('P&L (optional)', 'P&L (opzionale)'),
                   hint: '+142.50',
                   keyboardType: const TextInputType.numberWithOptions(
                       decimal: true, signed: true),
@@ -2564,15 +2565,15 @@ class _QuickLogSheetState extends ConsumerState<QuickLogSheet> {
           // Direction
           Row(
             children: [
-              _dirBtn('long', '▲ Long', AppColors.success),
+              _dirBtn('long', '▲ ${s.t('Long', 'Long')}', AppColors.success),
               const SizedBox(width: 8),
-              _dirBtn('short', '▼ Short', AppColors.danger),
+              _dirBtn('short', '▼ ${s.t('Short', 'Short')}', AppColors.danger),
             ],
           ),
           const SizedBox(height: 14),
           // Emotion
           Text(
-            'EMOTION',
+            s.t('EMOTION', 'EMOZIONE'),
             style: GoogleFonts.manrope(
               color: AppColors.textTertiary,
               fontSize: 10,
@@ -2638,7 +2639,7 @@ class _QuickLogSheetState extends ConsumerState<QuickLogSheet> {
                 ),
                 const SizedBox(width: 9),
                 Text(
-                  'Planned trade (had a setup)',
+                  s.t('Planned trade (had a setup)', 'Trade pianificato (aveva un setup)'),
                   style: GoogleFonts.manrope(
                     color: AppColors.textSecondary,
                     fontSize: 13,
@@ -2671,7 +2672,7 @@ class _QuickLogSheetState extends ConsumerState<QuickLogSheet> {
                           color: Colors.black, strokeWidth: 2),
                     )
                   : Text(
-                      'Log Trade',
+                      s.t('Log Trade', 'Registra Trade'),
                       style: GoogleFonts.manrope(
                         fontWeight: FontWeight.w700,
                         fontSize: 15,
@@ -2822,16 +2823,22 @@ class _MonitoringPausedBanner extends ConsumerWidget {
 
 // ── Setup Wizard Banner ────────────────────────────────────────────────────────
 
-class _SetupWizardBanner extends StatelessWidget {
+class _SetupWizardBanner extends ConsumerWidget {
   final int          wizardStep;
   final VoidCallback onTap;
   const _SetupWizardBanner({required this.wizardStep, required this.onTap});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final s = ref.watch(appStringsProvider);
     final isResume = wizardStep > 0;
-    final stepLabels = ['Permissions', 'Account type', 'Connect broker',
-                        'Set rules', 'Notifications'];
+    final stepLabels = [
+      s.t('Permissions', 'Permessi'),
+      s.t('Account type', 'Tipo di conto'),
+      s.t('Connect broker', 'Connetti broker'),
+      s.t('Set rules', 'Imposta regole'),
+      s.t('Notifications', 'Notifiche'),
+    ];
     final currentLabel = wizardStep < stepLabels.length
         ? stepLabels[wizardStep] : '';
 
@@ -2871,8 +2878,8 @@ class _SetupWizardBanner extends StatelessWidget {
                 children: [
                   Text(
                     isResume
-                        ? 'Continue setup'
-                        : 'Set up your first account',
+                        ? s.t('Continue setup', 'Continua configurazione')
+                        : s.t('Set up your first account', 'Configura il tuo primo conto'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textPrimary, fontSize: 13.5,
                       fontWeight: FontWeight.w800),
@@ -2880,7 +2887,7 @@ class _SetupWizardBanner extends StatelessWidget {
                   if (isResume && currentLabel.isNotEmpty) ...[
                     const SizedBox(height: 2),
                     Text(
-                      'Next: $currentLabel',
+                      '${s.t('Next', 'Prossimo')}: $currentLabel',
                       style: GoogleFonts.manrope(
                         color: AppColors.accent, fontSize: 11.5,
                         fontWeight: FontWeight.w600),
@@ -2888,7 +2895,7 @@ class _SetupWizardBanner extends StatelessWidget {
                   ] else ...[
                     const SizedBox(height: 2),
                     Text(
-                      'Takes about 2 minutes',
+                      s.t('Takes about 2 minutes', 'Richiede circa 2 minuti'),
                       style: GoogleFonts.manrope(
                         color: AppColors.textSecondary, fontSize: 11.5),
                     ),

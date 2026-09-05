@@ -201,7 +201,7 @@ class _JournalEntryFormScreenState
               children: [
                 Expanded(
                   child: _DirectionButton(
-                    label: '📈 Long',
+                    label: s.t('📈 Long', '📈 Long'),
                     selected: _direction == 'long',
                     color: AppColors.success,
                     onTap: () => setState(() => _direction = 'long'),
@@ -210,7 +210,7 @@ class _JournalEntryFormScreenState
                 const SizedBox(width: 12),
                 Expanded(
                   child: _DirectionButton(
-                    label: '📉 Short',
+                    label: s.t('📉 Short', '📉 Short'),
                     selected: _direction == 'short',
                     color: AppColors.danger,
                     onTap: () => setState(() => _direction = 'short'),

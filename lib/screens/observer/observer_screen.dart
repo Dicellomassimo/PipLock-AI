@@ -235,7 +235,7 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
                     Expanded(
                       child: _ObserverMetricCard(
                         icon: Icons.timer_outlined,
-                        label: 'Elapsed',
+                        label: s.t('Elapsed', 'Trascorso'),
                         value: _formatElapsed(_elapsed),
                         color: blueColor,
                       ),
@@ -244,7 +244,7 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
                     Expanded(
                       child: _ObserverMetricCard(
                         icon: Icons.local_fire_department_rounded,
-                        label: 'Clean days',
+                        label: s.t('Clean days', 'Giorni puliti'),
                         value: '${observer.consecutiveDays}',
                         color: AppColors.warning,
                       ),
@@ -257,7 +257,7 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
                     Expanded(
                       child: _ObserverMetricCard(
                         icon: Icons.repeat_rounded,
-                        label: 'Sessions today',
+                        label: s.t('Sessions today', 'Sessioni oggi'),
                         value: '${observer.sessionsToday}',
                         color: blueColor,
                       ),
@@ -266,7 +266,7 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
                     Expanded(
                       child: _ObserverMetricCard(
                         icon: Icons.emoji_events_outlined,
-                        label: 'Best streak',
+                        label: s.t('Best streak', 'Migliore serie'),
                         value: '${observer.bestStreak}d',
                         color: AppColors.warning,
                       ),

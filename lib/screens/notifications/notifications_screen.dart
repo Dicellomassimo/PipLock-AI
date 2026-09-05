@@ -449,14 +449,14 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
               ),
               const SizedBox(width: 8),
               _ImpactToggle(
-                label: 'Med+',
+                label: s.t('Med+', 'Med+'),
                 selected: _selectedImpact == 'medium',
                 color: AppColors.warning,
                 onTap: () => _setImpact('medium'),
               ),
               const SizedBox(width: 8),
               _ImpactToggle(
-                label: 'High',
+                label: s.t('High', 'Alto'),
                 selected: _selectedImpact == 'high',
                 color: AppColors.danger,
                 onTap: () => _setImpact('high'),

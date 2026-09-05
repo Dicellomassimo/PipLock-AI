@@ -346,10 +346,10 @@ class _SummaryRow extends ConsumerWidget {
 
     return Row(
       children: [
-        _StatChip(label: 'Trade', value: total.toString()),
+        _StatChip(label: s.t('Trade', 'Trade'), value: total.toString()),
         const SizedBox(width: 8),
         _StatChip(
-          label: 'Win rate',
+          label: s.t('Win rate', 'Win rate'),
           value: '${winRate.toStringAsFixed(0)}%',
           color: winRate >= 50 ? AppColors.success : AppColors.danger,
         ),

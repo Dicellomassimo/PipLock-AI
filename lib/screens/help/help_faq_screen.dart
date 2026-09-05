@@ -52,7 +52,7 @@ List<_FaqSection> _buildSections(AppStrings s) => [
     ],
   ),
   _FaqSection(
-    title: 'KILLSWITCH',
+    title: s.t('KILLSWITCH', 'KILLSWITCH'),
     items: [
       _FaqItem(
         question: s.t('How does the Killswitch work?', 'Come funziona il Killswitch?'),
@@ -85,7 +85,7 @@ List<_FaqSection> _buildSections(AppStrings s) => [
     ],
   ),
   _FaqSection(
-    title: 'AI PLANNER',
+    title: s.t('AI PLANNER', 'AI PLANNER'),
     items: [
       _FaqItem(
         question: s.t('How does the AI generate the plan?', "Come genera il piano l'AI?"),
