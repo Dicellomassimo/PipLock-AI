@@ -136,7 +136,7 @@ Suggested screens to capture:
 ---
 
 ## Contact Details for Play Store
-- **Email:** support@piplock.app
+- **Email:** support.piplock@gmail.com
 - **Privacy Policy URL:** https://dicellomassimo.github.io/PipLock-AI/privacy
 - **Terms of Service URL:** https://dicellomassimo.github.io/PipLock-AI/terms
 

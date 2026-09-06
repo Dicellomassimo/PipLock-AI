@@ -3,7 +3,7 @@
 **Effective date:** September 6, 2026  
 **App:** PipLock AI (com.piplock.piplock_ai)  
 **Developer:** PipLock  
-**Contact:** support@piplock.app
+**Contact:** support.piplock@gmail.com
 
 ---
 
@@ -109,4 +109,4 @@ We may update these Terms. Continued use of the app after changes constitutes ac
 
 ## 14. Contact
 
-For questions about these Terms: **support@piplock.app**
+For questions about these Terms: **support.piplock@gmail.com**

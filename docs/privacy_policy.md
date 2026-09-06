@@ -3,7 +3,7 @@
 **Effective date:** September 6, 2026  
 **App:** PipLock AI (com.piplock.piplock_ai)  
 **Developer:** PipLock  
-**Contact:** privacy@piplock.app
+**Contact:** support.piplock@gmail.com
 
 ---
 
@@ -94,7 +94,7 @@ If you are in the European Economic Area, you have the right to:
 - **Object** to processing based on legitimate interest
 - **Data portability** — request an export of your data
 
-To exercise these rights, contact: privacy@piplock.app
+To exercise these rights, contact: support.piplock@gmail.com
 
 ---
 
@@ -112,4 +112,4 @@ We may update this policy. If changes are significant, we will notify you via th
 
 ## 10. Contact
 
-For privacy questions or data requests: **privacy@piplock.app**
+For privacy questions or data requests: **support.piplock@gmail.com**
