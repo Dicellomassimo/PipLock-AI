@@ -2,6 +2,11 @@
 .env
 secrets.json
 
+# Android signing — never commit
+android/key.properties
+android/*.jks
+android/*.keystore
+
 # Miscellaneous
 *.class
 *.log

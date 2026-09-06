@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — PipLock AI</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; max-width: 800px; margin: 0 auto; padding: 40px 20px; background: #0a0a0f; color: #e0e0e0; line-height: 1.7; }
+    h1 { color: #fff; } h2 { color: #c0a060; border-bottom: 1px solid #333; padding-bottom: 6px; } h3 { color: #aaa; }
+    a { color: #c0a060; } table { width: 100%; border-collapse: collapse; margin: 16px 0; } td, th { border: 1px solid #333; padding: 8px 12px; text-align: left; } th { background: #1a1a2e; }
+    hr { border-color: #333; } strong { color: #fff; }
+    .back { margin-bottom: 32px; display: block; }
+  </style>
+</head>
+<body>
+  <a href="index.html" class="back">← Back</a>
+
+  <h1>Privacy Policy</h1>
+  <p><strong>Effective date:</strong> September 6, 2026<br>
+  <strong>App:</strong> PipLock AI (com.piplock.piplock_ai)<br>
+  <strong>Contact:</strong> privacy@piplock.app</p>
+
+  <hr>
+
+  <h2>1. Data We Collect</h2>
+
+  <h3>1.1 Account Data</h3>
+  <ul>
+    <li><strong>Email address</strong> — used for authentication (Supabase Auth)</li>
+    <li><strong>User ID</strong> — anonymous identifier linked to your account</li>
+  </ul>
+
+  <h3>1.2 App Usage Data</h3>
+  <ul>
+    <li><strong>Trading rules and challenge settings</strong> — profit targets, daily loss limits, drawdown limits you configure</li>
+    <li><strong>AI usage counters</strong> — number of AI plan generations and chat messages used per day (for rate limiting only)</li>
+    <li><strong>Subscription tier</strong> — whether you are on Trial or Pro plan (managed via RevenueCat)</li>
+  </ul>
+
+  <h3>1.3 Device Data</h3>
+  <ul>
+    <li><strong>Push notification token (FCM)</strong> — used to send market alerts and challenge reminders</li>
+    <li><strong>Broker app detection</strong> — the Accessibility Service detects when you open a broker app to show protection overlays. We do not read, record, or transmit any trading data, account balances, open positions, or personal trading activity.</li>
+  </ul>
+
+  <h3>1.4 Data We Do NOT Collect</h3>
+  <ul>
+    <li>Payment card numbers (handled by Google Play / RevenueCat)</li>
+    <li>Broker account credentials</li>
+    <li>Trading history or account statements</li>
+    <li>We do not sell your data to third parties</li>
+  </ul>
+
+  <hr>
+
+  <h2>2. How We Use Your Data</h2>
+  <table>
+    <tr><th>Purpose</th><th>Legal Basis</th></tr>
+    <tr><td>Account authentication and session management</td><td>Contract</td></tr>
+    <tr><td>Syncing your trading rules across sessions</td><td>Contract</td></tr>
+    <tr><td>Sending push notifications</td><td>Consent</td></tr>
+    <tr><td>AI plan generation and chat (via our secure server-side proxy)</td><td>Contract</td></tr>
+    <tr><td>Rate limiting AI features</td><td>Legitimate interest</td></tr>
+    <tr><td>Subscription management and billing</td><td>Contract</td></tr>
+  </table>
+
+  <hr>
+
+  <h2>3. Third-Party Services</h2>
+  <table>
+    <tr><th>Service</th><th>Purpose</th><th>Privacy Policy</th></tr>
+    <tr><td><strong>Supabase</strong></td><td>Database, authentication, Edge Functions</td><td><a href="https://supabase.com/privacy">supabase.com/privacy</a></td></tr>
+    <tr><td><strong>Firebase (Google)</strong></td><td>Push notifications (FCM)</td><td><a href="https://firebase.google.com/support/privacy">firebase.google.com/support/privacy</a></td></tr>
+    <tr><td><strong>RevenueCat</strong></td><td>Subscription and in-app purchase management</td><td><a href="https://www.revenuecat.com/privacy">revenuecat.com/privacy</a></td></tr>
+    <tr><td><strong>Groq</strong></td><td>AI language model (accessed only via our server-side proxy)</td><td><a href="https://groq.com/privacy-policy">groq.com/privacy-policy</a></td></tr>
+    <tr><td><strong>MetaAPI</strong></td><td>Optional: MT5 account session detection</td><td><a href="https://metaapi.cloud/privacy-policy">metaapi.cloud/privacy-policy</a></td></tr>
+  </table>
+
+  <hr>
+
+  <h2>4. Accessibility Service</h2>
+  <p>PipLock AI uses Android's Accessibility Service to detect when you open a broker trading app and display a protection overlay.</p>
+  <p><strong>This service does NOT:</strong></p>
+  <ul>
+    <li>Read the content of any app on your screen</li>
+    <li>Record keystrokes or passwords</li>
+    <li>Capture screenshots</li>
+    <li>Transmit any data from your broker app</li>
+  </ul>
+  <p>It only reads the package name of the foreground application to determine whether to show a PipLock overlay.</p>
+
+  <hr>
+
+  <h2>5. System Alert Window (Overlay Permission)</h2>
+  <p>PipLock AI requires the "Display over other apps" permission to show the Killswitch overlay on top of your broker app. This overlay is displayed locally on your device and does not transmit any data.</p>
+
+  <hr>
+
+  <h2>6. Data Retention</h2>
+  <ul>
+    <li>Account data is retained as long as your account is active</li>
+    <li>If you delete your account, all personal data is deleted within 30 days</li>
+    <li>AI usage counters are reset daily and permanently deleted after 90 days</li>
+  </ul>
+
+  <hr>
+
+  <h2>7. Your Rights (GDPR)</h2>
+  <p>If you are in the European Economic Area, you have the right to access, correct, delete, and port your personal data. To exercise these rights, contact: <a href="mailto:privacy@piplock.app">privacy@piplock.app</a></p>
+
+  <hr>
+
+  <h2>8. Children</h2>
+  <p>PipLock AI is not directed at children under 18. We do not knowingly collect data from minors.</p>
+
+  <hr>
+
+  <h2>9. Contact</h2>
+  <p>For privacy questions or data requests: <a href="mailto:privacy@piplock.app">privacy@piplock.app</a></p>
+</body>
+</html>
