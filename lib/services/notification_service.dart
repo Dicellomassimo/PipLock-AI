@@ -251,7 +251,10 @@ class NotificationService {
     try {
       final messaging = FirebaseMessaging.instance;
       await messaging.requestPermission(alert: true, badge: true, sound: true);
-      _fcmToken = await messaging.getToken();
+      _fcmToken = await messaging.getToken().timeout(
+        const Duration(seconds: 4),
+        onTimeout: () => null,
+      );
       debugPrint('[NotificationService] FCM token: $_fcmToken');
 
       final userId = Supabase.instance.client.auth.currentUser?.id;

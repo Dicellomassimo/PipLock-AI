@@ -30,6 +30,7 @@ import '../../widgets/stat_ring_chart.dart';
 import '../../widgets/staggered_list.dart';
 import '../../models/journal_entry.dart';
 import '../../providers/journal_provider.dart';
+import '../../widgets/skeleton_loader.dart';
 
 class DashboardScreen extends ConsumerStatefulWidget {
   const DashboardScreen({super.key});
@@ -41,6 +42,7 @@ class DashboardScreen extends ConsumerStatefulWidget {
 class _DashboardScreenState extends ConsumerState<DashboardScreen>
     with WidgetsBindingObserver {
   bool _checkinDone = false;
+  bool _isDashboardLoading = true;
   int _checkinScore = 0;
   bool _showGatekeeper = false;
   bool _showDevTools = false;
@@ -146,7 +148,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         (c) => c.status == 'active',
         orElse: () => memoryChallenges.first,
       );
-      if (mounted) setState(() => _activeChallenge = active);
+      if (mounted) setState(() { _activeChallenge = active; _isDashboardLoading = false; });
       return;
     }
     final userId = ref.read(currentUserIdProvider);
@@ -155,6 +157,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
       final c = await SupabaseService.getActiveChallenge(userId);
       if (mounted && c != null) setState(() => _activeChallenge = c);
     } catch (_) {}
+    if (mounted) setState(() => _isDashboardLoading = false);
   }
 
   String _todayLabel(AppStrings s) {
@@ -417,7 +420,10 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
                           _buildBrokerLiveCard(metaState),
                         ],
                         const SizedBox(height: 16),
-                        _buildAiPlanCard(personalPlan, _activeChallenge),
+                        if (_isDashboardLoading)
+                          const SkeletonDashCard()
+                        else
+                          _buildAiPlanCard(personalPlan, _activeChallenge),
                         const SizedBox(height: 16),
                         _buildLimitsCard(rulesState, metaState),
                         if (kDevMode) ...[

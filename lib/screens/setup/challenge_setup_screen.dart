@@ -180,8 +180,24 @@ class _ChallengeSetupScreenState extends ConsumerState<ChallengeSetupScreen> {
       _showError('Enter your firm name / Inserisci il nome della firm');
       return false;
     }
-    if (_profitTarget <= 0) {
-      _showError('Profit target must be > 0');
+    if (_accountSize <= 0) {
+      _showError('Account size must be greater than 0 / Il capitale deve essere > 0');
+      return false;
+    }
+    if (_profitTarget <= 0 || _profitTarget > 100) {
+      _showError('Profit target must be between 1% and 100% / Profit target tra 1% e 100%');
+      return false;
+    }
+    if (_maxDailyLoss <= 0 || _maxDailyLoss > 100) {
+      _showError('Max daily loss must be between 0.1% and 100% / Max daily loss tra 0.1% e 100%');
+      return false;
+    }
+    if (_maxDailyLoss >= _profitTarget) {
+      _showError('Max daily loss must be less than profit target / Max daily loss deve essere < profit target');
+      return false;
+    }
+    if (_maxDrawdown < _maxDailyLoss) {
+      _showError('Max drawdown must be ≥ max daily loss / Max drawdown deve essere ≥ max daily loss');
       return false;
     }
     return true;

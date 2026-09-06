@@ -18,9 +18,6 @@ class EnvConfig {
   static const supabaseAnonKey =
       String.fromEnvironment('SUPABASE_ANON_KEY');
 
-  static const groqApiKey =
-      String.fromEnvironment('GROQ_API_KEY');
-
   static const finnhubApiKey =
       String.fromEnvironment('FINNHUB_API_KEY');
 

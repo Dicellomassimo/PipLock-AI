@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/constants.dart';
 import '../models/challenge.dart';
@@ -27,7 +28,9 @@ class ChallengeNotifier extends StateNotifier<List<Challenge>> {
     try {
       final all = await SupabaseService.getAllChallenges(userId);
       if (mounted) state = all;
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[ChallengeProvider] load error: $e');
+    }
   }
 
   void addChallenge(Challenge c) {

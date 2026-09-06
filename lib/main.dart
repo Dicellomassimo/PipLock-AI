@@ -6,7 +6,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:app_links/app_links.dart';
 import 'config/constants.dart';
 import 'config/env_config.dart';
-import 'services/ai_service.dart';
 import 'services/metaapi_service.dart';
 import 'services/notification_service.dart';
 import 'app.dart';
@@ -49,17 +48,16 @@ Future<void> main() async {
     }
   });
 
-  if (EnvConfig.groqApiKey.isNotEmpty) {
-    AiService.setApiKey(EnvConfig.groqApiKey);
-  }
-
   MetaApiService.setToken(EnvConfig.metaApiToken);
 
   if (EnvConfig.finnhubApiKey.isNotEmpty) {
     NotificationService.setFinnhubKey(EnvConfig.finnhubApiKey);
   }
 
-  await NotificationService.initialize();
+  await NotificationService.initialize().timeout(
+    const Duration(seconds: 6),
+    onTimeout: () {},
+  );
   NotificationService.startFinnhubMonitoring();
   // NOTE: scheduleUpcomingNotifications() is called in MainNavScreen.initState()
   // (after the user is on the main screen and the network is ready).

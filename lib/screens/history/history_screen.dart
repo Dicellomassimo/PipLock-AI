@@ -19,6 +19,7 @@ import '../../services/supabase_service.dart';
 import '../../services/share_service.dart';
 import '../../widgets/ambient_blobs.dart';
 import '../../widgets/candle_background.dart';
+import '../../widgets/skeleton_loader.dart';
 
 class HistoryScreen extends ConsumerStatefulWidget {
   const HistoryScreen({super.key});
@@ -193,8 +194,11 @@ class _HistoryScreenState extends ConsumerState<HistoryScreen> {
               _buildToggle(),
               Expanded(
                 child: _isLoading
-                    ? const Center(child: CircularProgressIndicator(
-                        valueColor: AlwaysStoppedAnimation<Color>(AppColors.accent)))
+                    ? ListView.builder(
+                        padding: const EdgeInsets.fromLTRB(16, 12, 16, 100),
+                        itemCount: 5,
+                        itemBuilder: (_, __) => const SkeletonEventCard(),
+                      )
                     : _hasError
                         ? _buildErrorState()
                         : RefreshIndicator(

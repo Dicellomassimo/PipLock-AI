@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
@@ -268,7 +269,9 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
             try {
               final prefs = await SharedPreferences.getInstance();
               await prefs.setString('connection_method', 'accessibility');
-            } catch (_) {}
+            } catch (e) {
+              debugPrint('[BrokerProvider] prefs save error: $e');
+            }
             state = BrokerState(
               method: BrokerConnectionMethod.accessibility,
               status: BrokerConnectionStatus.connecting,
@@ -326,7 +329,9 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         positions:   (positions   != null && positions   >= 0)  ? positions   : null,
         tradesToday: isToday ? ((tradesRaw != null && tradesRaw >= 0)  ? tradesRaw  : null) : null,
       );
-    } catch (_) {}
+    } catch (e) {
+      debugPrint('[BrokerProvider] data load error: $e');
+    }
 
     _scheduleMidnightReset();
   }

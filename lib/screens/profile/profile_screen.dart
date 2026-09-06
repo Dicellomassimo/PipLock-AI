@@ -678,7 +678,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    isPro ? 'Pro Plan' : 'Free Plan · Upgrade',
+                    isPro ? 'Pro Plan' : 'Trial · Upgrade to Pro',
                     style: GoogleFonts.manrope(
                       color: isPro ? AppColors.accent : AppColors.textSecondary,
                       fontSize: 12,

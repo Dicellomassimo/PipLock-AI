@@ -2472,15 +2472,6 @@ class _PaywallSlideState extends State<_PaywallSlide>
               ),
             );
           }),
-          const SizedBox(height: AppTheme.sp20),
-          GestureDetector(
-            onTap: widget.onSkip,
-            child: Center(child: Text(s.t('Continue with free plan →', 'Continua con il piano gratuito →'),
-              style: GoogleFonts.manrope(
-                color: AppColors.textTertiary, fontSize: 13, fontWeight: FontWeight.w500,
-                decoration: TextDecoration.underline,
-                decorationColor: AppColors.textTertiary))),
-          ),
           const SizedBox(height: 8),
         ],
       ),

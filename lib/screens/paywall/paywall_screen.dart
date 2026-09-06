@@ -186,7 +186,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
 
               const SizedBox(height: 24),
 
-              // ── Pro vs Free table ─────────────────────────────────────────
+              // ── Pro features list ─────────────────────────────────────────
               Container(
                 decoration: BoxDecoration(
                   color: AppColors.cardBg,
@@ -195,44 +195,34 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
                 ),
                 child: Column(
                   children: [
-                    // Table header
+                    // Header
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                       child: Row(
                         children: [
                           Expanded(
-                            flex: 3,
                             child: Text(
-                              s.t('Feature', 'Funzione'),
+                              s.t('EVERYTHING INCLUDED IN PRO', 'TUTTO INCLUSO NEL PRO'),
                               style: GoogleFonts.manrope(
                                 color: AppColors.textSecondary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                            width: 52,
-                            child: Text(
-                              'Free',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.manrope(
-                                color: AppColors.textSecondary,
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          SizedBox(
-                            width: 52,
-                            child: Text(
-                              'Pro',
-                              textAlign: TextAlign.center,
-                              style: GoogleFonts.manrope(
-                                color: AppColors.accent,
-                                fontSize: 11,
+                                fontSize: 10,
                                 fontWeight: FontWeight.w700,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              gradient: AppColors.accentGradient,
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              'PRO',
+                              style: GoogleFonts.manrope(
+                                color: Colors.black,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
                               ),
                             ),
                           ),
@@ -376,22 +366,21 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
 
   List<Widget> _buildFeatureRows(AppStrings s) {
     final rows = [
-      (s.t('Killswitch', 'Killswitch'), true, true),
-      (s.t('Manual rule setup', 'Regole manuali'), true, true),
-      (s.t('2 unlock tokens/week', '2 token sblocco/settimana'), true, true),
-      (s.t('2 unlock tokens/week (fixed)', '2 token sblocco/sett. (fissi)'), true, true),
-      (s.t('AI Planner for challenges', 'AI Planner per challenge'), false, true),
-      (s.t('MT5 EA integration', 'Integrazione EA MT5'), false, true),
-      (s.t('Pre-session check-in', 'Check-in pre-sessione'), false, true),
-      (s.t('FOMO Gatekeeper alerts', 'Alert Gatekeeper FOMO'), false, true),
-      (s.t('Advanced statistics', 'Statistiche avanzate'), false, true),
-      (s.t('Trade Journal + AI insights', 'Diario + AI insights'), false, true),
-      (s.t('1-year history', 'Storico 1 anno'), false, true),
+      s.t('Killswitch (automatic trading block)', 'Killswitch (blocco automatico)'),
+      s.t('Custom rule setup', 'Regole personalizzate'),
+      s.t('2 unlock tokens/week', '2 token sblocco/settimana'),
+      s.t('AI Planner for challenges', 'AI Planner per challenge'),
+      s.t('MT5 EA integration', 'Integrazione EA MT5'),
+      s.t('Pre-session check-in', 'Check-in pre-sessione'),
+      s.t('FOMO Gatekeeper alerts', 'Alert Gatekeeper FOMO'),
+      s.t('Advanced statistics', 'Statistiche avanzate'),
+      s.t('Trade Journal + AI insights', 'Diario + AI insights'),
+      s.t('1-year trade history', 'Storico 1 anno'),
     ];
 
     return rows.asMap().entries.map((entry) {
       final i = entry.key;
-      final r = entry.value;
+      final label = entry.value;
       final isLast = i == rows.length - 1;
       return Column(
         children: [
@@ -399,33 +388,22 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
             child: Row(
               children: [
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: AppColors.accent.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.check_rounded, color: AppColors.accent, size: 14),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
-                  flex: 3,
                   child: Text(
-                    r.$1,
+                    label,
                     style: GoogleFonts.manrope(
                       color: AppColors.textPrimary,
                       fontSize: 13,
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  width: 52,
-                  child: Center(
-                    child: Icon(
-                      r.$2 ? Icons.check_rounded : Icons.remove_rounded,
-                      color: r.$2 ? AppColors.accent : AppColors.textSecondary.withValues(alpha: 0.4),
-                      size: 18,
-                    ),
-                  ),
-                ),
-                SizedBox(
-                  width: 52,
-                  child: Center(
-                    child: Icon(
-                      r.$3 ? Icons.check_rounded : Icons.remove_rounded,
-                      color: r.$3 ? AppColors.accent : AppColors.textSecondary.withValues(alpha: 0.4),
-                      size: 18,
                     ),
                   ),
                 ),

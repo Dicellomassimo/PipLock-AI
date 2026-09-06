@@ -171,17 +171,17 @@ List<_FaqSection> _buildSections(AppStrings s) => [
     title: s.t('SUBSCRIPTION', 'ABBONAMENTO'),
     items: [
       _FaqItem(
-        question: s.t('What does the Free plan include?', 'Cosa include il piano Free?'),
+        question: s.t('How does the 7-day free trial work?', 'Come funziona la prova gratuita di 7 giorni?'),
         answer: s.t(
-          "Basic Killswitch, pre-session check-in, 2 free tokens per week for early unlock, 30-day history.",
-          "Killswitch base, check-in pre-sessione, 2 token gratuiti a settimana per sblocco anticipato, storico degli ultimi 30 giorni.",
+          "When you sign up, you get 7 days of full Pro access — no charge during the trial. If you cancel before day 8, you pay nothing. After the trial, billing starts automatically at the plan you selected.",
+          "Alla registrazione ottieni 7 giorni di accesso Pro completo, senza alcun addebito. Se cancelli prima del giorno 8, non paghi nulla. Dopo la prova, la fatturazione inizia automaticamente con il piano che hai scelto.",
         ),
       ),
       _FaqItem(
         question: s.t('What does the Pro plan include?', 'Cosa include il piano Pro?'),
         answer: s.t(
-          "Everything in Free plus: full AI Planner with dynamic progression, advanced anti-FOMO Gatekeeper, unlimited tokens, extended history (1 year), soft and hard killswitch with customizable thresholds, advanced notifications.\n\nPro is €19.99/month or €13.99/month billed annually (save 30%). A 7-day free trial is available. You are shown the Pro offer before completing registration.",
-          "Tutto il Free piu: AI Planner completo con progressione dinamica, Gatekeeper anti-FOMO avanzato, token illimitati, storico esteso (1 anno), soft e hard killswitch con soglie personalizzabili, notifiche avanzate.\n\nPro costa €19,99/mese oppure €13,99/mese con fatturazione annuale (risparmio 30%). Sono disponibili 7 giorni di prova gratuita. L'offerta Pro ti viene mostrata prima di completare la registrazione.",
+          "Full AI Planner with dynamic progression, advanced anti-FOMO Gatekeeper, 2 unlock tokens/week, extended 1-year history, soft and hard killswitch with customizable thresholds, MT5 EA integration, advanced statistics, Trade Journal with AI insights, and advanced notifications.\n\nPro is €19.99/month or €13.99/month billed annually (save 30%). Includes a 7-day free trial.",
+          "AI Planner completo con progressione dinamica, Gatekeeper anti-FOMO avanzato, 2 token sblocco/settimana, storico esteso (1 anno), soft e hard killswitch con soglie personalizzabili, integrazione EA MT5, statistiche avanzate, Diario con AI insights e notifiche avanzate.\n\nPro costa €19,99/mese oppure €13,99/mese con fatturazione annuale (risparmio 30%). Include 7 giorni di prova gratuita.",
         ),
       ),
       _FaqItem(

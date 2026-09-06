@@ -15,6 +15,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/ai_service.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/donut_chart.dart';
+import '../../widgets/premium_button.dart';
 
 class ChatSessionScreen extends ConsumerStatefulWidget {
   final ChatSession session;
@@ -192,6 +193,15 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
           'Chiedimi qualsiasi cosa sul piano o sulla disciplina.',
         ),
       );
+    } catch (e) {
+      if (!mounted) return;
+      if (e.toString().contains('rate_limited')) {
+        _showLimitModal(isPlan: true);
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) Navigator.pop(context);
+        });
+        return;
+      }
     } finally {
       if (mounted) setState(() => _isLoadingPlan = false);
       await _saveSession();
@@ -235,6 +245,15 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
           'Chiedimi qualsiasi cosa sulla tua sessione di oggi.',
         ),
       );
+    } catch (e) {
+      if (!mounted) return;
+      if (e.toString().contains('rate_limited')) {
+        _showLimitModal(isPlan: true);
+        Future.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) Navigator.pop(context);
+        });
+        return;
+      }
     } finally {
       if (mounted) setState(() => _isLoadingPlan = false);
       await _saveSession();
@@ -268,6 +287,97 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
         );
       }
     });
+  }
+
+  void _showLimitModal({required bool isPlan}) {
+    if (!mounted) return;
+    final s = ref.read(appStringsProvider);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => Container(
+        padding: EdgeInsets.fromLTRB(
+            24, 24, 24, 40 + MediaQuery.of(context).viewInsets.bottom),
+        decoration: const BoxDecoration(
+          color: Color(0xFF141414),
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 20),
+            Container(
+              width: 56,
+              height: 56,
+              decoration: BoxDecoration(
+                color: AppColors.accent.withValues(alpha: 0.12),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(Icons.auto_awesome_rounded,
+                  color: AppColors.accent, size: 28),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              isPlan
+                  ? s.t('Daily plan limit reached', 'Limite piani giornaliero raggiunto')
+                  : s.t('Daily message limit reached',
+                      'Limite messaggi giornaliero raggiunto'),
+              style: GoogleFonts.manrope(
+                color: AppColors.textPrimary,
+                fontSize: 18,
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.4,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              isPlan
+                  ? s.t(
+                      "You've used all your AI plan generations for today.\nUpgrade to Pro for more plans and full AI access.",
+                      "Hai usato tutti i piani AI di oggi.\nPassa a Pro per più piani e accesso completo all'AI.")
+                  : s.t(
+                      "You've used all your AI messages for today.\nUpgrade to Pro for more messages and full AI access.",
+                      "Hai usato tutti i messaggi AI di oggi.\nPassa a Pro per più messaggi e accesso completo all'AI."),
+              style: GoogleFonts.manrope(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                height: 1.55,
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            PremiumButton(
+              label: s.t('Upgrade to Pro', 'Passa a Pro'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.pushNamed(context, '/paywall');
+              },
+            ),
+            const SizedBox(height: 10),
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: Text(
+                s.t('Maybe later', 'Forse dopo'),
+                style: GoogleFonts.manrope(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _sendMessage() async {
@@ -318,6 +428,10 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
         });
         _scrollToBottom();
         await _saveSession();
+      }
+    } catch (e) {
+      if (mounted && e.toString().contains('rate_limited')) {
+        _showLimitModal(isPlan: false);
       }
     } finally {
       if (mounted) setState(() => _isChatLoading = false);
