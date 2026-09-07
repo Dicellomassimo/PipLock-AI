@@ -166,6 +166,32 @@ class NotificationService {
 
   static final Set<String> _sentNotificationIds = {};
 
+  // ---------------------------------------------------------------------------
+  // Notification preferences cache — avoids hitting Supabase on every send.
+  // Refreshed on initialize() and invalidated whenever the user saves prefs.
+  // ---------------------------------------------------------------------------
+  static Map<String, dynamic>? _prefCache;
+
+  /// Reload prefs from Supabase into the in-memory cache.
+  static Future<void> refreshPrefsCache() async {
+    try {
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId == null) return;
+      final data = await Supabase.instance.client
+          .from('notification_prefs')
+          .select()
+          .eq('user_id', userId)
+          .maybeSingle();
+      _prefCache = data;
+    } catch (_) {}
+  }
+
+  /// Synchronous pref check (returns true by default — fail-open).
+  static bool isPrefEnabled(String key) => _prefCache?[key] as bool? ?? true;
+
+  /// Call this after the user saves notification prefs so the cache is fresh.
+  static void invalidatePrefsCache() => _prefCache = null;
+
   /// Returns true if the user's saved locale is Italian.
   static Future<bool> _isIt() async {
     try {
@@ -264,6 +290,9 @@ class NotificationService {
           onConflict: 'user_id',
         );
       }
+
+      // Load prefs so isPrefEnabled() works synchronously right away
+      await refreshPrefsCache();
 
       FirebaseMessaging.onMessage.listen(_handleForegroundFcmMessage);
       debugPrint('[NotificationService] Firebase Messaging OK');
@@ -388,6 +417,7 @@ class NotificationService {
   }
 
   static Future<void> _checkUpcomingEvents() async {
+    if (!isPrefEnabled('news_alerts')) return;
     try {
       final isIt = await _isIt();
       final events = await _fetchMonth();
@@ -434,7 +464,6 @@ class NotificationService {
   // ---------------------------------------------------------------------------
   static Future<void> scheduleUpcomingNotifications() async {
     try {
-      final isIt = await _isIt();
       // Cancel previously scheduled economic calendar notifications
       final pending = await _fln.pendingNotificationRequests();
       for (final n in pending) {
@@ -442,6 +471,14 @@ class NotificationService {
           await _fln.cancel(n.id);
         }
       }
+
+      // If the user has disabled news alerts, leave them all cancelled and stop.
+      if (!isPrefEnabled('news_alerts')) {
+        debugPrint('[NotificationService] news_alerts disabled — skipping schedule');
+        return;
+      }
+
+      final isIt = await _isIt();
 
       final events = await _fetchMonth();
       final now = DateTime.now();
@@ -947,6 +984,7 @@ class NotificationService {
   // ---------------------------------------------------------------------------
 
   static Future<void> scheduleUnlockReminder(DateTime unlockAt) async {
+    if (!isPrefEnabled('risk_warnings')) return;
     try {
       final isIt = await _isIt();
       final tzTime = tz.TZDateTime.from(unlockAt, tz.local);
@@ -981,6 +1019,7 @@ class NotificationService {
 
   /// Notifica immediata quando il killswitch scade naturalmente (non con token).
   static Future<void> sendKillswitchLiftedNotification() async {
+    if (!isPrefEnabled('risk_warnings')) return;
     try {
       final isIt = await _isIt();
       final androidDetails = AndroidNotificationDetails(
@@ -1013,6 +1052,7 @@ class NotificationService {
   }) async {
     const id = 9901;
     await _fln.cancel(id);
+    if (!isPrefEnabled('session_changes')) return;
 
     var notifHour   = startHour;
     var notifMinute = startMinute - 15;

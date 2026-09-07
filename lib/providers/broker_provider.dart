@@ -583,13 +583,15 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           _syncRulesForDetectedAccount(toAccount);
 
           // Notify user
-          NotificationService.showLocalNotification(
-            title: 'Account switched',
-            body: fromAccount.isNotEmpty
-                ? 'Active account: $toAccount (was $fromAccount). Rules updated.'
-                : 'Active account: $toAccount. Rules updated.',
-            id: 8011,
-          );
+          if (NotificationService.isPrefEnabled('session_changes')) {
+            NotificationService.showLocalNotification(
+              title: 'Account switched',
+              body: fromAccount.isNotEmpty
+                  ? 'Active account: $toAccount (was $fromAccount). Rules updated.'
+                  : 'Active account: $toAccount. Rules updated.',
+              id: 8011,
+            );
+          }
         }
       } else if (eventType == 'revenge_detected') {
         if (event['revenge_detected'] == true) {
@@ -986,12 +988,14 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       if (!mounted || signal == null) return;
       state = state.copyWith(fomoSignal: signal);
       // Also surface as a local notification
-      final s = _ref.read(appStringsProvider);
-      NotificationService.showLocalNotification(
-        title: s.t('⚠️ FOMO Alert — $symbol', '⚠️ Alert FOMO — $symbol'),
-        body: signal.alertMessage,
-        id: 8010,
-      );
+      if (NotificationService.isPrefEnabled('fomo_alerts')) {
+        final s = _ref.read(appStringsProvider);
+        NotificationService.showLocalNotification(
+          title: s.t('⚠️ FOMO Alert — $symbol', '⚠️ Alert FOMO — $symbol'),
+          body: signal.alertMessage,
+          id: 8010,
+        );
+      }
     } catch (_) {}
   }
 
@@ -1172,12 +1176,14 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     // Alert a 3 perdite consecutive
     if (_consecutiveLossesLocal >= 3 && !_consecutiveLossAlertSent) {
       _consecutiveLossAlertSent = true;
-      final s = _ref.read(appStringsProvider);
-      NotificationService.showLocalNotification(
-        title: s.t('⚠️ $_consecutiveLossesLocal consecutive losses', '⚠️ $_consecutiveLossesLocal perdite consecutive'),
-        body: s.t('You have lost $_consecutiveLossesLocal trades in a row. Consider stepping back.', 'Hai perso $_consecutiveLossesLocal trade di fila. Considera di fermarti.'),
-        id: 8006,
-      );
+      if (NotificationService.isPrefEnabled('risk_warnings')) {
+        final s = _ref.read(appStringsProvider);
+        NotificationService.showLocalNotification(
+          title: s.t('⚠️ $_consecutiveLossesLocal consecutive losses', '⚠️ $_consecutiveLossesLocal perdite consecutive'),
+          body: s.t('You have lost $_consecutiveLossesLocal trades in a row. Consider stepping back.', 'Hai perso $_consecutiveLossesLocal trade di fila. Considera di fermarti.'),
+          id: 8006,
+        );
+      }
     }
 
     // ── 2. Aumento anomalo della size (lot size) ─────────────────────────
@@ -1186,14 +1192,16 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       _baselineLotSizeToday ??= lotSize;
       if (!_lotSizeAlertSent && lotSize > (_baselineLotSizeToday! * 2.0)) {
         _lotSizeAlertSent = true;
-        final s = _ref.read(appStringsProvider);
-        NotificationService.showLocalNotification(
-          title: s.t('⚠️ Lot size anomaly', '⚠️ Anomalia nel lot size'),
-          body: s.t(
-              'Your position size (${lotSize.toStringAsFixed(2)}) is 2× your usual size today. Check your risk.',
-              'La tua dimensione di posizione (${lotSize.toStringAsFixed(2)}) è 2× rispetto alla tua solita. Controlla il rischio.'),
-          id: 8007,
-        );
+        if (NotificationService.isPrefEnabled('risk_warnings')) {
+          final s = _ref.read(appStringsProvider);
+          NotificationService.showLocalNotification(
+            title: s.t('⚠️ Lot size anomaly', '⚠️ Anomalia nel lot size'),
+            body: s.t(
+                'Your position size (${lotSize.toStringAsFixed(2)}) is 2× your usual size today. Check your risk.',
+                'La tua dimensione di posizione (${lotSize.toStringAsFixed(2)}) è 2× rispetto alla tua solita. Controlla il rischio.'),
+            id: 8007,
+          );
+        }
       }
     }
 
@@ -1211,14 +1219,16 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           DateTime.now().difference(_lastPositionCloseTime!).inSeconds;
       if (secondsFromClose < 120) {
         _fastReentryAlertSent = true;
-        final s = _ref.read(appStringsProvider);
-        NotificationService.showLocalNotification(
-          title: s.t('⚡ Fast re-entry', '⚡ Rientro rapido'),
-          body: s.t(
-              'You re-entered the market ${secondsFromClose}s after closing. Is this intentional?',
-              'Sei rientrato nel mercato ${secondsFromClose}s dopo la chiusura. È intenzionale?'),
-          id: 8008,
-        );
+        if (NotificationService.isPrefEnabled('risk_warnings')) {
+          final s = _ref.read(appStringsProvider);
+          NotificationService.showLocalNotification(
+            title: s.t('⚡ Fast re-entry', '⚡ Rientro rapido'),
+            body: s.t(
+                'You re-entered the market ${secondsFromClose}s after closing. Is this intentional?',
+                'Sei rientrato nel mercato ${secondsFromClose}s dopo la chiusura. È intenzionale?'),
+            id: 8008,
+          );
+        }
       }
     }
     _prevOpenPositions = currentPositions;
@@ -1229,12 +1239,14 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       final lossPercent = lossValue / rules.maxDailyLoss!;
       if (lossPercent >= 0.80 && lossPercent < 1.0 && !_soft80AlertSent) {
         _soft80AlertSent = true;
-        final s = _ref.read(appStringsProvider);
-        NotificationService.showLocalNotification(
-          title: s.t('⚠️ 80% of daily limit reached', '⚠️ 80% del limite giornaliero raggiunto'),
-          body: s.t('You are close to your daily loss limit. Consider stopping.', 'Sei vicino al limite di perdita giornaliero. Considera di fermarti.'),
-          id: 8001,
-        );
+        if (NotificationService.isPrefEnabled('risk_warnings')) {
+          final s = _ref.read(appStringsProvider);
+          NotificationService.showLocalNotification(
+            title: s.t('⚠️ 80% of daily limit reached', '⚠️ 80% del limite giornaliero raggiunto'),
+            body: s.t('You are close to your daily loss limit. Consider stopping.', 'Sei vicino al limite di perdita giornaliero. Considera di fermarti.'),
+            id: 8001,
+          );
+        }
       }
       if (lossPercent < 0.80) _soft80AlertSent = false;
     }
@@ -1258,12 +1270,14 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           reason = 'weekly_loss';
         } else if (weeklyLossUsd >= rules.maxWeeklyLoss! * 0.80 && !_soft80AlertSent) {
           // Avviso all'80% della perdita settimanale (riusa il flag daily per semplicità)
-          final s = _ref.read(appStringsProvider);
-          NotificationService.showLocalNotification(
-            title: s.t('⚠️ 80% of weekly limit reached', '⚠️ 80% del limite settimanale raggiunto'),
-            body: s.t('You are close to your weekly loss limit. Stay disciplined.', 'Sei vicino al limite di perdita settimanale. Rimani disciplinato.'),
-            id: 8001,
-          );
+          if (NotificationService.isPrefEnabled('risk_warnings')) {
+            final s = _ref.read(appStringsProvider);
+            NotificationService.showLocalNotification(
+              title: s.t('⚠️ 80% of weekly limit reached', '⚠️ 80% del limite settimanale raggiunto'),
+              body: s.t('You are close to your weekly loss limit. Stay disciplined.', 'Sei vicino al limite di perdita settimanale. Rimani disciplinato.'),
+              id: 8001,
+            );
+          }
         }
       }
     }
@@ -1316,12 +1330,14 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           final recTrades = (plan['recommendedTradesPerDay'] as num?)?.toInt();
           if (recTrades != null && tradesToday > recTrades) {
             _planViolationAlertSent = true;
-            NotificationService.showLocalNotification(
-              title: '📋 AI Plan exceeded',
-              body:
-                  'You have made $tradesToday trades today. Your AI plan recommends max $recTrades.',
-              id: 8009,
-            );
+            if (NotificationService.isPrefEnabled('challenge_reminders')) {
+              NotificationService.showLocalNotification(
+                title: '📋 AI Plan exceeded',
+                body:
+                    'You have made $tradesToday trades today. Your AI plan recommends max $recTrades.',
+                id: 8009,
+              );
+            }
             break;
           }
         }
@@ -1353,11 +1369,13 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
             if (drawdownPct >= maxTotalDrawdown) {
               reason = 'daily_loss';
               SupabaseService.updateChallengeStatus(activeChallenge.id, 'failed').catchError((_) {});
-              NotificationService.showLocalNotification(
-                title: '❌ Challenge Failed',
-                body: 'Max drawdown reached. Your challenge has been marked as failed.',
-                id: 8003,
-              );
+              if (NotificationService.isPrefEnabled('challenge_reminders')) {
+                NotificationService.showLocalNotification(
+                  title: '❌ Challenge Failed',
+                  body: 'Max drawdown reached. Your challenge has been marked as failed.',
+                  id: 8003,
+                );
+              }
             }
           }
         }
@@ -1565,15 +1583,17 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       await _ref.read(chatHistoryProvider.notifier).updateSession(updatedSession);
 
       // Notifica push
-      NotificationService.showLocalNotification(
-        title: locale.startsWith('it')
-            ? '📋 Giorno $currentDay — piano pronto'
-            : '📋 Day $currentDay — plan ready',
-        body: locale.startsWith('it')
-            ? 'Il tuo briefing per ${challenge.propFirmName ?? "la challenge"} è pronto.'
-            : 'Your briefing for ${challenge.propFirmName ?? "the challenge"} is ready.',
-        id: 9001,
-      );
+      if (NotificationService.isPrefEnabled('challenge_reminders')) {
+        NotificationService.showLocalNotification(
+          title: locale.startsWith('it')
+              ? '📋 Giorno $currentDay — piano pronto'
+              : '📋 Day $currentDay — plan ready',
+          body: locale.startsWith('it')
+              ? 'Il tuo briefing per ${challenge.propFirmName ?? "la challenge"} è pronto.'
+              : 'Your briefing for ${challenge.propFirmName ?? "the challenge"} is ready.',
+          id: 9001,
+        );
+      }
     } catch (_) {
       // Fail silently — daily briefing is non-critical
     }

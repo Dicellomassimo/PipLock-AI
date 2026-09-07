@@ -65,6 +65,10 @@ class _NotificationSettingsScreenState
           'fomo_alerts': _fomoAlerts,
           'challenge_reminders': _challengeReminders,
         });
+        // Refresh the in-memory cache so new prefs take effect immediately,
+        // then re-schedule (or cancel) calendar notifications accordingly.
+        await NotificationService.refreshPrefsCache();
+        NotificationService.scheduleUpcomingNotifications();
       } catch (_) {}
     }
   }
