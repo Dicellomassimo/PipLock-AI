@@ -10,7 +10,6 @@ import '../../providers/challenge_provider.dart';
 import '../../providers/chat_history_provider.dart';
 import '../../providers/pending_challenge_provider.dart';
 import '../../providers/rules_provider.dart';
-import '../../services/ai_service.dart';
 import '../../widgets/ambient_blobs.dart';
 import '../../widgets/candle_background.dart';
 import 'chat_session_screen.dart';
@@ -23,20 +22,12 @@ class AiPlannerScreen extends ConsumerStatefulWidget {
 }
 
 class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
-  AiUsageInfo? _usage;
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _handlePendingChallenge();
-      _loadUsage();
     });
-  }
-
-  Future<void> _loadUsage() async {
-    final usage = await AiService.getUsageToday();
-    if (mounted) setState(() => _usage = usage);
   }
 
   /// Se c'è una challenge in sospeso (appena creata) apre subito una nuova sessione.
@@ -253,7 +244,6 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
           ),
         ),
         actions: [
-          if (_usage != null) _buildCreditsChip(_usage!),
           IconButton(
             icon: const Icon(Icons.edit_square, color: Color(0xFFC4D0DC), size: 22),
             tooltip: s.aiPlannerNewChat,
@@ -287,43 +277,6 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
               ),
             ),
         ],
-      ),
-    );
-  }
-
-  Widget _buildCreditsChip(AiUsageInfo usage) {
-    final chatRemaining = usage.chatRemaining;
-    final isLow = chatRemaining <= 1;
-    final color = isLow ? const Color(0xFFFF4455) : const Color(0xFF9B7EF8);
-    return GestureDetector(
-      onTap: () => Navigator.pushNamed(context, '/paywall'),
-      child: Container(
-        margin: const EdgeInsets.only(right: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: color.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              isLow ? Icons.warning_amber_rounded : Icons.auto_awesome_rounded,
-              size: 12,
-              color: color,
-            ),
-            const SizedBox(width: 5),
-            Text(
-              '$chatRemaining msg',
-              style: GoogleFonts.manrope(
-                color: color,
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ],
-        ),
       ),
     );
   }
