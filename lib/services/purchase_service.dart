@@ -12,25 +12,43 @@ import '../config/env_config.dart';
 ///   - Offerings: 'default' con package Monthly e Annual
 ///
 /// NOTA: revenueCatPublicKey deve essere la Public API Key (formato goog_xxxx)
-/// disponibile su RevenueCat Dashboard → Apps → [app Android] → Public API key.
+/// disponibile su RevenueCat Dashboard → Apps → [tua app Android] → Public API key.
 /// La sk_... key va in Supabase Edge Functions (server-side), NON qui.
 class PurchaseService {
   static const _proEntitlement = 'pro';
   static bool _initialized = false;
+  // Cache prezzi fetched da RevenueCat per mostrarli nella paywall
+  static String? _monthlyPriceString;
+  static String? _annualPriceString;
 
   // ── Inizializzazione ───────────────────────────────────────────────────────
 
-  static Future<void> initialize({required String userId}) async {
+  /// Inizializzazione anonima — solo per caricare le offerings/prezzi
+  /// prima che l'utente faccia login. Sicura da chiamare senza userId.
+  static Future<void> initializeAnonymous() async {
     if (_initialized) return;
-
     final publicKey = EnvConfig.revenueCatPublicKey;
-    // Skip se chiave non configurata o è una chiave di test (test_...)
+    if (publicKey.isEmpty || publicKey.startsWith('test_')) return;
+    try {
+      await Purchases.configure(PurchasesConfiguration(publicKey));
+      _initialized = true;
+      _loadPriceCache();
+    } catch (_) {}
+  }
+
+  static Future<void> initialize({required String userId}) async {
+    final publicKey = EnvConfig.revenueCatPublicKey;
     if (publicKey.isEmpty || publicKey.startsWith('test_')) return;
 
     try {
-      final config = PurchasesConfiguration(publicKey)..appUserID = userId;
-      await Purchases.configure(config);
-      _initialized = true;
+      if (!_initialized) {
+        final config = PurchasesConfiguration(publicKey)..appUserID = userId;
+        await Purchases.configure(config);
+        _initialized = true;
+      } else {
+        // Era già inizializzato anonimamente: identifica l'utente ora
+        await Purchases.logIn(userId);
+      }
 
       // Sincronizza lo stato Pro a Supabase ogni volta che cambia
       Purchases.addCustomerInfoUpdateListener((info) {
@@ -38,25 +56,42 @@ class PurchaseService {
           info.entitlements.active.containsKey(_proEntitlement),
         );
       });
+      _loadPriceCache();
     } catch (_) {
       // RevenueCat non disponibile (emulatore, region, ecc.) — continua
     }
   }
 
+  // Scarica e memorizza i prezzi in cache per uso sincrono nella UI
+  static Future<void> _loadPriceCache() async {
+    try {
+      final offerings = await Purchases.getOfferings();
+      final current = offerings.current;
+      if (current == null) return;
+      _monthlyPriceString = current.monthly?.storeProduct.priceString;
+      _annualPriceString = current.annual?.storeProduct.priceString;
+    } catch (_) {}
+  }
+
+  /// Prezzo mensile da Play Store (null se non disponibile → usa fallback hardcoded)
+  static String? get monthlyPriceString => _monthlyPriceString;
+
+  /// Prezzo annuale da Play Store (null se non disponibile → usa fallback hardcoded)
+  static String? get annualPriceString => _annualPriceString;
+
   // ── API pubblica ───────────────────────────────────────────────────────────
 
   /// Acquista un abbonamento Pro. Ritorna true se andato a buon fine.
-  static Future<bool> purchasePro([
-    String productId = 'piplock_pro_monthly',
-  ]) async {
-    if (!_initialized) return _mockPurchase();
+  /// [isAnnual] true = piano annuale, false = piano mensile.
+  static Future<bool> purchasePro({bool isAnnual = false}) async {
+    if (!_initialized) return false; // Non mock: senza RC configurato non acquistare
 
     try {
       final offerings = await Purchases.getOfferings();
       final current = offerings.current;
       if (current == null) return false;
 
-      final package = productId.contains('annual')
+      final package = isAnnual
           ? (current.annual ?? _firstPackage(current))
           : (current.monthly ?? _firstPackage(current));
       if (package == null) return false;
@@ -117,9 +152,6 @@ class PurchaseService {
         ? offering.availablePackages.first
         : null;
   }
-
-  /// Mock per emulatori/environment senza Play Store configurato.
-  static bool _mockPurchase() => true;
 
   static Future<void> _syncProToSupabase(bool isPro) async {
     try {

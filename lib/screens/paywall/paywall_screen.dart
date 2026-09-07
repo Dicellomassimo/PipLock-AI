@@ -3,13 +3,16 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_strings.dart';
 import '../../config/app_theme.dart';
+import '../../services/purchase_service.dart';
 import '../../services/supabase_service.dart';
 import '../../widgets/premium_button.dart';
 import '../../widgets/ambient_blobs.dart';
 import '../../widgets/google_sign_in_button.dart';
+
 class PaywallScreen extends ConsumerStatefulWidget {
   const PaywallScreen({super.key});
 
@@ -19,16 +22,58 @@ class PaywallScreen extends ConsumerStatefulWidget {
 
 class _PaywallScreenState extends ConsumerState<PaywallScreen> {
   int _selectedPlan = 1; // 0=monthly, 1=annual (annual pre-selected)
+  bool _purchaseLoading = false;
+  // Prezzi reali da RevenueCat (fallback ai prezzi hardcoded se RC non configurato)
+  String _monthlyPrice = '€19.99';
+  String _annualPrice = '€13.99';
 
-  void _startTrial() {
-    final s = ref.read(appStringsProvider);
-    final isAnnual = _selectedPlan == 1;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (_) => _RegistrationSheet(s: s, isAnnual: isAnnual),
-    );
+  @override
+  void initState() {
+    super.initState();
+    _loadPrices();
+  }
+
+  Future<void> _loadPrices() async {
+    await PurchaseService.initializeAnonymous();
+    if (!mounted) return;
+    setState(() {
+      _monthlyPrice = PurchaseService.monthlyPriceString ?? '€19.99';
+      _annualPrice = PurchaseService.annualPriceString ?? '€13.99';
+    });
+  }
+
+  bool get _isLoggedIn =>
+      Supabase.instance.client.auth.currentUser != null;
+
+  Future<void> _onCtaTapped() async {
+    if (_isLoggedIn) {
+      // Utente già loggato → acquisto diretto senza registrazione
+      await _triggerPurchase();
+    } else {
+      // Non loggato → registrazione + acquisto
+      final s = ref.read(appStringsProvider);
+      final isAnnual = _selectedPlan == 1;
+      showModalBottomSheet(
+        context: context,
+        isScrollControlled: true,
+        backgroundColor: Colors.transparent,
+        builder: (_) => _RegistrationSheet(s: s, isAnnual: isAnnual),
+      );
+    }
+  }
+
+  Future<void> _triggerPurchase() async {
+    if (_purchaseLoading) return;
+    setState(() => _purchaseLoading = true);
+    try {
+      final success = await PurchaseService.purchasePro(
+        isAnnual: _selectedPlan == 1,
+      );
+      if (!mounted) return;
+      if (success) Navigator.of(context).pushReplacementNamed('/main');
+    } finally {
+      if (mounted) setState(() => _purchaseLoading = false);
+    }
   }
 
   @override
@@ -140,7 +185,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
                     children: [
                       _PlanTab(
                         label: s.t('Monthly', 'Mensile'),
-                        price: '€19.99',
+                        price: _monthlyPrice,
                         period: s.t('/mo', '/mese'),
                         selected: _selectedPlan == 0,
                         onTap: () => setState(() => _selectedPlan = 0),
@@ -148,7 +193,7 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
                       ),
                       _PlanTab(
                         label: s.t('Annual', 'Annuale'),
-                        price: '€13.99',
+                        price: _annualPrice,
                         period: s.t('/mo', '/mese'),
                         selected: _selectedPlan == 1,
                         onTap: () => setState(() => _selectedPlan = 1),
@@ -239,9 +284,11 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
 
               // ── Trial CTA ─────────────────────────────────────────────────
               PremiumButton(
-                label: s.t('Start 7-day free trial', 'Inizia 7 giorni gratis'),
+                label: _purchaseLoading
+                    ? s.t('Loading…', 'Caricamento…')
+                    : s.t('Start 7-day free trial', 'Inizia 7 giorni gratis'),
                 icon: Icons.card_giftcard_rounded,
-                onTap: _startTrial,
+                onTap: _purchaseLoading ? null : _onCtaTapped,
                 height: 58,
                 fontSize: 17,
               ),
@@ -607,6 +654,12 @@ class _RegistrationSheetState extends State<_RegistrationSheet> {
     try {
       await SupabaseService.signInWithGoogle();
       if (!mounted) return;
+      final userId = Supabase.instance.client.auth.currentUser?.id;
+      if (userId != null) {
+        await PurchaseService.initialize(userId: userId);
+        await PurchaseService.purchasePro(isAnnual: widget.isAnnual);
+      }
+      if (!mounted) return;
       Navigator.of(context).pop();
       Navigator.of(context).pushReplacementNamed('/main');
     } catch (e) {
@@ -632,6 +685,10 @@ class _RegistrationSheetState extends State<_RegistrationSheet> {
       );
       if (!mounted) return;
       if (res.user != null) {
+        final userId = res.user!.id;
+        await PurchaseService.initialize(userId: userId);
+        await PurchaseService.purchasePro(isAnnual: widget.isAnnual);
+        if (!mounted) return;
         Navigator.of(context).pop();
         Navigator.of(context).pushReplacementNamed('/main');
       } else {
