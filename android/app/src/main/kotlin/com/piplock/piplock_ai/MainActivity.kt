@@ -18,12 +18,10 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // FLAG_SECURE disabilitato temporaneamente per screenshots di sviluppo.
-        // Riabilitare prima della submission al Play Store:
-        // window.setFlags(
-        //     WindowManager.LayoutParams.FLAG_SECURE,
-        //     WindowManager.LayoutParams.FLAG_SECURE
-        // )
+        window.setFlags(
+            WindowManager.LayoutParams.FLAG_SECURE,
+            WindowManager.LayoutParams.FLAG_SECURE
+        )
     }
 
     companion object {
@@ -77,9 +75,14 @@ class MainActivity : FlutterActivity() {
             val remainingMinutes = intent.getIntExtra("remaining_minutes", 360)
             val navigateTo = intent.getStringExtra("navigate_to") ?: ""
             runOnUiThread {
+                val eventType = when {
+                    navigateTo == "rules"       -> "navigate_to_rules"
+                    reason == "trading_hours"   -> "trading_hours_active"
+                    else                        -> "killswitch_native_active"
+                }
                 brokerEventSink?.success(mapOf(
-                    "event_type" to if (navigateTo == "rules") "navigate_to_rules" else "killswitch_native_active",
-                    "reason" to reason,
+                    "event_type"        to eventType,
+                    "reason"            to reason,
                     "remaining_minutes" to remainingMinutes
                 ))
             }
@@ -205,13 +208,19 @@ class MainActivity : FlutterActivity() {
                         val positions   = prefs.getInt("positions",      -1)
                         val tradesToday = prefs.getInt("trades_today",   -1)
                         val timestamp   = prefs.getLong("timestamp",     0L)
+                        // Reference balance (balance inizio giornata) — usato da Flutter per
+                        // ricalcolare il daily P&L correttamente dopo un riavvio dell'app.
+                        val refBalance  = prefs.getFloat("reference_balance", -1f).toDouble()
+                        val refDate     = prefs.getString("reference_date", "") ?: ""
                         result.success(mapOf(
-                            "equity"       to equity,
-                            "balance"      to balance,
-                            "profit"       to profit,
-                            "positions"    to positions,
-                            "trades_today" to tradesToday,
-                            "timestamp"    to timestamp
+                            "equity"             to equity,
+                            "balance"            to balance,
+                            "profit"             to profit,
+                            "positions"          to positions,
+                            "trades_today"       to tradesToday,
+                            "timestamp"          to timestamp,
+                            "reference_balance"  to refBalance,
+                            "reference_date"     to refDate
                         ))
                     }
 
@@ -240,6 +249,12 @@ class MainActivity : FlutterActivity() {
                                 call.argument<Int>("killswitchDurationMinutes") ?: 360)
                             putString("registered_account_number",
                                 call.argument<String>("accountNumber") ?: "")
+                            putBoolean("trading_hours_enabled",
+                                call.argument<Boolean>("tradingHoursEnabled") ?: false)
+                            putString("trading_hours_start",
+                                call.argument<String>("tradingHoursStart") ?: "")
+                            putString("trading_hours_end",
+                                call.argument<String>("tradingHoursEnd") ?: "")
                             apply()
                         }
                         result.success(null)

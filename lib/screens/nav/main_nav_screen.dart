@@ -45,7 +45,7 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
 
   static const _navItems = [
     _NavItemData(icon: Icons.home_outlined, selectedIcon: Icons.home_rounded, label: 'Home'),
-    _NavItemData(icon: Icons.auto_awesome_outlined, selectedIcon: Icons.auto_awesome, label: 'AI'),
+    _NavItemData(icon: Icons.auto_awesome_outlined, selectedIcon: Icons.auto_awesome, label: 'AI', badge: 'BETA'),
     _NavItemData(icon: Icons.bar_chart_outlined, selectedIcon: Icons.bar_chart_rounded, label: 'History'),
     _NavItemData(icon: Icons.person_outline_rounded, selectedIcon: Icons.person_rounded, label: 'Profile'),
   ];
@@ -176,8 +176,10 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
 
     ref.listen<String?>(pendingNavigationProvider, (_, route) {
       if (route != null && mounted) {
-        Navigator.of(context).pushNamed(route);
+        final args = ref.read(pendingNavigationArgsProvider);
+        Navigator.of(context).pushNamed(route, arguments: args);
         ref.read(pendingNavigationProvider.notifier).state = null;
+        ref.read(pendingNavigationArgsProvider.notifier).state = null;
       }
     });
 
@@ -274,7 +276,8 @@ class _NavItemData {
   final IconData icon;
   final IconData selectedIcon;
   final String label;
-  const _NavItemData({required this.icon, required this.selectedIcon, required this.label});
+  final String? badge;
+  const _NavItemData({required this.icon, required this.selectedIcon, required this.label, this.badge});
 }
 
 // ── Floating Pill Navigation Bar ─────────────────────────────────────────────
@@ -430,22 +433,49 @@ class _NavItemState extends State<_NavItem> with SingleTickerProviderStateMixin 
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              // Icona con glow silver quando attiva
-              AnimatedSwitcher(
-                duration: AppTheme.dFast,
-                child: selected
-                    ? ShaderMask(
-                        key: const ValueKey('selected'),
-                        shaderCallback: (bounds) => AppColors.silverGradient.createShader(bounds),
-                        blendMode: BlendMode.srcIn,
-                        child: Icon(widget.item.selectedIcon, size: 22, color: Colors.white),
-                      )
-                    : Icon(
-                        key: const ValueKey('unselected'),
-                        widget.item.icon,
-                        color: inactiveColor,
-                        size: 22,
+              // Icona con glow silver quando attiva + badge opzionale
+              Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  AnimatedSwitcher(
+                    duration: AppTheme.dFast,
+                    child: selected
+                        ? ShaderMask(
+                            key: const ValueKey('selected'),
+                            shaderCallback: (bounds) => AppColors.silverGradient.createShader(bounds),
+                            blendMode: BlendMode.srcIn,
+                            child: Icon(widget.item.selectedIcon, size: 22, color: Colors.white),
+                          )
+                        : Icon(
+                            key: const ValueKey('unselected'),
+                            widget.item.icon,
+                            color: inactiveColor,
+                            size: 22,
+                          ),
+                  ),
+                  if (widget.item.badge != null)
+                    Positioned(
+                      top: -6,
+                      right: -14,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF1A3A2A),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: const Color(0xFF2ECC71).withValues(alpha: 0.6), width: 0.5),
+                        ),
+                        child: Text(
+                          widget.item.badge!,
+                          style: const TextStyle(
+                            color: Color(0xFF2ECC71),
+                            fontSize: 7,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
                       ),
+                    ),
+                ],
               ),
               const SizedBox(height: 4),
               // Label

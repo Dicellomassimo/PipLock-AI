@@ -5,6 +5,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// Dopo la navigazione va resettato a null.
 final pendingNavigationProvider = StateProvider<String?>((ref) => null);
 
+/// Argomenti da passare alla route in pendingNavigationProvider.
+/// Viene resettato a null dopo la navigazione, insieme a pendingNavigationProvider.
+final pendingNavigationArgsProvider = StateProvider<Map<String, dynamic>?>((ref) => null);
+
 /// Tab index da attivare in MainNavScreen senza push di nuove route.
 /// Usato da challenge_setup → torna a /main e cambia tab a AI Planner.
 final pendingTabIndexProvider = StateProvider<int?>((ref) => null);

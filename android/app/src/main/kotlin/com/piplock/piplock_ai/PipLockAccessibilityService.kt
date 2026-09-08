@@ -394,11 +394,33 @@ class PipLockAccessibilityService : AccessibilityService() {
     private fun resetTradeCounterIfNewDay() {
         val today = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault())
             .format(java.util.Date())
-        if (tradeCounterDate != today) {
-            tradeCounterDate = today
+        if (tradeCounterDate == today) return
+
+        val isFirstStart = tradeCounterDate.isEmpty()
+        tradeCounterDate = today
+        lastKnownMargin = -1.0
+        estimatedMarginPerTrade = -1.0
+
+        if (isFirstStart) {
+            // Service appena avviato (o riavviato): ripristina il conteggio persisted
+            val prefs = getSharedPreferences("piplock_broker_data", Context.MODE_PRIVATE)
+            val savedTs = prefs.getLong("timestamp", 0L)
+            if (savedTs > 0L) {
+                val savedDateStr = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault())
+                    .format(java.util.Date(savedTs))
+                if (savedDateStr == today) {
+                    val savedTrades = prefs.getInt("trades_today", 0)
+                    if (savedTrades > 0) {
+                        tradesOpenedToday = savedTrades
+                        Log.d(TAG, "Trade counter restored from prefs: $tradesOpenedToday")
+                        return
+                    }
+                }
+            }
             tradesOpenedToday = 0
-            lastKnownMargin = -1.0
-            estimatedMarginPerTrade = -1.0
+        } else {
+            // Nuovo giorno: reset completo
+            tradesOpenedToday = 0
         }
     }
 
@@ -456,9 +478,11 @@ class PipLockAccessibilityService : AccessibilityService() {
             }
 
             if (lastKnownMargin < 0) {
-                // Prima lettura della sessione: init contatore con le posizioni visibili correnti
+                // Prima lettura della sessione: init margine baseline.
+                // Se tradesOpenedToday è già stato ripristinato dalle prefs (>0), non sovrascrivere.
+                // Altrimenti usa currentOpenPositions (posizioni già aperte prima dell'avvio del service).
                 lastKnownMargin = margin
-                if (tradesOpenedToday == 0 && currentOpenPositions != null)
+                if (tradesOpenedToday == 0 && currentOpenPositions != null && currentOpenPositions > 0)
                     tradesOpenedToday = currentOpenPositions
                 Log.d(TAG, "Trade oggi (init): $tradesOpenedToday, margine=$margin, est/trade=$estimatedMarginPerTrade")
             } else {

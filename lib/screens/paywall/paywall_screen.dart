@@ -70,7 +70,36 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
         isAnnual: _selectedPlan == 1,
       );
       if (!mounted) return;
-      if (success) Navigator.of(context).pushReplacementNamed('/main');
+      if (success) {
+        Navigator.of(context).pushReplacementNamed('/main');
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Purchase could not be completed. Please try again.',
+              style: TextStyle(color: Colors.white),
+            ),
+            backgroundColor: const Color(0xFF2A1A1A),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            duration: const Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Something went wrong. Check your connection and try again.',
+            style: TextStyle(color: Colors.white),
+          ),
+          backgroundColor: const Color(0xFF2A1A1A),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          duration: const Duration(seconds: 4),
+        ),
+      );
     } finally {
       if (mounted) setState(() => _purchaseLoading = false);
     }

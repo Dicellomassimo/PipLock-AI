@@ -221,6 +221,17 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
   bool get _hasActiveFilters =>
       _selectedImpact != 'all' || _selectedAsset != null;
 
+  List<NewsArticle> get _filteredNews {
+    if (_selectedAsset == null) return _news;
+    final keywords = _assetKeywords[_selectedAsset!] ?? [];
+    if (keywords.isEmpty) return _news;
+    return _news.where((n) {
+      final title = n.title.toLowerCase();
+      final summary = (n.summary ?? '').toLowerCase();
+      return keywords.any((kw) => title.contains(kw) || summary.contains(kw));
+    }).toList();
+  }
+
   // ── Dati ─────────────────────────────────────────────────────────────────
 
   Future<void> _load({bool forceRefresh = false}) async {
@@ -649,10 +660,10 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
           ],
 
           // ── Financial news ────────────────────────────────────────────
-          if (_news.isNotEmpty) ...[
+          if (_filteredNews.isNotEmpty) ...[
             _sectionTitle(s.t('MARKET NEWS', 'NEWS DI MERCATO')),
             const SizedBox(height: 12),
-            ..._news.take(15).map((n) => _NewsCard(article: n)),
+            ..._filteredNews.take(15).map((n) => _NewsCard(article: n)),
             const SizedBox(height: 20),
             const Divider(color: AppColors.divider),
             const SizedBox(height: 20),

@@ -303,6 +303,9 @@ class RulesNotifier extends StateNotifier<RulesState> {
       maxTradesPerDay: rules.maxTradesPerDay,
       killswitchDurationMinutes: _durationMinutes(rules.killswitchDuration),
       accountNumber: rules.accountNumber,
+      tradingHoursEnabled: rules.tradingHoursEnabled,
+      tradingHoursStart: rules.tradingHoursStart,
+      tradingHoursEnd: rules.tradingHoursEnd,
     );
     // Salva in cache locale così sopravvive a reinstall/trigger bug Supabase
     _saveLocalRulesCache(rules);
@@ -323,6 +326,14 @@ class RulesNotifier extends StateNotifier<RulesState> {
 
   void trackTrade() {
     final n = state.tradesToday + 1;
+    state = state.copyWith(tradesToday: n);
+    _persistCounters(n, state.lossToday);
+  }
+
+  /// Imposta il conteggio trade a [n] (usato quando Kotlin invia un valore
+  /// più accurato via margin-delta, che sovrascrive il counter Flutter).
+  void setTradesToday(int n) {
+    if (n <= state.tradesToday) return;
     state = state.copyWith(tradesToday: n);
     _persistCounters(n, state.lossToday);
   }

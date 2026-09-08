@@ -315,12 +315,27 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       final profitRaw   = lastData['profit']       as double?;
       final positions   = lastData['positions']    as int?;
       final tradesRaw   = lastData['trades_today'] as int?;
+      final refBalance  = lastData['reference_balance'] as double?;
+      final refDate     = lastData['reference_date'] as String? ?? '';
 
       final dataDate = DateTime.fromMillisecondsSinceEpoch(ts);
       final now2 = DateTime.now();
       final isToday = dataDate.year == now2.year &&
                       dataDate.month == now2.month &&
                       dataDate.day == now2.day;
+
+      // Ripristina il balance di riferimento (inizio giornata) da Kotlin SharedPreferences.
+      // Kotlin salva refDate in formato "yyyyMMdd" (es. "20260908").
+      // IMPORTANTE: va fatto PRIMA di updateFromAccessibility, così la logica interna
+      // non sovrascrive _initialBalanceToday con il balance corrente (post-perdita).
+      if (isToday && refBalance != null && refBalance > 0 && refDate.isNotEmpty) {
+        final todayKotlin =
+            '${now2.year}${now2.month.toString().padLeft(2, '0')}${now2.day.toString().padLeft(2, '0')}';
+        if (refDate == todayKotlin) {
+          _initialBalanceToday = refBalance;
+          _initialBalanceDateStr = now2.toIso8601String().substring(0, 10);
+        }
+      }
 
       updateFromAccessibility(
         equity:      (equity      != null && equity      >= 0)  ? equity      : null,
@@ -614,6 +629,19 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         try {
           _ref.read(killswitchProvider.notifier).activateNative(reason, remainingMin);
         } catch (_) {}
+      } else if (eventType == 'trading_hours_active') {
+        // Overlay trading hours attivo lato Kotlin — naviga a /trading_hours_block in Flutter.
+        // Legge gli orari configurati dalle regole per mostrarli nella schermata.
+        try {
+          final rules = _ref.read(rulesProvider).rules;
+          final startStr = rules?.tradingHoursStart ?? '08:00';
+          final endStr   = rules?.tradingHoursEnd   ?? '18:00';
+          _ref.read(pendingNavigationArgsProvider.notifier).state = {
+            'tradingStartStr': startStr,
+            'tradingEndStr':   endStr,
+          };
+          _ref.read(pendingNavigationProvider.notifier).state = '/trading_hours_block';
+        } catch (_) {}
       } else if (eventType == 'navigate_to_rules') {
         // Token used on MT5 overlay → deduct token, bypass rules lock, navigate
         try {
@@ -855,6 +883,9 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     if (tradesToday != null) {
       // ── Percorso A: valore accurato da Kotlin ────────────────────────────
       newTradesToday = tradesToday;
+      // Sincronizza rulesProvider così la home mostra il conteggio corretto.
+      // setTradesToday è idempotente e ignora valori minori di quello attuale.
+      try { _ref.read(rulesProvider.notifier).setTradesToday(tradesToday); } catch (_) {}
       // Aggiorna il baseline Flutter così se in futuro Kotlin smette di inviare
       // trades_today (cambio tab) non ripartiamo da zero.
       if (validPositions != null && validPositions > 0) {

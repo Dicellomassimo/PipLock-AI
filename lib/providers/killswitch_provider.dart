@@ -65,9 +65,51 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
   bool _disclaimerAlreadyShown = false;
 
   static const _disclaimerKey = 'killswitch_disclaimer_shown';
+  static const _activatedAtKey = 'killswitch_activated_at_ms';
+  static const _durationKey = 'killswitch_duration_minutes_saved';
+  static const _reasonKey = 'killswitch_reason_saved';
 
   KillswitchNotifier(this._ref) : super(const KillswitchState()) {
-    _loadDisclaimerFlag();
+    _loadDisclaimerFlag().then((_) => _restoreState());
+  }
+
+  /// Ripristina lo stato del killswitch dopo un riavvio dell'app.
+  /// Legge activatedAt e lockDurationMinutes da SharedPreferences.
+  /// Se il killswitch è scaduto, lo rimuove. Se ancora attivo, lo ripristina.
+  Future<void> _restoreState() async {
+    final prefs = await SharedPreferences.getInstance();
+    final isActive = prefs.getBool('killswitch_active') ?? false;
+    if (!isActive) return;
+
+    final activatedAtMs = prefs.getInt(_activatedAtKey);
+    final lockDurationMinutes = prefs.getInt(_durationKey) ?? 360;
+    if (activatedAtMs == null) return;
+
+    final activatedAt = DateTime.fromMillisecondsSinceEpoch(activatedAtMs);
+    final end = activatedAt.add(Duration(minutes: lockDurationMinutes));
+    final savedReason = prefs.getString(_reasonKey) ?? 'daily_loss';
+
+    if (DateTime.now().isAfter(end)) {
+      // Scaduto durante la chiusura dell'app: pulisci
+      await prefs.setBool('killswitch_active', false);
+      await prefs.remove(_activatedAtKey);
+      await prefs.remove(_durationKey);
+      await prefs.remove(_reasonKey);
+      NotificationService.sendKillswitchLiftedNotification();
+      return;
+    }
+
+    final remainingMinutes = end.difference(DateTime.now()).inMinutes + 1;
+    if (_disposed) return;
+    state = KillswitchState(
+      isActive: true,
+      activatedAt: activatedAt,
+      reason: savedReason,
+      lockDurationMinutes: lockDurationMinutes,
+      tokensAvailable: state.tokensAvailable,
+      needsDisclaimer: false,
+    );
+    _startAutoDeactivateTimer(remainingMinutes);
   }
 
   static const _disclaimerDateKey = 'killswitch_disclaimer_shown_date';
@@ -108,15 +150,26 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
     });
   }
 
-  Future<void> _setKillswitchActivePref(bool isActive) async {
+  Future<void> _setKillswitchActivePref(bool isActive,
+      {DateTime? activatedAt, int? lockDurationMinutes, String? reason}) async {
     final prefs = await SharedPreferences.getInstance();
-    prefs.setBool('killswitch_active', isActive);
+    await prefs.setBool('killswitch_active', isActive);
+    if (isActive && activatedAt != null && lockDurationMinutes != null) {
+      await prefs.setInt(_activatedAtKey, activatedAt.millisecondsSinceEpoch);
+      await prefs.setInt(_durationKey, lockDurationMinutes);
+      if (reason != null) await prefs.setString(_reasonKey, reason);
+    } else if (!isActive) {
+      await prefs.remove(_activatedAtKey);
+      await prefs.remove(_durationKey);
+      await prefs.remove(_reasonKey);
+    }
   }
 
   void activate(String reason, int durationMinutes) {
+    final now = DateTime.now();
     state = KillswitchState(
       isActive: true,
-      activatedAt: DateTime.now(),
+      activatedAt: now,
       reason: reason,
       lockDurationMinutes: durationMinutes,
       tokensAvailable: state.tokensAvailable,
@@ -128,7 +181,8 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
       durationMinutes: durationMinutes,
       reason: reason,
     );
-    _setKillswitchActivePref(true);
+    _setKillswitchActivePref(true,
+        activatedAt: now, lockDurationMinutes: durationMinutes, reason: reason);
     _startAutoDeactivateTimer(durationMinutes);
   }
 
@@ -153,7 +207,10 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
       durationMinutes: durationMinutes,
       reason: reason,
     );
-    _setKillswitchActivePref(true);
+    _setKillswitchActivePref(true,
+        activatedAt: state.activatedAt ?? DateTime.now(),
+        lockDurationMinutes: durationMinutes,
+        reason: reason);
     _startAutoDeactivateTimer(durationMinutes);
 
     // Schedula notifica "sblocco tra 30 minuti"
@@ -195,7 +252,7 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
     );
     // Rimuove l'overlay sopra le app broker
     AccessibilityService.hideKillswitchOverlay();
-    _setKillswitchActivePref(false);
+    _setKillswitchActivePref(false); // rimuove anche activatedAt e duration
     // Cancella la notifica "sblocco tra 30 min" se il killswitch viene rimosso anticipatamente
     NotificationService.cancelUnlockReminder();
   }

@@ -112,6 +112,9 @@ class AccessibilityService {
     int? maxTradesPerDay,
     int killswitchDurationMinutes = 360,
     String? accountNumber,
+    bool tradingHoursEnabled = false,
+    String? tradingHoursStart,
+    String? tradingHoursEnd,
   }) async {
     try {
       await _method.invokeMethod('syncRulesToNative', {
@@ -120,6 +123,9 @@ class AccessibilityService {
         'maxTradesPerDay': maxTradesPerDay ?? -1,
         'killswitchDurationMinutes': killswitchDurationMinutes,
         'accountNumber': accountNumber ?? '',
+        'tradingHoursEnabled': tradingHoursEnabled,
+        'tradingHoursStart': tradingHoursStart ?? '',
+        'tradingHoursEnd': tradingHoursEnd ?? '',
       });
     } catch (_) {}
   }

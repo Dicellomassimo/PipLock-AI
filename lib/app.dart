@@ -147,12 +147,30 @@ class PipLockApp extends StatelessWidget {
               '/trading_hours_block': (ctx) {
                 final args = ModalRoute.of(ctx)!.settings.arguments
                     as Map<String, dynamic>? ?? {};
-                final start = args['tradingStart'] as TimeOfDay?
-                    ?? const TimeOfDay(hour: 8, minute: 0);
-                final end = args['tradingEnd'] as TimeOfDay?
-                    ?? const TimeOfDay(hour: 18, minute: 0);
-                return TradingHoursBlockScreen(
-                    tradingStart: start, tradingEnd: end);
+
+                // Supporta sia TimeOfDay (da setup_wizard) sia String "HH:mm" (da overlay nativo)
+                TimeOfDay _parseTime(String s, TimeOfDay fallback) {
+                  final parts = s.split(':');
+                  if (parts.length < 2) return fallback;
+                  return TimeOfDay(
+                    hour:   int.tryParse(parts[0]) ?? fallback.hour,
+                    minute: int.tryParse(parts[1]) ?? fallback.minute,
+                  );
+                }
+
+                final startArg = args['tradingStart'];
+                final endArg   = args['tradingEnd'];
+                final startStr = args['tradingStartStr'] as String?;
+                final endStr   = args['tradingEndStr']   as String?;
+
+                final start = startArg is TimeOfDay
+                    ? startArg
+                    : _parseTime(startStr ?? '08:00', const TimeOfDay(hour: 8,  minute: 0));
+                final end = endArg is TimeOfDay
+                    ? endArg
+                    : _parseTime(endStr ?? '18:00',   const TimeOfDay(hour: 18, minute: 0));
+
+                return TradingHoursBlockScreen(tradingStart: start, tradingEnd: end);
               },
             },
           );
