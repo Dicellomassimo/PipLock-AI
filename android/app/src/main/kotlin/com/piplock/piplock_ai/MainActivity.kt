@@ -9,6 +9,7 @@ import android.net.Uri
 import android.provider.Settings
 import android.os.Bundle
 import android.view.WindowManager
+import android.content.pm.ApplicationInfo
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
@@ -18,10 +19,14 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        window.setFlags(
-            WindowManager.LayoutParams.FLAG_SECURE,
-            WindowManager.LayoutParams.FLAG_SECURE
-        )
+        // FLAG_SECURE solo in release: le build debug lo bloccano (ADB usa screen mirroring)
+        val isDebug = 0 != (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE)
+        if (!isDebug) {
+            window.setFlags(
+                WindowManager.LayoutParams.FLAG_SECURE,
+                WindowManager.LayoutParams.FLAG_SECURE
+            )
+        }
     }
 
     companion object {
