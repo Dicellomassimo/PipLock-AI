@@ -1096,4 +1096,55 @@ class NotificationService {
   static Future<void> cancelSessionReminder() async {
     await _fln.cancel(9901);
   }
+
+  // ---------------------------------------------------------------------------
+  // Session end notification — at exact tradingHoursEnd time, daily repeat
+  // ---------------------------------------------------------------------------
+  static Future<void> scheduleSessionEndNotification({
+    required int endHour,
+    required int endMinute,
+  }) async {
+    const id = 9902;
+    await _fln.cancel(id);
+    if (!isPrefEnabled('session_changes')) return;
+
+    final now = DateTime.now();
+    var notifTime = DateTime(now.year, now.month, now.day, endHour, endMinute);
+    if (notifTime.isBefore(now)) {
+      notifTime = notifTime.add(const Duration(days: 1));
+    }
+
+    const androidDetails = AndroidNotificationDetails(
+      'session_reminder',
+      'Session Reminder',
+      channelDescription: '15-minute warning before your trading session starts',
+      importance: Importance.max,
+      priority: Priority.high,
+    );
+
+    try {
+      final isIt = await _isIt();
+      final scheduledDate = tz.TZDateTime.from(notifTime, tz.local);
+      await _fln.zonedSchedule(
+        id,
+        _t(isIt, '⛔ Trading session ended', '⛔ Sessione di trading conclusa'),
+        _t(isIt,
+          'Close all open positions now — trading hours are over',
+          'Chiudi ora tutte le posizioni aperte — orario di trading terminato'),
+        scheduledDate,
+        const NotificationDetails(android: androidDetails),
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        matchDateTimeComponents: DateTimeComponents.time,
+      );
+      debugPrint('[NotificationService] Session end notif → $endHour:${endMinute.toString().padLeft(2, '0')}');
+    } catch (e) {
+      debugPrint('[NotificationService] scheduleSessionEndNotification error: $e');
+    }
+  }
+
+  static Future<void> cancelSessionEndNotification() async {
+    await _fln.cancel(9902);
+  }
 }

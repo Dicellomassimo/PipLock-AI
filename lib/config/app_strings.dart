@@ -432,6 +432,16 @@ class AppStrings {
   String get tradingHoursOpensAt => _t('Opens at:', 'Riapertura:');
   String get tradingHoursFooter => _t('PipLock is protecting your discipline', 'PipLock sta proteggendo la tua disciplina');
 
+  // Token unlock section on block screen
+  String get thBlockTokenUnlock => _t('Edit trading hours with 1 token', 'Modifica orari con 1 token');
+  String get thBlockTokenUnlockSub => _t('You\'ll be redirected to your rules', 'Verrai reindirizzato alle tue regole');
+  String get thBlockNoTokens => _t('No tokens available · resets Sunday', 'Nessun token disponibile · si rinnovano domenica');
+  String get thBlockTokenUsed => _t('Token already used for this session', 'Token già usato per questa sessione');
+
+  // ── Trading hours end-of-session notification ─────────────────────────────
+  String get thEndNotifTitle => _t('⛔ Trading session ended', '⛔ Sessione di trading conclusa');
+  String get thEndNotifBody => _t('Close all open positions now — trading hours are over', 'Chiudi ora tutte le posizioni aperte — orario di trading terminato');
+
   // ── Tokens screen ────────────────────────────────────────────────────────
   String get tokensTitle => _t('Tokens', 'Token');
   String get buyTokensTitle => _t('Buy Tokens', 'Acquista Token');

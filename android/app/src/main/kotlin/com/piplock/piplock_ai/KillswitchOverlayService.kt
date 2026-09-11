@@ -85,13 +85,13 @@ class KillswitchOverlayService : Service() {
         }
 
         /**
-         * Blocco orari di trading: nessuna fase di avviso, nessun token unlock.
-         * Si auto-dismiss quando scadono i minuti fino all'apertura del mercato.
+         * Blocco orari di trading: fase di avviso 60s (per chiudere i trade),
+         * poi lockdown fino all'apertura del mercato.
          */
         fun showTradingHoursBlock(context: Context, minutesUntilStart: Int) {
             if (!Settings.canDrawOverlays(context)) return
             if (isRunning) return
-            startService(context, minutesUntilStart, "trading_hours", skipWarning = true)
+            startService(context, minutesUntilStart, "trading_hours", skipWarning = false)
         }
 
         fun hide(context: Context) {
@@ -286,6 +286,109 @@ class KillswitchOverlayService : Service() {
     // ── Layout FASE 1 — AVVISO ────────────────────────────────────────────────
 
     private fun buildWarningLayout(): LinearLayout {
+        val isTradingHours = reason == "trading_hours"
+        return if (isTradingHours) buildTradingHoursWarningLayout()
+               else               buildKillswitchWarningLayout()
+    }
+
+    /** Warning overlay for trading hours end — premium black/silver palette */
+    private fun buildTradingHoursWarningLayout(): LinearLayout {
+        val ctx = this
+
+        val root = LinearLayout(ctx).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity     = Gravity.CENTER_HORIZONTAL
+            background  = android.graphics.drawable.GradientDrawable(
+                android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM,
+                intArrayOf(Color.parseColor("#F2080C14"), Color.parseColor("#F21C2030"))
+            )
+            setPadding(56, 36, 56, 52)
+        }
+
+        // Top row: icon + text + countdown
+        val topRow = LinearLayout(ctx).apply {
+            orientation  = LinearLayout.HORIZONTAL
+            gravity      = Gravity.CENTER_VERTICAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+        }
+
+        val clockEmoji = TextView(ctx).apply {
+            text    = "🕐"
+            textSize = 28f
+            setPadding(0, 0, 20, 0)
+            gravity = Gravity.CENTER_VERTICAL
+        }
+
+        val textCol = LinearLayout(ctx).apply {
+            orientation  = LinearLayout.VERTICAL
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+        }
+
+        textCol.addView(TextView(ctx).apply {
+            text          = "TRADING SESSION ENDED"
+            textSize      = 13f
+            setTextColor(Color.WHITE)
+            setTypeface(null, Typeface.BOLD)
+            letterSpacing = 0.06f
+        })
+        textCol.addView(TextView(ctx).apply {
+            text     = "Close all open positions now"
+            textSize = 11f
+            setTextColor(Color.parseColor("#A0B8C8"))
+        })
+
+        val warningCountdown = TextView(ctx).apply {
+            text     = "$WARNING_SECONDS"
+            textSize = 28f
+            setTextColor(Color.parseColor("#B0BEC5"))  // silver
+            typeface  = Typeface.MONOSPACE
+            gravity   = Gravity.END or Gravity.CENTER_VERTICAL
+            setPadding(16, 0, 0, 0)
+        }
+        countdownTextView = warningCountdown
+
+        topRow.addView(clockEmoji)
+        topRow.addView(textCol)
+        topRow.addView(warningCountdown)
+        root.addView(topRow)
+
+        // Instructions
+        root.addView(TextView(ctx).apply {
+            text     = "MT5 will be locked in the seconds shown ↗\nClose positions before time runs out."
+            textSize = 12f
+            setTextColor(Color.parseColor("#80B0C0D0"))
+            gravity  = Gravity.CENTER_HORIZONTAL
+            setPadding(0, 24, 0, 24)
+        })
+
+        // Confirm button — silver/dark style
+        root.addView(Button(ctx).apply {
+            text     = "✓  I've closed all positions — lock now"
+            textSize = 13f
+            setTextColor(Color.parseColor("#0A0C10"))
+            background = android.graphics.drawable.GradientDrawable().apply {
+                shape        = android.graphics.drawable.GradientDrawable.RECTANGLE
+                cornerRadius = 28f
+                setColor(Color.parseColor("#B0BEC5"))  // silver
+            }
+            setPadding(48, 28, 48, 28)
+            setTypeface(null, Typeface.BOLD)
+            letterSpacing = 0.02f
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            )
+            setOnClickListener { transitionToLockdown() }
+        })
+
+        return root
+    }
+
+    /** Warning overlay for killswitch — existing red palette */
+    private fun buildKillswitchWarningLayout(): LinearLayout {
         val ctx = this
 
         val root = LinearLayout(ctx).apply {

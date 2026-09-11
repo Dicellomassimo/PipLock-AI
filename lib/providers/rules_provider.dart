@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide AuthState;
 import '../models/personal_rules.dart';
 import '../services/accessibility_service.dart';
+import '../services/notification_service.dart';
 import '../services/supabase_service.dart';
 import '../config/constants.dart';
 import 'auth_provider.dart';
@@ -293,6 +294,33 @@ class RulesNotifier extends StateNotifier<RulesState> {
   void setRules(PersonalRules rules) {
     state = state.copyWith(rules: rules);
     _syncToNative(rules);
+    _scheduleSessionNotifications(rules);
+  }
+
+  void _scheduleSessionNotifications(PersonalRules rules) {
+    if (!rules.tradingHoursEnabled) {
+      NotificationService.cancelSessionReminder();
+      NotificationService.cancelSessionEndNotification();
+      return;
+    }
+    if (rules.tradingHoursStart != null) {
+      final parts = rules.tradingHoursStart!.split(':');
+      if (parts.length == 2) {
+        NotificationService.scheduleSessionReminder(
+          startHour: int.tryParse(parts[0]) ?? 0,
+          startMinute: int.tryParse(parts[1]) ?? 0,
+        );
+      }
+    }
+    if (rules.tradingHoursEnd != null) {
+      final parts = rules.tradingHoursEnd!.split(':');
+      if (parts.length == 2) {
+        NotificationService.scheduleSessionEndNotification(
+          endHour: int.tryParse(parts[0]) ?? 0,
+          endMinute: int.tryParse(parts[1]) ?? 0,
+        );
+      }
+    }
   }
 
   void _syncToNative(PersonalRules rules) {

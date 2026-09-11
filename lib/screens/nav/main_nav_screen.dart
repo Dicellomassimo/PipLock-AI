@@ -23,6 +23,7 @@ import '../ai_planner/ai_planner_screen.dart';
 import '../history/history_screen.dart';
 import '../settings/settings_screen.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/killswitch_provider.dart';
 import '../../providers/rules_provider.dart';
 
 class MainNavScreen extends ConsumerStatefulWidget {
@@ -87,6 +88,12 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
           unawaited(ref.read(brokerProvider.notifier).syncAllAccountsToNative());
         }
       });
+
+      // Check trading hours on startup (covers MetaAPI/Manual users — Kotlin
+      // accessibility overlay only fires for Screen Reading mode).
+      Future.delayed(const Duration(seconds: 1), () {
+        if (mounted) _checkTradingHours();
+      });
       // Recalculate dynamic plan on first load (also fires on resume via lifecycle observer)
       unawaited(_checkDynamicPlan());
     });
@@ -135,6 +142,45 @@ class _MainNavScreenState extends ConsumerState<MainNavScreen>
       }
     } catch (e) {
       debugPrint('[DynamicPlan] _checkDynamicPlan error: $e');
+    }
+  }
+
+  /// Checks if current time is outside the user's trading hours and navigates
+  /// to the block screen if needed. Only fires from Flutter side (covers
+  /// MetaAPI / Manual broker modes where Kotlin overlay doesn't trigger).
+  void _checkTradingHours() {
+    if (!mounted) return;
+    try {
+      final killswitchActive = ref.read(killswitchProvider).isActive;
+      if (killswitchActive) return; // killswitch already active — don't overlap
+    } catch (_) {
+      return;
+    }
+
+    final rules = ref.read(rulesProvider).rules;
+    if (rules == null) return;
+    if (!rules.tradingHoursEnabled) return;
+    if (rules.tradingHoursStart == null || rules.tradingHoursEnd == null) return;
+
+    final now = TimeOfDay.now();
+    final startParts = rules.tradingHoursStart!.split(':');
+    final endParts   = rules.tradingHoursEnd!.split(':');
+    if (startParts.length != 2 || endParts.length != 2) return;
+
+    final startMin = (int.tryParse(startParts[0]) ?? 0) * 60 + (int.tryParse(startParts[1]) ?? 0);
+    final endMin   = (int.tryParse(endParts[0])   ?? 0) * 60 + (int.tryParse(endParts[1])   ?? 0);
+    final nowMin   = now.hour * 60 + now.minute;
+
+    final insideHours = nowMin >= startMin && nowMin < endMin;
+    if (!insideHours && mounted) {
+      // Pass the configured trading hours as args so the block screen shows correct times
+      Navigator.of(context).pushReplacementNamed(
+        '/trading_hours_block',
+        arguments: {
+          'tradingStartStr': rules.tradingHoursStart,
+          'tradingEndStr': rules.tradingHoursEnd,
+        },
+      );
     }
   }
 

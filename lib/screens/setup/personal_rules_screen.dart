@@ -80,6 +80,10 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
     final tokenUsed = prefs.getBool('killswitch_token_used') ?? false;
     if (tokenUsed) return; // skip lock — flag cleared in _confirm()
 
+    // If user just used a token from the trading hours block screen, bypass lock too
+    final thTokenUsed = prefs.getBool('trading_hours_token_used') ?? false;
+    if (thTokenUsed) return; // skip lock — flag cleared in _confirm()
+
     // Controlla sia la chiave account-specifica sia quella generica (fallback
     // per quando Supabase non riesce a caricare l'account number all'avvio).
     final lockedUntil = prefs.getInt(_effectiveLockKey) ?? prefs.getInt(_lockKey) ?? 0;
@@ -294,9 +298,11 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
       currency: _currency,
     );
     ref.read(rulesProvider.notifier).setRules(rules);
-    // Clear the killswitch token bypass flag now that rules have been saved
+    // Clear token bypass flags now that rules have been saved
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('killswitch_token_used');
+    final fromTradingHoursBlock = prefs.getBool('trading_hours_token_used') ?? false;
+    await prefs.remove('trading_hours_token_used');
     await _writeLock(); // lock rules until midnight
 
     final durationMin = switch (_killswitchDuration) {
@@ -323,7 +329,29 @@ class _PersonalRulesScreenState extends ConsumerState<PersonalRulesScreen> {
         await SupabaseService.savePersonalRules(rules);
       } catch (_) {}
     }
-    if (mounted) Navigator.pushReplacementNamed(context, '/dashboard');
+
+    if (!mounted) return;
+
+    // If the user came from the trading hours block screen, re-check if we're
+    // now inside the new trading hours. If still outside → back to block screen.
+    if (fromTradingHoursBlock) {
+      if (_tradingHoursEnabled) {
+        final now = TimeOfDay.now();
+        final startMin = _startTime.hour * 60 + _startTime.minute;
+        final endMin   = _endTime.hour   * 60 + _endTime.minute;
+        final nowMin   = now.hour * 60 + now.minute;
+        final insideHours = nowMin >= startMin && nowMin < endMin;
+        if (!insideHours) {
+          Navigator.pushReplacementNamed(context, '/trading_hours_block');
+          return;
+        }
+      }
+      // Trading hours disabled or now inside hours → go to main
+      Navigator.pushReplacementNamed(context, '/main');
+      return;
+    }
+
+    Navigator.pushReplacementNamed(context, '/dashboard');
   }
 
   @override

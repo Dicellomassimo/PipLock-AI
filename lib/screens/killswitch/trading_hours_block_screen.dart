@@ -1,9 +1,14 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_strings.dart';
+import '../../config/app_theme.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/supabase_service.dart';
 import '../../widgets/ambient_blobs.dart';
 
 class TradingHoursBlockScreen extends ConsumerStatefulWidget {
@@ -25,6 +30,7 @@ class _TradingHoursBlockScreenState extends ConsumerState<TradingHoursBlockScree
     with WidgetsBindingObserver {
   Timer? _timer;
   Duration _remaining = Duration.zero;
+  bool _isUnlocking = false;
 
   @override
   void initState() {
@@ -47,6 +53,36 @@ class _TradingHoursBlockScreenState extends ConsumerState<TradingHoursBlockScree
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && mounted) {
       _updateCountdown();
+    }
+  }
+
+  Future<void> _useToken() async {
+    final s = ref.read(appStringsProvider);
+    final userId = ref.read(currentUserIdProvider);
+    if (userId.isEmpty || _isUnlocking) return;
+    setState(() => _isUnlocking = true);
+    try {
+      final success = await SupabaseService.consumeToken(userId);
+      if (!success) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(s.thBlockNoTokens,
+                style: GoogleFonts.manrope(color: Colors.white)),
+            backgroundColor: AppColors.danger,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: const EdgeInsets.all(16),
+          ));
+        }
+        return;
+      }
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool('trading_hours_token_used', true);
+      if (mounted) Navigator.of(context).pushReplacementNamed('/personal_rules');
+    } catch (e) {
+      debugPrint('[TradingHoursBlock] _useToken error: $e');
+    } finally {
+      if (mounted) setState(() => _isUnlocking = false);
     }
   }
 
@@ -84,6 +120,110 @@ class _TradingHoursBlockScreenState extends ConsumerState<TradingHoursBlockScree
   String _localNow() {
     final now = DateTime.now();
     return '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+  }
+
+  Widget _buildTokenSection(AppStrings s) {
+    final tokens = ref.watch(authProvider).profile?.tokensAvailable ?? 0;
+
+    if (tokens <= 0) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+        decoration: BoxDecoration(
+          color: AppColors.cardBg,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.key_off_rounded, color: AppColors.textTertiary, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                s.thBlockNoTokens,
+                style: GoogleFonts.manrope(
+                  color: AppColors.textTertiary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return GestureDetector(
+      onTap: _isUnlocking ? null : _useToken,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+        decoration: BoxDecoration(
+          color: _isUnlocking
+              ? AppColors.accent.withValues(alpha: 0.06)
+              : AppColors.accent.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: AppColors.accent.withValues(alpha: _isUnlocking ? 0.15 : 0.30),
+            width: 1.5,
+          ),
+          boxShadow: _isUnlocking ? null : AppColors.glowSilver(intensity: 0.6),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.accent.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: _isUnlocking
+                  ? const Padding(
+                      padding: EdgeInsets.all(8),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.accent,
+                      ),
+                    )
+                  : const Icon(Icons.key_rounded, color: AppColors.accent, size: 18),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.thBlockTokenUnlock,
+                    style: GoogleFonts.manrope(
+                      color: AppColors.textPrimary,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    s.thBlockTokenUnlockSub,
+                    style: GoogleFonts.manrope(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Icon(
+              Icons.arrow_forward_ios_rounded,
+              color: AppColors.accent.withValues(alpha: 0.6),
+              size: 14,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   @override
@@ -242,7 +382,10 @@ class _TradingHoursBlockScreenState extends ConsumerState<TradingHoursBlockScree
                           ),
                         ],
                       ),
-                      const SizedBox(height: 48),
+                      const SizedBox(height: 36),
+                      // ── Token unlock section ─────────────────────────────
+                      _buildTokenSection(s),
+                      const SizedBox(height: 32),
                       // Bottom hint
                       Text(
                         s.tradingHoursFooter,
