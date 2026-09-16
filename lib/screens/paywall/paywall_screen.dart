@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -25,7 +26,15 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
   bool _purchaseLoading = false;
   // Prezzi reali da RevenueCat (fallback ai prezzi hardcoded se RC non configurato)
   String _monthlyPrice = '€19.99';
+  // Per-month equivalent of the annual plan (for display in plan tab)
   String _annualPrice = '€13.99';
+  // Full annual total billed (for "Billed annually at X" label)
+  String _annualRawTotal = '€167.88';
+
+  /// Returns the full annual total for the "Billed annually at X" label.
+  /// When RevenueCat is available, this is the raw store price (the total).
+  /// When using the hardcoded fallback, it is computed as _annualPrice * 12.
+  String get _annualTotalPrice => _annualRawTotal;
 
   @override
   void initState() {
@@ -38,7 +47,34 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
     if (!mounted) return;
     setState(() {
       _monthlyPrice = PurchaseService.monthlyPriceString ?? '€19.99';
-      _annualPrice = PurchaseService.annualPriceString ?? '€13.99';
+
+      // RevenueCat's storeProduct.priceString for an annual plan returns the TOTAL
+      // annual price (e.g. "€167.88"), not the per-month equivalent.
+      // We display the per-month equivalent in the plan tab, and the total in the
+      // "Billed annually at X" label.
+      final rawAnnual = PurchaseService.annualPriceString;
+      if (rawAnnual != null) {
+        // Store the raw total for the billing label
+        _annualRawTotal = rawAnnual;
+        // Derive per-month equivalent by dividing the total by 12
+        try {
+          final match = RegExp(r'[\d]+[.,][\d]+').firstMatch(rawAnnual);
+          if (match != null) {
+            final numStr = match.group(0)!.replaceAll(',', '.');
+            final totalPrice = double.parse(numStr);
+            final symbol = rawAnnual.replaceAll(RegExp(r'[\d.,\s]'), '').trim();
+            final perMonth = totalPrice / 12;
+            _annualPrice = '$symbol${perMonth.toStringAsFixed(2)}';
+          } else {
+            _annualPrice = rawAnnual;
+            _annualRawTotal = rawAnnual;
+          }
+        } catch (_) {
+          _annualPrice = rawAnnual;
+          _annualRawTotal = rawAnnual;
+        }
+      }
+      // If rawAnnual is null, keep hardcoded defaults (€13.99/mo, €167.88 total)
     });
   }
 
@@ -73,11 +109,15 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
       if (success) {
         Navigator.of(context).pushReplacementNamed('/main');
       } else {
+        final s = ref.read(appStringsProvider);
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text(
-              'Purchase could not be completed. Please try again.',
-              style: TextStyle(color: Colors.white),
+            content: Text(
+              s.t(
+                'Purchase could not be completed. Please try again.',
+                'Acquisto non completato. Riprova.',
+              ),
+              style: const TextStyle(color: Colors.white),
             ),
             backgroundColor: const Color(0xFF2A1A1A),
             behavior: SnackBarBehavior.floating,
@@ -88,11 +128,15 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
       }
     } catch (_) {
       if (!mounted) return;
+      final s = ref.read(appStringsProvider);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: const Text(
-            'Something went wrong. Check your connection and try again.',
-            style: TextStyle(color: Colors.white),
+          content: Text(
+            s.t(
+              'Something went wrong. Check your connection and try again.',
+              'Qualcosa è andato storto. Controlla la connessione e riprova.',
+            ),
+            style: const TextStyle(color: Colors.white),
           ),
           backgroundColor: const Color(0xFF2A1A1A),
           behavior: SnackBarBehavior.floating,
@@ -238,8 +282,12 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
               if (_selectedPlan == 1)
                 Center(
                   child: Text(
-                    s.t('Billed annually at €167.88 · Cancel anytime',
-                        'Fatturato annualmente a €167,88 · Cancella quando vuoi'),
+                    _annualTotalPrice.isNotEmpty
+                        ? s.t(
+                            'Billed annually at $_annualTotalPrice · Cancel anytime',
+                            'Fatturato annualmente a $_annualTotalPrice · Cancella quando vuoi')
+                        : s.t('Billed annually · Cancel anytime',
+                            'Fatturato annualmente · Cancella quando vuoi'),
                     style: GoogleFonts.manrope(
                       color: AppColors.textSecondary.withValues(alpha: 0.7),
                       fontSize: 11,
@@ -431,6 +479,22 @@ class _PaywallScreenState extends ConsumerState<PaywallScreen> {
                       ],
                     ),
                   ),
+                ),
+              ),
+
+              // ── Restore purchases ─────────────────────────────────────────
+              Center(
+                child: TextButton(
+                  onPressed: () async {
+                    final messenger = ScaffoldMessenger.of(context);
+                    try {
+                      await PurchaseService.restorePurchases();
+                      messenger.showSnackBar(
+                        const SnackBar(content: Text('Purchases restored.')),
+                      );
+                    } catch (_) {}
+                  },
+                  child: const Text('Restore purchases', style: TextStyle(color: Colors.white54, fontSize: 12)),
                 ),
               ),
 
@@ -680,17 +744,36 @@ class _RegistrationSheetState extends State<_RegistrationSheet> {
 
   Future<void> _signInWithGoogle() async {
     setState(() => _googleLoading = true);
+    StreamSubscription<AuthState>? authSub;
     try {
+      final completer = Completer<String>();
+      authSub = Supabase.instance.client.auth.onAuthStateChange.listen((data) {
+        final userId = data.session?.user.id;
+        if (userId != null && !completer.isCompleted) {
+          completer.complete(userId);
+        }
+      });
+
       await SupabaseService.signInWithGoogle();
+
+      final userId = await completer.future.timeout(
+        const Duration(minutes: 10),
+        onTimeout: () => throw Exception('Sign in timed out.'),
+      );
+
       if (!mounted) return;
-      final userId = Supabase.instance.client.auth.currentUser?.id;
-      if (userId != null) {
-        await PurchaseService.initialize(userId: userId);
-        await PurchaseService.purchasePro(isAnnual: widget.isAnnual);
+      await PurchaseService.initialize(userId: userId);
+      final purchased = await PurchaseService.purchasePro(isAnnual: widget.isAnnual);
+      if (!mounted) return;
+      if (purchased == true) {
+        Navigator.of(context).pop();
+        Navigator.of(context).pushReplacementNamed('/main');
+      } else {
+        _showError(widget.s.t(
+          'Purchase was not completed. Please try again.',
+          'Acquisto non completato. Riprova.',
+        ));
       }
-      if (!mounted) return;
-      Navigator.of(context).pop();
-      Navigator.of(context).pushReplacementNamed('/main');
     } catch (e) {
       if (mounted && !e.toString().contains('cancelled')) {
         _showError(widget.s.t(
@@ -699,6 +782,7 @@ class _RegistrationSheetState extends State<_RegistrationSheet> {
         ));
       }
     } finally {
+      authSub?.cancel();
       if (mounted) setState(() => _googleLoading = false);
     }
   }
@@ -713,13 +797,41 @@ class _RegistrationSheetState extends State<_RegistrationSheet> {
         _passwordCtrl.text,
       );
       if (!mounted) return;
-      if (res.user != null) {
+      if (res.session != null) {
+        // Email confirmation disabled — user is immediately signed in
         final userId = res.user!.id;
         await PurchaseService.initialize(userId: userId);
-        await PurchaseService.purchasePro(isAnnual: widget.isAnnual);
+        final purchased = await PurchaseService.purchasePro(isAnnual: widget.isAnnual);
+        if (!mounted) return;
+        if (purchased == true) {
+          Navigator.of(context).pop();
+          Navigator.of(context).pushReplacementNamed('/main');
+        } else {
+          _showError(widget.s.t(
+            'Purchase was not completed. Please try again.',
+            'Acquisto non completato. Riprova.',
+          ));
+        }
+      } else if (res.user != null) {
+        // Email confirmation required — session not yet active
         if (!mounted) return;
         Navigator.of(context).pop();
-        Navigator.of(context).pushReplacementNamed('/main');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              widget.s.t(
+                'Account created! Check your inbox and click the confirmation link to sign in.',
+                'Account creato! Controlla la tua email e clicca il link di conferma per accedere.',
+              ),
+              style: GoogleFonts.manrope(),
+            ),
+            backgroundColor: const Color(0xFF1A2A1A),
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            margin: const EdgeInsets.all(16),
+            duration: const Duration(seconds: 6),
+          ),
+        );
       } else {
         _showError(widget.s.t(
           'Registration failed. Please try again.',
@@ -773,8 +885,13 @@ class _RegistrationSheetState extends State<_RegistrationSheet> {
         key: _formKey,
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Flexible(
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
             // Handle
             Center(
               child: Container(
@@ -940,7 +1057,7 @@ class _RegistrationSheetState extends State<_RegistrationSheet> {
                             ),
                             recognizer: TapGestureRecognizer()
                               ..onTap = () => Navigator.of(context)
-                                  .pushNamed('/privacy_policy'),
+                                  .pushNamed('/terms_of_service'),
                           ),
                           TextSpan(
                             text: widget.s.t(' and ', ' e la '),
@@ -1039,6 +1156,10 @@ class _RegistrationSheetState extends State<_RegistrationSheet> {
                       ),
                     ],
                   ),
+                ),
+              ),
+            ),
+                  ],
                 ),
               ),
             ),

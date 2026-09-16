@@ -2,9 +2,13 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:uuid/uuid.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_strings.dart';
 import '../../config/app_theme.dart';
+import '../../models/journal_entry.dart';
+import '../../providers/auth_provider.dart';
+import '../../providers/journal_provider.dart';
 import '../../providers/observer_provider.dart';
 
 
@@ -111,10 +115,261 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
   }
 
   Future<void> _exitObserverMode() async {
+    final startedAt = ref.read(observerProvider).startedAt;
     await ref.read(observerProvider.notifier).deactivate();
-    if (mounted) {
-      Navigator.pop(context);
+    if (!mounted) return;
+
+    // Mostra quick check-in post-sessione (solo se la sessione è durata almeno 5 min)
+    final sessionDuration = startedAt != null
+        ? DateTime.now().difference(startedAt)
+        : Duration.zero;
+    if (sessionDuration.inMinutes >= 5) {
+      await _showPostSessionCheckin(sessionDuration);
     }
+
+    if (mounted) Navigator.pop(context);
+  }
+
+  Future<void> _showPostSessionCheckin(Duration sessionDuration) async {
+    final s = ref.read(appStringsProvider);
+    String? selectedEmotion;
+    bool? stayedDisciplined;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final emotionOptions = [
+              ('calm', '😌'),
+              ('confident', '💪'),
+              ('anxious', '😰'),
+              ('frustrated', '😤'),
+            ];
+            return Container(
+              padding: EdgeInsets.fromLTRB(
+                  24, 20, 24, 24 + MediaQuery.of(ctx).viewInsets.bottom),
+              decoration: const BoxDecoration(
+                color: Color(0xFF141414),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: AppColors.border,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Text(
+                    s.t('Session complete 🎯', 'Sessione completata 🎯'),
+                    style: GoogleFonts.manrope(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 18,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    s.t(
+                      'Observer session: ${_formatElapsed(sessionDuration)}',
+                      'Sessione Observer: ${_formatElapsed(sessionDuration)}',
+                    ),
+                    style: GoogleFonts.manrope(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    s.t('How do you feel?', 'Come ti senti?'),
+                    style: GoogleFonts.manrope(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                    children: emotionOptions.map((e) {
+                      final isSelected = selectedEmotion == e.$1;
+                      return GestureDetector(
+                        onTap: () => setModalState(() => selectedEmotion = e.$1),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 14, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppColors.accent.withValues(alpha: 0.15)
+                                : AppColors.cardBg,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: isSelected
+                                  ? AppColors.accent
+                                  : AppColors.border,
+                            ),
+                          ),
+                          child: Text(e.$2,
+                              style: const TextStyle(fontSize: 22)),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    s.t('Did you stay disciplined?', 'Sei rimasto disciplinato?'),
+                    style: GoogleFonts.manrope(
+                      color: AppColors.textSecondary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      _disciplineButton(
+                        ctx: ctx,
+                        label: s.t('Yes ✅', 'Sì ✅'),
+                        selected: stayedDisciplined == true,
+                        onTap: () =>
+                            setModalState(() => stayedDisciplined = true),
+                      ),
+                      const SizedBox(width: 12),
+                      _disciplineButton(
+                        ctx: ctx,
+                        label: s.t('No ❌', 'No ❌'),
+                        selected: stayedDisciplined == false,
+                        onTap: () =>
+                            setModalState(() => stayedDisciplined = false),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton(
+                      onPressed: selectedEmotion != null
+                          ? () {
+                              Navigator.pop(ctx);
+                              _saveObserverJournalEntry(
+                                emotion: selectedEmotion!,
+                                wasPlanned: stayedDisciplined ?? true,
+                                sessionDuration: sessionDuration,
+                              );
+                            }
+                          : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.accent,
+                        foregroundColor: Colors.black,
+                        padding:
+                            const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        disabledBackgroundColor:
+                            AppColors.accent.withValues(alpha: 0.3),
+                      ),
+                      child: Text(
+                        s.t('Save session', 'Salva sessione'),
+                        style: GoogleFonts.manrope(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                        ),
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(ctx),
+                    child: Center(
+                      child: Text(
+                        s.t('Skip', 'Salta'),
+                        style: GoogleFonts.manrope(
+                          color: AppColors.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _disciplineButton({
+    required BuildContext ctx,
+    required String label,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return Expanded(
+      child: GestureDetector(
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          decoration: BoxDecoration(
+            color: selected
+                ? AppColors.accent.withValues(alpha: 0.15)
+                : AppColors.cardBg,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? AppColors.accent : AppColors.border,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: GoogleFonts.manrope(
+                color: selected ? AppColors.accent : AppColors.textSecondary,
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _saveObserverJournalEntry({
+    required String emotion,
+    required bool wasPlanned,
+    required Duration sessionDuration,
+  }) {
+    final s = ref.read(appStringsProvider);
+    final userId = ref.read(currentUserIdProvider);
+    if (userId.isEmpty) return;
+    final minutes = sessionDuration.inMinutes;
+    final entry = JournalEntry(
+      id: const Uuid().v4(),
+      userId: userId,
+      date: DateTime.now(),
+      symbol: 'OBSERVER',
+      direction: 'long',
+      pnl: null,
+      emotion: emotion,
+      emotionScore: wasPlanned ? 4 : 2,
+      setupDescription: s.t(
+        'Observer mode session — ${minutes}min',
+        'Sessione Observer mode — ${minutes}min',
+      ),
+      wasPlanned: wasPlanned,
+      createdAt: DateTime.now(),
+    );
+    ref.read(journalProvider.notifier).addEntry(entry);
   }
 
   @override
@@ -141,7 +396,7 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
                     _PulsingDot(color: blueColor),
                     const SizedBox(width: 8),
                     Text(
-                      'LIVE · Observer Mode',
+                      s.t('LIVE · Observer Mode', 'LIVE · Modalità Observer'),
                       style: GoogleFonts.manrope(
                         color: blueColor,
                         fontSize: 12,
@@ -164,7 +419,7 @@ class _ObserverScreenState extends ConsumerState<ObserverScreen> {
                           const Text('🔥', style: TextStyle(fontSize: 13)),
                           const SizedBox(width: 5),
                           Text(
-                            '${observer.consecutiveDays} days',
+                            s.t('${observer.consecutiveDays} days', '${observer.consecutiveDays} giorni'),
                             style: GoogleFonts.manrope(
                               color: blueColor,
                               fontWeight: FontWeight.w700,

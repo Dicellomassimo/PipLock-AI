@@ -9,7 +9,6 @@ import '../../providers/broker_provider.dart';
 import '../../providers/challenge_provider.dart';
 import '../../providers/chat_history_provider.dart';
 import '../../providers/pending_challenge_provider.dart';
-import '../../providers/rules_provider.dart';
 import '../../widgets/ambient_blobs.dart';
 import '../../widgets/candle_background.dart';
 import 'chat_session_screen.dart';
@@ -89,7 +88,6 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
   void _showNewChatSheet() {
     final challenges = ref.read(challengeListProvider);
     final s = ref.read(appStringsProvider);
-    final hasPersonalRules = ref.read(rulesProvider).rules != null;
     final brokerState = ref.read(brokerProvider);
     final hasBroker = brokerState.hasAccount;
     showModalBottomSheet(
@@ -119,49 +117,26 @@ class _AiPlannerScreenState extends ConsumerState<AiPlannerScreen> {
                   color: AppColors.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 20),
-            // Conto personale — disabilitato se regole manuali già configurate
+            // Conto personale — disponibile sempre (con o senza regole manuali)
             _NewChatOption(
               icon: Icons.person_outline,
               title: s.aiPlannerPersonalAccount,
-              subtitle: hasPersonalRules
+              subtitle: !hasBroker
                   ? s.t(
-                      'Manual rules already set — use a Challenge or new account',
-                      'Regole manuali già configurate — usa una Challenge o un nuovo account',
+                      'Connect your broker first to get a personalized plan',
+                      'Collega prima il broker per ricevere un piano personalizzato',
                     )
-                  : !hasBroker
-                      ? s.t(
-                          'Connect your broker first to get a personalized plan',
-                          'Collega prima il broker per ricevere un piano personalizzato',
-                        )
-                      : s.aiPlannerPersonalSubtitle,
-              disabled: hasPersonalRules,
-              onTap: hasPersonalRules
+                  : s.aiPlannerPersonalSubtitle,
+              disabled: false,
+              onTap: !hasBroker
                   ? () {
                       Navigator.pop(ctx);
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          backgroundColor: AppColors.surface,
-                          content: Text(
-                            s.t(
-                              'You already have manual rules for your personal account. Create a Challenge plan or add a new personal account in Settings.',
-                              'Hai già regole manuali per il tuo account personale. Crea un piano Challenge o aggiungi un nuovo account nelle Impostazioni.',
-                            ),
-                            style: GoogleFonts.manrope(
-                                color: AppColors.textPrimary, fontSize: 13),
-                          ),
-                          duration: const Duration(seconds: 4),
-                        ),
-                      );
+                      Navigator.pushNamed(context, '/broker');
                     }
-                  : !hasBroker
-                      ? () {
-                          Navigator.pop(ctx);
-                          Navigator.pushNamed(context, '/broker');
-                        }
-                      : () {
-                          Navigator.pop(ctx);
-                          _openNewSession(type: 'personal');
-                        },
+                  : () {
+                      Navigator.pop(ctx);
+                      _openNewSession(type: 'personal');
+                    },
             ),
             if (challenges.isNotEmpty) ...[
               const SizedBox(height: 10),

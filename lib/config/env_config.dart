@@ -32,11 +32,6 @@ class EnvConfig {
   static const revenueCatPublicKey =
       String.fromEnvironment('REVENUECAT_PUBLIC_KEY');
 
-  /// Secret API key server-side (sk_...). NON va nell'app — usarla solo
-  /// in Supabase Edge Functions per validare i webhook RevenueCat.
-  static const revenueCatSecretKey =
-      String.fromEnvironment('REVENUECAT_API_KEY');
-
   /// True when the minimum required configuration is present.
   static bool get isConfigured =>
       supabaseUrl.isNotEmpty && supabaseAnonKey.isNotEmpty;

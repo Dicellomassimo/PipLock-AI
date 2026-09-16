@@ -1,7 +1,5 @@
 import 'package:flutter/foundation.dart';
-import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import '../config/env_config.dart';
 import '../models/personal_account.dart';
 import '../models/personal_rules.dart';
 import '../models/challenge.dart';
@@ -101,21 +99,11 @@ class SupabaseService {
     await _client.auth.signOut(scope: SignOutScope.global);
   }
 
-  /// Google Sign In — requires GOOGLE_WEB_CLIENT_ID in .env
-  static Future<AuthResponse> signInWithGoogle() async {
-    final webClientId = EnvConfig.googleWebClientId;
-    final googleSignIn = GoogleSignIn(serverClientId: webClientId.isNotEmpty ? webClientId : null);
-    await googleSignIn.signOut(); // force account picker every time
-    final googleUser = await googleSignIn.signIn();
-    if (googleUser == null) throw Exception('Google Sign In cancelled');
-    final googleAuth = await googleUser.authentication;
-    final idToken = googleAuth.idToken;
-    final accessToken = googleAuth.accessToken;
-    if (idToken == null) throw Exception('No ID token from Google');
-    return await _client.auth.signInWithIdToken(
-      provider: OAuthProvider.google,
-      idToken: idToken,
-      accessToken: accessToken,
+  /// Google Sign In — browser OAuth flow, no SHA-1 required.
+  static Future<void> signInWithGoogle() async {
+    await _client.auth.signInWithOAuth(
+      OAuthProvider.google,
+      redirectTo: 'piplock://auth-callback',
     );
   }
 
@@ -152,10 +140,10 @@ class SupabaseService {
   /// before they are written to the database.
   static String? _sanitize(String? value, {int maxLength = 500}) {
     if (value == null) return null;
-    return value
+    final cleaned = value
         .trim()
-        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '')
-        .substring(0, value.trim().length.clamp(0, maxLength));
+        .replaceAll(RegExp(r'[\x00-\x1F\x7F]'), '');
+    return cleaned.substring(0, cleaned.length.clamp(0, maxLength));
   }
 
   static void _validatePersonalRules(PersonalRules rules) {

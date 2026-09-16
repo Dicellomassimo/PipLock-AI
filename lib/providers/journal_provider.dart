@@ -1,10 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/journal_entry.dart';
+import '../config/app_strings.dart';
 import '../config/constants.dart';
 import '../services/ai_service.dart';
+import '../services/analytics_service.dart';
 import 'auth_provider.dart';
 import 'killswitch_provider.dart';
+import 'locale_provider.dart';
 import 'rules_provider.dart';
 
 class JournalState {
@@ -96,7 +99,8 @@ class JournalNotifier extends StateNotifier<JournalState> {
             .insert(entry.toJson());
       }
       final updated = [entry, ...state.entries];
-      state = state.copyWith(entries: updated, clearInsights: true);
+      state = state.copyWith(entries: updated, clearInsights: true, clearError: true);
+      AnalyticsService.logJournalEntryAdded();
 
       // Aggiorna RulesProvider così il killswitch funziona anche in modalità manuale.
       _ref.read(rulesProvider.notifier).trackTrade();
@@ -143,7 +147,7 @@ class JournalNotifier extends StateNotifier<JournalState> {
             .eq('id', id);
       }
       final updated = state.entries.where((e) => e.id != id).toList();
-      state = state.copyWith(entries: updated, clearInsights: true);
+      state = state.copyWith(entries: updated, clearInsights: true, clearError: true);
     } catch (e) {
       state = state.copyWith(error: 'Errore nella cancellazione: $e');
     }
@@ -157,7 +161,8 @@ class JournalNotifier extends StateNotifier<JournalState> {
           .take(20)
           .map((e) => e.toJson())
           .toList();
-      final insights = await AiService.analyzeJournal(entriesMaps);
+      final currentLocale = _ref.read(localeProvider);
+      final insights = await AiService.analyzeJournal(entriesMaps, locale: currentLocale.languageCode);
       state = state.copyWith(aiInsights: insights, isSaving: false);
     } catch (e) {
       // Fallback to local insights on error
@@ -167,6 +172,7 @@ class JournalNotifier extends StateNotifier<JournalState> {
   }
 
   String _generateLocalInsights() {
+    final s = _ref.read(appStringsProvider);
     final entries = state.entries;
     final profitable = entries.where((e) => e.isProfitable).length;
     final total = entries.length;
@@ -186,40 +192,62 @@ class JournalNotifier extends StateNotifier<JournalState> {
         entries.where((e) => !e.wasPlanned && !e.isProfitable).length;
 
     final buf = StringBuffer();
-    buf.writeln('📊 Analisi del tuo diario (${entries.length} trade):');
+    buf.writeln(s.t(
+      '📊 Journal analysis (${entries.length} trades):',
+      '📊 Analisi del tuo diario (${entries.length} trade):',
+    ));
     buf.writeln('');
-    buf.writeln('• Win rate: $winRate% ($profitable/$total trade in profitto)');
-    buf.writeln('• Emozione prevalente: ${_italianEmotion(topEmotion)}');
+    buf.writeln(s.t(
+      '• Win rate: $winRate% ($profitable/$total trades in profit)',
+      '• Win rate: $winRate% ($profitable/$total trade in profitto)',
+    ));
+    buf.writeln(s.t(
+      '• Dominant emotion: ${_localizedEmotion(s, topEmotion)}',
+      '• Emozione prevalente: ${_localizedEmotion(s, topEmotion)}',
+    ));
 
     if (unplanned > 0) {
       final pct = (unplannedLosses / unplanned * 100).round();
-      buf.writeln(
-          '• Trade non pianificati: $unplanned ($pct% in perdita) — ridurli è la priorità');
+      buf.writeln(s.t(
+        '• Unplanned trades: $unplanned ($pct% at a loss) — reducing them is the priority',
+        '• Trade non pianificati: $unplanned ($pct% in perdita) — ridurli è la priorità',
+      ));
     }
 
     if (winRate < 40) {
       buf.writeln('');
-      buf.writeln(
-          '⚠️ Il tuo win rate è sotto il 40%. Rivedi i setup di entrata e considera di ridurre il numero di trade giornalieri.');
+      buf.writeln(s.t(
+        '⚠️ Your win rate is below 40%. Review your entry setups and consider reducing your daily trade count.',
+        '⚠️ Il tuo win rate è sotto il 40%. Rivedi i setup di entrata e considera di ridurre il numero di trade giornalieri.',
+      ));
     } else if (winRate >= 60) {
       buf.writeln('');
-      buf.writeln(
-          '✅ Ottimo win rate! Mantieni la disciplina e non aumentare il rischio per euforia.');
+      buf.writeln(s.t(
+        '✅ Great win rate! Stay disciplined and don\'t increase risk out of euphoria.',
+        '✅ Ottimo win rate! Mantieni la disciplina e non aumentare il rischio per euforia.',
+      ));
     }
 
     return buf.toString().trim();
   }
 
-  String _italianEmotion(String emotion) {
-    const map = {
-      'calm': 'Calmo',
-      'confident': 'Fiducioso',
-      'anxious': 'Ansioso',
-      'frustrated': 'Frustrato',
-      'fomo': 'FOMO',
-      'revenge': 'Revenge',
-    };
-    return map[emotion] ?? emotion;
+  String _localizedEmotion(AppStrings s, String emotion) {
+    switch (emotion) {
+      case 'calm':
+        return s.t('Calm', 'Calmo');
+      case 'confident':
+        return s.t('Confident', 'Fiducioso');
+      case 'anxious':
+        return s.t('Anxious', 'Ansioso');
+      case 'frustrated':
+        return s.t('Frustrated', 'Frustrato');
+      case 'fomo':
+        return 'FOMO';
+      case 'revenge':
+        return s.t('Revenge', 'Revenge');
+      default:
+        return emotion;
+    }
   }
 
   // ─── Stats computed ───────────────────────────────────────────────────────────

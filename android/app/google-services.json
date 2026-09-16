@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "573316823540-g1hds8ekl49p6aa2qa0ku2nd1n0atitq.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.piplock.piplock_ai",
+            "certificate_hash": "a0013d3885d7662da20b90462498a4c267189bc3"
+          }
+        },
+        {
           "client_id": "573316823540-5d79lbal522jb48mib4lkcv03p35ivrb.apps.googleusercontent.com",
           "client_type": 3
         }

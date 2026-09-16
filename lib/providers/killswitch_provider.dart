@@ -14,6 +14,8 @@ class KillswitchState {
   final int lockDurationMinutes;
   final int tokensAvailable;
   final String? eventId; // ID dell'evento su Supabase, null se non ancora salvato
+  final double snapshotLoss;
+  final int snapshotTrades;
   /// True se il disclaimer legale non è ancora stato mostrato all'utente.
   /// La KillswitchScreen usa questo flag per mostrare il modale una sola volta.
   final bool needsDisclaimer;
@@ -25,6 +27,8 @@ class KillswitchState {
     this.lockDurationMinutes = 360,
     this.tokensAvailable = 2,
     this.eventId,
+    this.snapshotLoss = 0.0,
+    this.snapshotTrades = 0,
     this.needsDisclaimer = false,
   });
 
@@ -44,6 +48,8 @@ class KillswitchState {
     int? lockDurationMinutes,
     int? tokensAvailable,
     String? eventId,
+    double? snapshotLoss,
+    int? snapshotTrades,
     bool? needsDisclaimer,
   }) {
     return KillswitchState(
@@ -53,6 +59,8 @@ class KillswitchState {
       lockDurationMinutes: lockDurationMinutes ?? this.lockDurationMinutes,
       tokensAvailable: tokensAvailable ?? this.tokensAvailable,
       eventId: eventId ?? this.eventId,
+      snapshotLoss: snapshotLoss ?? this.snapshotLoss,
+      snapshotTrades: snapshotTrades ?? this.snapshotTrades,
       needsDisclaimer: needsDisclaimer ?? this.needsDisclaimer,
     );
   }
@@ -68,6 +76,8 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
   static const _activatedAtKey = 'killswitch_activated_at_ms';
   static const _durationKey = 'killswitch_duration_minutes_saved';
   static const _reasonKey = 'killswitch_reason_saved';
+  static const _snapshotLossKey = 'killswitch_snapshot_loss';
+  static const _snapshotTradesKey = 'killswitch_snapshot_trades';
 
   KillswitchNotifier(this._ref) : super(const KillswitchState()) {
     _loadDisclaimerFlag().then((_) => _restoreState());
@@ -85,6 +95,9 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
     final lockDurationMinutes = prefs.getInt(_durationKey) ?? 360;
     if (activatedAtMs == null) return;
 
+    final snapshotLoss = prefs.getDouble(_snapshotLossKey) ?? 0.0;
+    final snapshotTrades = prefs.getInt(_snapshotTradesKey) ?? 0;
+
     final activatedAt = DateTime.fromMillisecondsSinceEpoch(activatedAtMs);
     final end = activatedAt.add(Duration(minutes: lockDurationMinutes));
     final savedReason = prefs.getString(_reasonKey) ?? 'daily_loss';
@@ -99,7 +112,18 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
       return;
     }
 
-    final remainingMinutes = end.difference(DateTime.now()).inMinutes + 1;
+    final remaining = end.difference(DateTime.now());
+    if (remaining.isNegative || remaining == Duration.zero) {
+      // Expired while app was closed
+      await prefs.setBool('killswitch_active', false);
+      await prefs.remove(_activatedAtKey);
+      await prefs.remove(_durationKey);
+      await prefs.remove(_reasonKey);
+      NotificationService.sendKillswitchLiftedNotification();
+      return;
+    }
+    // Use ceiling so e.g. 59 remaining seconds → 1 minute, not 0
+    final remainingMinutes = (remaining.inSeconds / 60).ceil();
     if (_disposed) return;
     state = KillswitchState(
       isActive: true,
@@ -107,6 +131,8 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
       reason: savedReason,
       lockDurationMinutes: lockDurationMinutes,
       tokensAvailable: state.tokensAvailable,
+      snapshotLoss: snapshotLoss,
+      snapshotTrades: snapshotTrades,
       needsDisclaimer: false,
     );
     _startAutoDeactivateTimer(remainingMinutes);
@@ -151,21 +177,25 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
   }
 
   Future<void> _setKillswitchActivePref(bool isActive,
-      {DateTime? activatedAt, int? lockDurationMinutes, String? reason}) async {
+      {DateTime? activatedAt, int? lockDurationMinutes, String? reason, double? snapshotLoss, int? snapshotTrades}) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('killswitch_active', isActive);
     if (isActive && activatedAt != null && lockDurationMinutes != null) {
       await prefs.setInt(_activatedAtKey, activatedAt.millisecondsSinceEpoch);
       await prefs.setInt(_durationKey, lockDurationMinutes);
       if (reason != null) await prefs.setString(_reasonKey, reason);
+      if (snapshotLoss != null) await prefs.setDouble(_snapshotLossKey, snapshotLoss);
+      if (snapshotTrades != null) await prefs.setInt(_snapshotTradesKey, snapshotTrades);
     } else if (!isActive) {
       await prefs.remove(_activatedAtKey);
       await prefs.remove(_durationKey);
       await prefs.remove(_reasonKey);
+      await prefs.remove(_snapshotLossKey);
+      await prefs.remove(_snapshotTradesKey);
     }
   }
 
-  void activate(String reason, int durationMinutes) {
+  void activate(String reason, int durationMinutes, {double snapshotLoss = 0.0, int snapshotTrades = 0}) {
     final now = DateTime.now();
     state = KillswitchState(
       isActive: true,
@@ -173,6 +203,8 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
       reason: reason,
       lockDurationMinutes: durationMinutes,
       tokensAvailable: state.tokensAvailable,
+      snapshotLoss: snapshotLoss,
+      snapshotTrades: snapshotTrades,
       // Mostra il disclaimer la prima volta che il killswitch viene attivato
       needsDisclaimer: !_disclaimerAlreadyShown,
     );
@@ -182,7 +214,11 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
       reason: reason,
     );
     _setKillswitchActivePref(true,
-        activatedAt: now, lockDurationMinutes: durationMinutes, reason: reason);
+        activatedAt: now,
+        lockDurationMinutes: durationMinutes,
+        reason: reason,
+        snapshotLoss: snapshotLoss,
+        snapshotTrades: snapshotTrades);
     _startAutoDeactivateTimer(durationMinutes);
   }
 
@@ -191,14 +227,19 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
     String reason,
     int durationMinutes,
     String userId,
-    String accountMode,
-  ) async {
+    String accountMode, {
+    double snapshotLoss = 0.0,
+    int snapshotTrades = 0,
+  }) async {
+    final now = DateTime.now();
     state = KillswitchState(
       isActive: true,
-      activatedAt: DateTime.now(),
+      activatedAt: now,
       reason: reason,
       lockDurationMinutes: durationMinutes,
       tokensAvailable: state.tokensAvailable,
+      snapshotLoss: snapshotLoss,
+      snapshotTrades: snapshotTrades,
       needsDisclaimer: !_disclaimerAlreadyShown,
     );
 
@@ -208,9 +249,11 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
       reason: reason,
     );
     _setKillswitchActivePref(true,
-        activatedAt: state.activatedAt ?? DateTime.now(),
+        activatedAt: now,
         lockDurationMinutes: durationMinutes,
-        reason: reason);
+        reason: reason,
+        snapshotLoss: snapshotLoss,
+        snapshotTrades: snapshotTrades);
     _startAutoDeactivateTimer(durationMinutes);
 
     // Schedula notifica "sblocco tra 30 minuti"
@@ -249,6 +292,8 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
       reason: null,
       lockDurationMinutes: state.lockDurationMinutes,
       tokensAvailable: state.tokensAvailable,
+      snapshotLoss: 0.0,
+      snapshotTrades: 0,
     );
     // Rimuove l'overlay sopra le app broker
     AccessibilityService.hideKillswitchOverlay();
@@ -304,8 +349,8 @@ class KillswitchNotifier extends StateNotifier<KillswitchState> {
     }
   }
 
-  void activateWithDurationString(String reason, String durationStr) {
-    activate(reason, _durationFromString(durationStr));
+  void activateWithDurationString(String reason, String durationStr, {double snapshotLoss = 0.0, int snapshotTrades = 0}) {
+    activate(reason, _durationFromString(durationStr), snapshotLoss: snapshotLoss, snapshotTrades: snapshotTrades);
   }
 
   /// Attiva lo stato Flutter killswitch senza mostrare l'overlay nativo

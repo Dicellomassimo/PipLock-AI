@@ -64,10 +64,13 @@ class _SplashScreenState extends ConsumerState<SplashScreen>
     if (!mounted) return;
     if (!onboardingDone) {
       Navigator.of(context).pushReplacementNamed('/onboarding');
-    } else if (auth.isLoggedIn) {
+    } else if (auth.isLoading || auth.isLoggedIn) {
+      // auth.isLoading = timeout scattato prima che Supabase rispondesse
+      // (es. dopo un aggiornamento app). Assumiamo loggato → /main.
+      // MainNavScreen reindirizza a /auth da solo se la sessione non è valida.
       Navigator.of(context).pushReplacementNamed('/main');
     } else {
-      Navigator.of(context).pushReplacementNamed('/paywall');
+      Navigator.of(context).pushReplacementNamed('/auth');
     }
   }
 

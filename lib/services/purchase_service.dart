@@ -84,7 +84,13 @@ class PurchaseService {
   /// Acquista un abbonamento Pro. Ritorna true se andato a buon fine.
   /// [isAnnual] true = piano annuale, false = piano mensile.
   static Future<bool> purchasePro({bool isAnnual = false}) async {
-    if (!_initialized) return false; // Non mock: senza RC configurato non acquistare
+    if (!_initialized) {
+      // RevenueCat non configurato → Pro gratis per tester (chiave mancante/test).
+      // Stesso comportamento di checkProStatus() → coerente per tutto il flusso auth.
+      final publicKey = EnvConfig.revenueCatPublicKey;
+      if (publicKey.isEmpty || publicKey.startsWith('test_')) return true;
+      return false;
+    }
 
     try {
       final offerings = await Purchases.getOfferings();
@@ -119,6 +125,8 @@ class PurchaseService {
   }
 
   /// Verifica stato Pro: prima da RevenueCat, poi da Supabase come fallback.
+  /// Se RevenueCat non è configurato (chiave mancante/test), concede Pro a tutti —
+  /// così i tester possono usare l'app gratuitamente prima del lancio ufficiale.
   static Future<bool> checkProStatus() async {
     if (_initialized) {
       try {
@@ -126,7 +134,10 @@ class PurchaseService {
         return info.entitlements.active.containsKey(_proEntitlement);
       } catch (_) {}
     }
-    // Fallback Supabase
+    // RevenueCat non configurato → Pro gratis per tester (chiave non ancora impostata)
+    final publicKey = EnvConfig.revenueCatPublicKey;
+    if (publicKey.isEmpty || publicKey.startsWith('test_')) return true;
+    // Fallback Supabase (RC configurato ma temporaneamente non disponibile)
     try {
       final userId = Supabase.instance.client.auth.currentUser?.id;
       if (userId == null) return false;

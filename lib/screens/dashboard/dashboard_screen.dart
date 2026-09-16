@@ -264,13 +264,19 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
 
     final profile = ref.watch(authProvider).profile;
     final rulesState = ref.watch(rulesProvider);
-    final metaState = ref.watch(metaApiProvider);
+    final metaState = ref.watch(brokerProvider);
     final personalPlan = ref.watch(personalPlanProvider);
+    final ksState = ref.watch(killswitchProvider);
 
-    // Trade: da MetaAPI se connesso, altrimenti da rules provider (tracking manuale)
-    final tradesToday = metaState.isConnected
-        ? (metaState.tradesToday ?? rulesState.tradesToday)
-        : rulesState.tradesToday;
+    // Trade: prioritizza lo snapshot se il Killswitch è attivo (evita reset al riavvio)
+    int tradesToday;
+    if (ksState.isActive && ksState.snapshotTrades > 0) {
+      tradesToday = ksState.snapshotTrades;
+    } else {
+      tradesToday = metaState.isConnected
+          ? (metaState.tradesToday ?? rulesState.tradesToday)
+          : rulesState.tradesToday;
+    }
 
     // Limiti: usa regole personali se disponibili, altrimenti piano challenge attivo.
     // Questo permette di vedere i limiti corretti anche quando si usa solo la challenge.
@@ -286,10 +292,13 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
         ? rulesState.effectiveMaxTrades
         : (challengeMaxTrades ?? 0);
 
-    // P&L: da MetaAPI se connesso (positivo = profitto, negativo = perdita)
-    // Guardia NaN/Infinity: l'accessibility service può inviare Double.NaN per il profit
-    // se la schermata MT5 era a metà transizione. Senza guardia, (NaN*100).round() crasha.
-    final rawPnl = metaState.isConnected ? (metaState.dailyPnl ?? 0.0) : 0.0;
+    // P&L: prioritizza lo snapshot se il Killswitch è attivo
+    double rawPnl;
+    if (ksState.isActive && ksState.snapshotLoss > 0) {
+      rawPnl = -ksState.snapshotLoss;
+    } else {
+      rawPnl = metaState.isConnected ? (metaState.dailyPnl ?? 0.0) : 0.0;
+    }
     final pnlToday = (rawPnl.isNaN || rawPnl.isInfinite) ? 0.0 : rawPnl;
     final pnlLimit = hasPersonalRules
         ? -(rulesState.rules!.maxDailyLoss ?? 0.0)
@@ -783,7 +792,7 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
   // ── Stats Row ─────────────────────────────────────────────────────────────
   Widget _buildStatsRow() {
     final s = ref.watch(appStringsProvider);
-    final metaState = ref.watch(metaApiProvider);
+    final metaState = ref.watch(brokerProvider);
     final checkinLabel = _checkinScore >= 8
         ? s.dashReadinessOptimal
         : _checkinScore >= 6
@@ -1651,6 +1660,8 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               ],
             ),
           ],
+          // ── Piano vs Realtà oggi ────────────────────────────────────────────
+          _buildPlanComplianceRow(plan, s),
         ],
       );
     } else {
@@ -1744,6 +1755,116 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
           fontSize: 11,
           fontWeight: FontWeight.w600,
         ),
+      ),
+    );
+  }
+
+  /// Riga "Piano vs Realtà": confronta i parametri del piano AI con i dati reali di oggi.
+  Widget _buildPlanComplianceRow(Map<String, dynamic> plan, AppStrings s) {
+    final brokerState = ref.watch(brokerProvider);
+    final rulesState = ref.watch(rulesProvider);
+
+    final tradesToday = brokerState.isConnected
+        ? (brokerState.tradesToday ?? rulesState.tradesToday)
+        : rulesState.tradesToday;
+
+    final processFocus = plan['processFocus'] as Map<String, dynamic>?;
+    final maxTradesPlan = processFocus != null
+        ? (processFocus['maxTradesPerDay'] as num?)?.toInt()
+        : (plan['recommendedTradesPerDay'] as num?)?.toInt();
+
+    final hardKsPct = (plan['hardKillswitchThreshold'] as num?)?.toDouble();
+    final pnlToday = brokerState.isConnected ? (brokerState.dailyPnl ?? 0.0) : 0.0;
+
+    if (maxTradesPlan == null && hardKsPct == null) return const SizedBox.shrink();
+
+    final tradeColor = (maxTradesPlan != null && tradesToday >= maxTradesPlan)
+        ? AppColors.danger
+        : AppColors.success;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 10),
+        const Divider(color: AppColors.divider, height: 1),
+        const SizedBox(height: 8),
+        Text(
+          s.t('Today vs plan', 'Oggi vs piano').toUpperCase(),
+          style: GoogleFonts.manrope(
+            color: AppColors.textTertiary,
+            fontSize: 9,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.8,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Row(
+          children: [
+            if (maxTradesPlan != null) ...[
+              _complianceBadge(
+                label: s.t('Trades', 'Trade'),
+                value: '$tradesToday / $maxTradesPlan',
+                color: tradeColor,
+              ),
+              const SizedBox(width: 8),
+            ],
+            if (hardKsPct != null && brokerState.isConnected) ...[
+              Builder(builder: (context) {
+                // Ottieni challenge attiva per calcolare la soglia in USD
+                final challenges = ref.watch(challengeListProvider);
+                final activeChallenge = challenges.where((c) => c.status == 'active').firstOrNull;
+                if (activeChallenge == null) return const SizedBox.shrink();
+                final limitUsd = activeChallenge.accountSize * hardKsPct / 100;
+                final lossToday = pnlToday < 0 ? pnlToday.abs() : 0.0;
+                final pnlColor = lossToday >= limitUsd * 0.8
+                    ? AppColors.danger
+                    : lossToday > 0
+                        ? AppColors.warning
+                        : AppColors.success;
+                final pnlStr = pnlToday >= 0
+                    ? '+${pnlToday.toStringAsFixed(0)}'
+                    : pnlToday.toStringAsFixed(0);
+                return _complianceBadge(
+                  label: 'P&L',
+                  value: '$pnlStr / -${limitUsd.toStringAsFixed(0)}',
+                  color: pnlColor,
+                );
+              }),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _complianceBadge({required String label, required String value, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$label  ',
+            style: GoogleFonts.manrope(
+              color: color.withValues(alpha: 0.7),
+              fontSize: 10,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Text(
+            value,
+            style: GoogleFonts.manrope(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -245,7 +245,15 @@ class _JournalEntryFormScreenState
               children: _emotions.map((e) {
                 final key = e.$1;
                 final emoji = e.$2;
-                final label = e.$3;
+                final label = s.t(e.$3, switch (e.$3) {
+                  'Calm' => 'Calmo',
+                  'Confident' => 'Fiducioso',
+                  'Anxious' => 'Ansioso',
+                  'Frustrated' => 'Frustrato',
+                  'FOMO' => 'FOMO',
+                  'Revenge' => 'Revenge',
+                  _ => e.$3,
+                });
                 final selected = _selectedEmotion == key;
                 return GestureDetector(
                   onTap: () => setState(() => _selectedEmotion = key),
@@ -306,7 +314,7 @@ class _JournalEntryFormScreenState
             ),
             Center(
               child: Text(
-                _scoreLabel(_emotionScore.round()),
+                _scoreLabel(_emotionScore.round(), s),
                 style: GoogleFonts.manrope(
                   color: AppColors.textSecondary,
                   fontSize: 12,
@@ -446,18 +454,18 @@ class _JournalEntryFormScreenState
     );
   }
 
-  String _scoreLabel(int score) {
+  String _scoreLabel(int score, AppStrings s) {
     switch (score) {
       case 1:
-        return 'Very low';
+        return s.t('Very low', 'Molto basso');
       case 2:
-        return 'Low';
+        return s.t('Low', 'Basso');
       case 3:
-        return 'Medium';
+        return s.t('Medium', 'Medio');
       case 4:
-        return 'High';
+        return s.t('High', 'Alto');
       case 5:
-        return 'Very high';
+        return s.t('Very high', 'Molto alto');
       default:
         return '';
     }

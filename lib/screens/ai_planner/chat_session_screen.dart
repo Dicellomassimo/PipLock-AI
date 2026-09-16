@@ -12,8 +12,11 @@ import '../../providers/chat_history_provider.dart';
 import '../../providers/locale_provider.dart';
 import '../../providers/rules_provider.dart';
 import '../../providers/auth_provider.dart';
+import '../../providers/journal_provider.dart';
 import '../../services/ai_service.dart';
+import '../../services/monte_carlo_service.dart';
 import '../../services/supabase_service.dart';
+import '../../services/analytics_service.dart';
 import '../../widgets/donut_chart.dart';
 import '../../widgets/premium_button.dart';
 
@@ -159,9 +162,43 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
 
     setState(() { _isLoadingPlan = true; _isPersonalMode = false; });
     try {
-      final plan = await AiService.generatePlan(challenge);
+      // Esegui Monte Carlo con i parametri della challenge per ottenere un piano accurato
+      final riskPct = switch (challenge.riskProfile) {
+        'conservative' => 0.5,
+        'aggressive' => 2.0,
+        _ => 1.0,
+      };
+      final mcInput = MonteCarloInput(
+        balance: challenge.accountSize.toDouble(),
+        profitTargetPct: challenge.profitTarget.clamp(0.1, 50.0).toDouble(),
+        maxDrawdownPct: challenge.maxTotalDrawdown.clamp(0.1, 50.0).toDouble(),
+        dailyDrawdownPct: challenge.maxDailyLoss.clamp(0.1, 50.0).toDouble(),
+        drawdownType: challenge.drawdownType,
+        winRate: (challenge.winRate ?? 0.45).clamp(0.01, 0.99),
+        avgRR: (challenge.avgRr ?? 2.0).clamp(0.1, 20.0),
+        riskPerTradePct: riskPct.clamp(0.01, 10.0),
+        tradesPerDay: (challenge.tradesPerDayStrategy ?? 2).clamp(1, 20),
+        totalDays: challenge.durationDays.clamp(1, 365),
+        simulationCount: 5000,
+        hasConsistencyRule: challenge.consistencyRule,
+        consistencyRulePct: challenge.consistencyRulePct,
+      );
+      final mcResult = await MonteCarloService.simulate(mcInput);
       if (!mounted) return;
+
+      final plan = await AiService.generateChallengePlan(challenge, mcResult);
+      if (!mounted) return;
+
+      final s = ref.read(appStringsProvider);
+      if (plan == null) {
+        _addBotMessage(s.t(
+          'Plan generation failed. Check your connection and tap ↺ to retry.',
+          'Generazione piano fallita. Controlla la connessione e premi ↺ per riprovare.',
+        ));
+        return;
+      }
       setState(() => _plan = plan);
+      AnalyticsService.logPlanGenerated(type: 'challenge');
 
       final userId = ref.read(currentUserIdProvider);
       if (userId.isNotEmpty) {
@@ -169,12 +206,11 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
       }
 
       final capitalAtRisk =
-          (challenge.accountSize * (plan['riskPerTrade'] as num? ?? 0.5) / 100)
+          (challenge.accountSize * (plan['riskPerTrade'] as num? ?? riskPct) / 100)
               .toStringAsFixed(0);
       final maxLosses =
-          ((challenge.maxTotalDrawdown) / (plan['riskPerTrade'] as num? ?? 0.5))
+          ((challenge.maxTotalDrawdown) / (plan['riskPerTrade'] as num? ?? riskPct))
               .round();
-      final s = ref.read(appStringsProvider);
       _addBotMessage(
         s.t(
           'Plan generated for ${challenge.propFirmName ?? "the challenge"}!\n\n'
@@ -196,12 +232,18 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
     } catch (e) {
       if (!mounted) return;
       if (e.toString().contains('rate_limited')) {
+        // Mostra il modal ma NON chiudere la schermata: l'utente capisce e resta nella chat
         _showLimitModal(isPlan: true);
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) Navigator.pop(context);
-        });
         return;
       }
+      // Errore generico: mostra messaggio nella chat senza chiudere
+      final s = ref.read(appStringsProvider);
+      _addBotMessage(
+        s.t(
+          'Plan generation failed. Check your connection and tap ↺ to retry.',
+          'Generazione piano fallita. Controlla la connessione e premi ↺ per riprovare.',
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isLoadingPlan = false);
       await _saveSession();
@@ -248,12 +290,17 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
     } catch (e) {
       if (!mounted) return;
       if (e.toString().contains('rate_limited')) {
+        // Mostra il modal ma NON chiudere la schermata
         _showLimitModal(isPlan: true);
-        Future.delayed(const Duration(milliseconds: 300), () {
-          if (mounted) Navigator.pop(context);
-        });
         return;
       }
+      final s = ref.read(appStringsProvider);
+      _addBotMessage(
+        s.t(
+          'Plan generation failed. Check your connection and tap ↺ to retry.',
+          'Generazione piano fallita. Controlla la connessione e premi ↺ per riprovare.',
+        ),
+      );
     } finally {
       if (mounted) setState(() => _isLoadingPlan = false);
       await _saveSession();
@@ -406,6 +453,34 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
               'positions': brokerState.data.openPositions,
             }
           : null;
+
+      // Contesto journal: fornisce all'AI dati reali di performance del trader
+      final journalState = ref.read(journalProvider);
+      Map<String, dynamic>? journalCtx;
+      if (journalState.entries.isNotEmpty) {
+        final entries = journalState.entries;
+        final profitable = entries.where((e) => e.isProfitable).length;
+        final winRate = entries.isNotEmpty ? profitable / entries.length * 100 : 0.0;
+        final emotionCounts = <String, int>{};
+        for (final e in entries) {
+          emotionCounts[e.emotion] = (emotionCounts[e.emotion] ?? 0) + 1;
+        }
+        final topEmotion = emotionCounts.entries.isNotEmpty
+            ? (emotionCounts.entries.toList()..sort((a, b) => b.value.compareTo(a.value))).first.key
+            : '';
+        final unplanned = entries.where((e) => !e.wasPlanned).length;
+        final recentEntries = entries.take(10).toList();
+        final recentPnl = recentEntries.where((e) => e.pnl != null).fold<double>(
+          0.0, (sum, e) => sum + (e.pnl ?? 0));
+        journalCtx = {
+          'totalTrades': entries.length,
+          'winRate': winRate,
+          'topEmotion': topEmotion,
+          'unplannedTrades': unplanned,
+          'recentPnl': recentEntries.any((e) => e.pnl != null) ? recentPnl : null,
+        };
+      }
+
       final challengeIsLocked = _challenge != null &&
           _challenge!.status == 'active' &&
           _challenge!.aiPlan != null;
@@ -414,6 +489,7 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
         _plan,
         allChallenges: allChallenges,
         brokerData: brokerContext,
+        journalContext: journalCtx,
         isPersonalMode: _isPersonalMode,
         locale: ref.read(localeProvider).languageCode,
         challengeIsLocked: challengeIsLocked,
@@ -442,6 +518,7 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final s = ref.watch(appStringsProvider);
     return Scaffold(
       backgroundColor: AppColors.background,
       resizeToAvoidBottomInset: false,
@@ -453,37 +530,40 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
               color: AppColors.textPrimary, size: 20),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              _session.type == 'personal'
-                  ? ref.watch(appStringsProvider).t('Personal', 'Personale')
-                  : _session.title,
-              style: GoogleFonts.manrope(
-                  color: AppColors.textPrimary,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 15),
-            ),
-            if (_session.contextName != null)
+        title: Builder(builder: (context) {
+          final s = ref.watch(appStringsProvider);
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
               Text(
-                _session.contextName!,
+                _session.type == 'personal'
+                    ? s.t('Personal', 'Personale')
+                    : _session.title,
                 style: GoogleFonts.manrope(
-                    color: AppColors.accent, fontSize: 11),
+                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 15),
               ),
-          ],
-        ),
+              if (_session.contextName != null)
+                Text(
+                  _session.contextName!,
+                  style: GoogleFonts.manrope(
+                      color: AppColors.accent, fontSize: 11),
+                ),
+            ],
+          );
+        }),
         actions: [
           if (!_isPersonalMode && _challenge != null)
             IconButton(
               icon: const Icon(Icons.refresh, color: AppColors.textSecondary, size: 20),
-              tooltip: ref.watch(appStringsProvider).chatRegeneratePlan,
+              tooltip: s.chatRegeneratePlan,
               onPressed: () => _generateChallengePlan(_challenge!),
             ),
           if (_isPersonalMode)
             IconButton(
               icon: const Icon(Icons.refresh, color: AppColors.textSecondary, size: 20),
-              tooltip: ref.watch(appStringsProvider).chatRegeneratePlan,
+              tooltip: s.chatRegeneratePlan,
               onPressed: _generatePersonalPlan,
             ),
         ],
@@ -500,6 +580,9 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
                 // Piano card
                 if (_plan != null || _isLoadingPlan)
                   SliverToBoxAdapter(child: _buildPlanCard()),
+                // Quick action chips (visibili solo quando piano caricato e chat ancora vuota/iniziale)
+                if (_plan != null && !_isLoadingPlan && _messages.length <= 1)
+                  SliverToBoxAdapter(child: _buildQuickActionChips()),
                 // Disclaimer
                 SliverToBoxAdapter(
                   child: Container(
@@ -519,7 +602,7 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            ref.watch(appStringsProvider).chatDisclaimer,
+                            s.chatDisclaimer,
                             style: GoogleFonts.manrope(
                                 color: AppColors.warning, fontSize: 10),
                           ),
@@ -560,6 +643,7 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
 
   Widget _buildBrokerStatusCard() {
     final brokerState = ref.watch(brokerProvider);
+    final s = ref.watch(appStringsProvider);
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -586,7 +670,7 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(ref.watch(appStringsProvider).chatBrokerLive,
+                      Text(s.chatBrokerLive,
                           style: GoogleFonts.manrope(
                               color: AppColors.accent,
                               fontSize: 11,
@@ -609,7 +693,7 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
                     color: AppColors.textSecondary, size: 16),
                 const SizedBox(width: 10),
                 Expanded(
-                  child: Text(ref.watch(appStringsProvider).chatBrokerConnect,
+                  child: Text(s.chatBrokerConnect,
                       style: GoogleFonts.manrope(
                           color: AppColors.textSecondary, fontSize: 12)),
                 ),
@@ -621,7 +705,7 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  child: Text(ref.watch(appStringsProvider).chatConnect,
+                  child: Text(s.chatConnect,
                       style: GoogleFonts.manrope(
                           color: AppColors.accent,
                           fontSize: 11,
@@ -633,6 +717,7 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
   }
 
   Widget _buildPlanCard() {
+    final s = ref.watch(appStringsProvider);
     if (_isLoadingPlan) {
       return Container(
         margin: const EdgeInsets.fromLTRB(16, 16, 16, 0),
@@ -655,7 +740,7 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
               ),
             ),
             const SizedBox(width: 12),
-            Text(ref.watch(appStringsProvider).chatGeneratingPlan,
+            Text(s.chatGeneratingPlan,
                 style: GoogleFonts.manrope(
                     color: AppColors.textSecondary, fontSize: 13)),
           ],
@@ -716,7 +801,7 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
                         ),
                       ),
                       Text(
-                        ref.watch(appStringsProvider).t('win', 'successo'),
+                        s.t('win', 'successo'),
                         style: GoogleFonts.manrope(
                           color: AppColors.textTertiary,
                           fontSize: 9,
@@ -733,20 +818,20 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _planStatRow(ref.watch(appStringsProvider).chatLotSize, '$lotSize'),
+                    _planStatRow(s.chatLotSize, '$lotSize'),
                     const SizedBox(height: 6),
-                    _planStatRow(ref.watch(appStringsProvider).chatTradesPerDay, '$tradesPerDay'),
+                    _planStatRow(s.chatTradesPerDay, '$tradesPerDay'),
                     const SizedBox(height: 6),
-                    _planStatRow(ref.watch(appStringsProvider).chatRiskPerTrade, '$riskPct%'),
+                    _planStatRow(s.chatRiskPerTrade, '$riskPct%'),
                     if (capitalAtRisk != null) ...[
                       const SizedBox(height: 6),
-                      _planStatRow(ref.watch(appStringsProvider).chatUsdPerTrade, capitalAtRisk,
+                      _planStatRow(s.chatUsdPerTrade, capitalAtRisk,
                           color: AppColors.warning),
                     ],
                     // Dati personali extra
                     if (_isPersonalMode && plan['dailyTarget'] != null) ...[
                       const SizedBox(height: 6),
-                      _planStatRow(ref.watch(appStringsProvider).chatDailyTarget, plan['dailyTarget'].toString(),
+                      _planStatRow(s.chatDailyTarget, plan['dailyTarget'].toString(),
                           color: AppColors.accent),
                     ],
                   ],
@@ -757,13 +842,13 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
           const SizedBox(height: 14),
           Row(
             children: [
-              Expanded(child: _thresholdBadge(ref.watch(appStringsProvider).chatSoftKS, '$softKs%', AppColors.warning)),
+              Expanded(child: _thresholdBadge(s.chatSoftKS, '$softKs%', AppColors.warning)),
               const SizedBox(width: 8),
-              Expanded(child: _thresholdBadge(ref.watch(appStringsProvider).chatHardKS, '$hardKs%', AppColors.danger)),
+              Expanded(child: _thresholdBadge(s.chatHardKS, '$hardKs%', AppColors.danger)),
               if (maxConsecLosses != null) ...[
                 const SizedBox(width: 8),
                 Expanded(child: _thresholdBadge(
-                    ref.watch(appStringsProvider).chatMaxStreak, '$maxConsecLosses', AppColors.textSecondary)),
+                    s.chatMaxStreak, '$maxConsecLosses', AppColors.textSecondary)),
               ],
             ],
           ),
@@ -772,11 +857,11 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(ref.watch(appStringsProvider).chatChallengeProgress,
+                Text(s.chatChallengeProgress,
                     style: GoogleFonts.manrope(
                         color: AppColors.textSecondary, fontSize: 11)),
                 Text(
-                    ref.watch(appStringsProvider).chatDayProgress(_challenge!.currentDay, _challenge!.durationDays),
+                    s.chatDayProgress(_challenge!.currentDay, _challenge!.durationDays),
                     style: GoogleFonts.manrope(
                         color: AppColors.textSecondary, fontSize: 11)),
               ],
@@ -797,7 +882,7 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
             const SizedBox(height: 14),
             const Divider(color: AppColors.divider, height: 1),
             const SizedBox(height: 12),
-            Text(ref.watch(appStringsProvider).chatMilestone,
+            Text(s.chatMilestone,
                 style: GoogleFonts.manrope(
                     color: AppColors.textSecondary,
                     fontSize: 10,
@@ -816,7 +901,7 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
                       const SizedBox(width: 9),
                       Expanded(
                         child: Text(
-                          '${ref.watch(appStringsProvider).chatMilestoneWeek(m['week'] as int, m['profitTarget'].toString())} — ${m['description']}',
+                          '${s.chatMilestoneWeek(m['week'] as int, m['profitTarget'].toString())} — ${m['description']}',
                           style: GoogleFonts.manrope(
                               color: AppColors.textSecondary,
                               fontSize: 11),
@@ -894,21 +979,102 @@ class _ChatSessionScreenState extends ConsumerState<ChatSessionScreen> {
     );
   }
 
+  Widget _buildQuickActionChips() {
+    final s = ref.watch(appStringsProvider);
+    final locale = ref.read(localeProvider).languageCode;
+    final isIt = locale == 'it';
+
+    final chips = <({String label, String prompt})>[
+      (
+        label: isIt ? '📉 Sono in drawdown' : '📉 I\'m in drawdown',
+        prompt: isIt
+            ? 'Sono in drawdown. Come gestisco la situazione emotivamente e cosa devo evitare?'
+            : 'I\'m currently in drawdown. How do I handle this emotionally and what should I avoid?',
+      ),
+      (
+        label: isIt ? '📊 Analizza la mia settimana' : '📊 Analyze my week',
+        prompt: isIt
+            ? 'Analizza i miei dati di trading di questa settimana e dimmi cosa migliorare.'
+            : 'Analyze my trading data this week and tell me what to improve.',
+      ),
+      (
+        label: isIt ? '🧠 Sto ignorando il piano' : '🧠 I\'m deviating from the plan',
+        prompt: isIt
+            ? 'Sto tendendo ad aprire troppi trade rispetto al piano. Come mi aiuti a restare disciplinato?'
+            : 'I tend to open more trades than the plan says. How can I stay disciplined?',
+      ),
+      (
+        label: isIt ? '⏳ Dopo una perdita' : '⏳ After a loss',
+        prompt: isIt
+            ? 'Ho appena chiuso una posizione in perdita. Come evito il revenge trading?'
+            : 'I just closed a losing trade. How do I avoid revenge trading?',
+      ),
+    ];
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            s.t('Quick questions', 'Domande rapide'),
+            style: GoogleFonts.manrope(
+              color: AppColors.textTertiary,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.8,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: chips.map((chip) => GestureDetector(
+              onTap: () {
+                _inputController.text = chip.prompt;
+                _sendMessage();
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                decoration: BoxDecoration(
+                  color: AppColors.accent.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: AppColors.accent.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Text(
+                  chip.label,
+                  style: GoogleFonts.manrope(
+                    color: AppColors.accent,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            )).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildEmptyChat() {
+    final s = ref.watch(appStringsProvider);
     return Center(
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           const Icon(Icons.auto_awesome, color: AppColors.accent, size: 44),
           const SizedBox(height: 14),
-          Text(ref.watch(appStringsProvider).chatHintPlanner,
+          Text(s.chatHintPlanner,
               style: GoogleFonts.manrope(
                   color: AppColors.textPrimary,
                   fontSize: 17,
                   fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           Text(
-            ref.watch(appStringsProvider).chatHintPlan,
+            s.chatHintPlan,
             textAlign: TextAlign.center,
             style: GoogleFonts.manrope(
                 color: AppColors.textSecondary, fontSize: 13),
@@ -1070,11 +1236,18 @@ class _TypingIndicatorState extends State<_TypingIndicator>
             .animate(CurvedAnimation(parent: c, curve: Curves.easeInOut)))
         .toList();
 
-    Future.delayed(Duration.zero, () => _ctrls[0].repeat(reverse: true));
-    Future.delayed(const Duration(milliseconds: 150),
-        () => _ctrls[1].repeat(reverse: true));
-    Future.delayed(const Duration(milliseconds: 300),
-        () => _ctrls[2].repeat(reverse: true));
+    Future.delayed(Duration.zero, () {
+      if (!mounted) return;
+      _ctrls[0].repeat(reverse: true);
+    });
+    Future.delayed(const Duration(milliseconds: 150), () {
+      if (!mounted) return;
+      _ctrls[1].repeat(reverse: true);
+    });
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (!mounted) return;
+      _ctrls[2].repeat(reverse: true);
+    });
   }
 
   @override

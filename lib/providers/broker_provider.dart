@@ -23,6 +23,7 @@ import 'navigation_provider.dart';
 import 'rules_provider.dart';
 import 'auth_provider.dart';
 import 'personal_accounts_provider.dart';
+import '../services/analytics_service.dart';
 
 export '../models/broker_data.dart';
 
@@ -120,6 +121,10 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
   StreamSubscription? _accessibilitySub;
   Timer? _accessibilityTimer;
   Timer? _metaApiTimer;
+  Timer? _eaStalenessTimer;
+  DateTime? _lastEaDataTime;
+  int? _metaApiPrevPositions;
+  int _metaApiTradesToday = 0;
 
   DateTime? _lastResetDate;
   Timer? _midnightTimer;
@@ -127,7 +132,10 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
   bool _positionsBaselineSet = false;
   int _lastNonZeroPositions = 0;
   bool _positionsDroppedToZero = false;
-  bool _soft80AlertSent = false;
+  bool _soft80AlertSent = false;       // 80% daily loss alert (reset when daily drops below 80%)
+  bool _soft50AlertSent = false;       // 50% daily loss alert (reset when daily drops below 50%)
+  bool _softWeekly80AlertSent = false; // 80% weekly loss alert (reset on new week)
+  bool _tradingHoursAlertSent = false; // trading hours outside-window alert
 
   // ── Detection state per nuovi rilevamenti ─────────────────────────────
   int _prevTradesToday = 0;
@@ -161,12 +169,16 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         _loadPersistedConnection();
       }
     });
-    // Trigger daily briefing when challenges first load
+    // Trigger daily briefing when challenges first load; also sync multi-account rules
     _ref.listen<List<Challenge>>(challengeListProvider, (prev, next) {
       if ((prev?.isEmpty ?? true) && next.isNotEmpty && !_dailyBriefingTriggered) {
         _dailyBriefingTriggered = true;
         _triggerDailyChallengeBriefing();
       }
+      // Sync multi-account rules to native whenever challenges change
+      Future.microtask(() {
+        if (mounted) syncAllAccountsToNative();
+      });
     });
   }
 
@@ -181,6 +193,9 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       _lastResetDate = today;
       // Reset daily fields in broker data
       _soft80AlertSent = false;
+      _soft50AlertSent = false;
+      _tradingHoursAlertSent = false;
+      // Note: _softWeekly80AlertSent resets on new week, not daily
       _prevTradesToday = 0;
       _prevDailyPnl = null;
       _consecutiveLossesLocal = 0;
@@ -209,7 +224,7 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           _ref.read(killswitchProvider.notifier).deactivate();
         }
       }
-      _dailyBriefingTriggered = false; // reset so next day briefing can fire
+      _dailyBriefingTriggered = true; // set true BEFORE calling to prevent concurrent double-trigger
       _initialBalanceToday = null;
       _initialBalanceDateStr = '';
       // Reset settimanale se siamo passati a una nuova settimana (lunedì)
@@ -280,6 +295,9 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
             _startAccessibilityStream();
             _startAccessibilityPolling();
             _scheduleMidnightReset();
+            // IMPORTANTE: ripristina i dati giornalieri (tradesToday, P&L, balance ref)
+            // anche sul percorso Supabase — non fare return prima di questo.
+            await _restoreAccessibilitySnapshot();
             return;
           }
         }
@@ -300,9 +318,23 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       );
       _startAccessibilityStream();
       _startAccessibilityPolling();
+      await _restoreAccessibilitySnapshot();
+    } catch (e) {
+      debugPrint('[BrokerProvider] data load error: $e');
+    }
 
-      // 3. Carica gli ultimi dati salvati dall'accessibility service
-      //    (persistiti nelle SharedPreferences da PipLockAccessibilityService)
+    // Sync all account rules to Kotlin on startup
+    Future.microtask(() {
+      if (mounted) syncAllAccountsToNative();
+    });
+    _scheduleMidnightReset();
+  }
+
+  /// Ripristina tradesToday, P&L e balance di riferimento dai dati persistiti.
+  /// Chiamato da ENTRAMBI i percorsi di ripristino (Supabase + locale) così
+  /// i dati giornalieri sopravvivono sempre al riavvio dell'app.
+  Future<void> _restoreAccessibilitySnapshot() async {
+    try {
       final lastData = await AccessibilityService.getLastBrokerData();
       if (lastData == null) return;
 
@@ -310,13 +342,13 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       final ageMs = DateTime.now().millisecondsSinceEpoch - ts;
       if (ageMs > 86400000) return; // scarta dati più vecchi di 24h
 
-      final equity      = lastData['equity']       as double?;
-      final balance     = lastData['balance']      as double?;
-      final profitRaw   = lastData['profit']       as double?;
-      final positions   = lastData['positions']    as int?;
-      final tradesRaw   = lastData['trades_today'] as int?;
-      final refBalance  = lastData['reference_balance'] as double?;
-      final refDate     = lastData['reference_date'] as String? ?? '';
+      final equity     = lastData['equity']            as double?;
+      final balance    = lastData['balance']           as double?;
+      final profitRaw  = lastData['profit']            as double?;
+      final positions  = lastData['positions']         as int?;
+      final tradesRaw  = lastData['trades_today']      as int?;
+      final refBalance = lastData['reference_balance'] as double?;
+      final refDate    = lastData['reference_date']    as String? ?? '';
 
       final dataDate = DateTime.fromMillisecondsSinceEpoch(ts);
       final now2 = DateTime.now();
@@ -328,12 +360,44 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       // Kotlin salva refDate in formato "yyyyMMdd" (es. "20260908").
       // IMPORTANTE: va fatto PRIMA di updateFromAccessibility, così la logica interna
       // non sovrascrive _initialBalanceToday con il balance corrente (post-perdita).
+      final todayStr2 = now2.toIso8601String().substring(0, 10);
+      final todayKotlin =
+          '${now2.year}${now2.month.toString().padLeft(2, '0')}${now2.day.toString().padLeft(2, '0')}';
+
       if (isToday && refBalance != null && refBalance > 0 && refDate.isNotEmpty) {
-        final todayKotlin =
-            '${now2.year}${now2.month.toString().padLeft(2, '0')}${now2.day.toString().padLeft(2, '0')}';
         if (refDate == todayKotlin) {
           _initialBalanceToday = refBalance;
-          _initialBalanceDateStr = now2.toIso8601String().substring(0, 10);
+          _initialBalanceDateStr = todayStr2;
+        }
+      }
+
+      // Fallback: se Kotlin non ha il reference balance, leggi quello che Flutter
+      // ha salvato indipendentemente (più affidabile in caso di riavvio Kotlin).
+      if (_initialBalanceToday == null && isToday) {
+        final prefs = await SharedPreferences.getInstance();
+        final flutterRefBalance = prefs.getDouble('flutter_ref_balance_$todayStr2');
+        if (flutterRefBalance != null && flutterRefBalance > 0) {
+          _initialBalanceToday = flutterRefBalance;
+          _initialBalanceDateStr = todayStr2;
+        }
+      }
+
+      // Usa il MAX tra Kotlin trades_today e quello salvato da Flutter:
+      // Kotlin può perdere il conteggio tra una sessione e l'altra (MT5 in background,
+      // riavvio del servizio accessibility), Flutter invece persiste via rulesProvider.
+      int? bestTradesToday;
+      if (isToday) {
+        final prefs = await SharedPreferences.getInstance();
+        final kotlinTrades = (tradesRaw != null && tradesRaw >= 0) ? tradesRaw : null;
+        final flutterDate = prefs.getString('daily_counters_date');
+        final flutterTrades = (flutterDate == todayStr2)
+            ? (prefs.getInt('daily_trades_count') ?? 0)
+            : null;
+        // Prendi il valore più alto — i trade non possono diminuire nel corso della giornata
+        if (kotlinTrades != null && flutterTrades != null) {
+          bestTradesToday = kotlinTrades > flutterTrades ? kotlinTrades : flutterTrades;
+        } else {
+          bestTradesToday = kotlinTrades ?? flutterTrades;
         }
       }
 
@@ -342,13 +406,11 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         balance:     (balance     != null && balance     >= 0)  ? balance     : null,
         profit:      isToday ? ((profitRaw != null && !profitRaw.isNaN) ? profitRaw : null) : null,
         positions:   (positions   != null && positions   >= 0)  ? positions   : null,
-        tradesToday: isToday ? ((tradesRaw != null && tradesRaw >= 0)  ? tradesRaw  : null) : null,
+        tradesToday: bestTradesToday,
       );
     } catch (e) {
-      debugPrint('[BrokerProvider] data load error: $e');
+      debugPrint('[BrokerProvider] _restoreAccessibilitySnapshot error: $e');
     }
-
-    _scheduleMidnightReset();
   }
 
   // ── Connessione EA MQL5 ─────────────────────────────────────────────────────
@@ -377,6 +439,26 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       }
 
       await _startEaRealtimeSubscription(userId, secret);
+
+      // Check EA data freshness every 2 minutes
+      _eaStalenessTimer?.cancel();
+      _eaStalenessTimer = Timer.periodic(const Duration(minutes: 2), (t) {
+        if (!mounted || state.method != BrokerConnectionMethod.ea) {
+          t.cancel();
+          return;
+        }
+        final last = _lastEaDataTime;
+        if (last != null && DateTime.now().difference(last).inMinutes >= 5) {
+          if (NotificationService.isPrefEnabled('session_changes')) {
+            NotificationService.showLocalNotification(
+              title: '⚠️ EA disconnected',
+              body: 'No data received from MT5 EA for 5+ minutes. Check your connection.',
+              id: 8099,
+            );
+          }
+        }
+      });
+
       return secret;
     } catch (e) {
       state = BrokerState(
@@ -419,6 +501,7 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
             final liveData = row['live_data'] as Map<String, dynamic>?;
 
             if (liveData != null) {
+              _lastEaDataTime = DateTime.now();
               final newData = _brokerDataFromMap(liveData);
               state = state.copyWith(
                 status: BrokerConnectionStatus.connected,
@@ -573,6 +656,7 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           _lastNonZeroPositions = 0;
           _positionsDroppedToZero = false;
           _soft80AlertSent = false;
+          _softWeekly80AlertSent = false;
           _prevTradesToday = 0;
           _prevDailyPnl = null;
           _consecutiveLossesLocal = 0;
@@ -599,11 +683,18 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
 
           // Notify user
           if (NotificationService.isPrefEnabled('session_changes')) {
+            final s = _ref.read(appStringsProvider);
             NotificationService.showLocalNotification(
-              title: 'Account switched',
+              title: s.t('Account switched', 'Account cambiato'),
               body: fromAccount.isNotEmpty
-                  ? 'Active account: $toAccount (was $fromAccount). Rules updated.'
-                  : 'Active account: $toAccount. Rules updated.',
+                  ? s.t(
+                      'Active account: $toAccount (was $fromAccount). Rules updated.',
+                      'Account attivo: $toAccount (era $fromAccount). Regole aggiornate.',
+                    )
+                  : s.t(
+                      'Active account: $toAccount. Rules updated.',
+                      'Account attivo: $toAccount. Regole aggiornate.',
+                    ),
               id: 8011,
             );
           }
@@ -611,7 +702,14 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       } else if (eventType == 'revenge_detected') {
         if (event['revenge_detected'] == true) {
           try {
-            _ref.read(killswitchProvider.notifier).activateWithDurationString('revenge_pattern', 'midnight');
+            final currentLoss = state.data.dailyLossUsd ?? 0.0;
+            final currentTrades = state.data.tradesToday ?? 0;
+            _ref.read(killswitchProvider.notifier).activateWithDurationString(
+              'revenge_pattern',
+              'midnight',
+              snapshotLoss: currentLoss,
+              snapshotTrades: currentTrades,
+            );
           } catch (_) {}
         }
       } else if (eventType == 'fomo_detected') {
@@ -655,7 +753,25 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           _ref.read(pendingNavigationProvider.notifier).state = '/personal_rules';
         }
       }
-    });
+    }, onError: (e) {
+      debugPrint('[BrokerProvider] accessibility stream error: $e');
+      if (mounted && state.method == BrokerConnectionMethod.accessibility) {
+        Future.delayed(const Duration(seconds: 5), () {
+          if (mounted && state.method == BrokerConnectionMethod.accessibility) {
+            _startAccessibilityStream();
+          }
+        });
+      }
+    }, onDone: () {
+      debugPrint('[BrokerProvider] accessibility stream closed, restarting...');
+      if (mounted && state.method == BrokerConnectionMethod.accessibility) {
+        Future.delayed(const Duration(seconds: 3), () {
+          if (mounted && state.method == BrokerConnectionMethod.accessibility) {
+            _startAccessibilityStream();
+          }
+        });
+      }
+    }, cancelOnError: false);
   }
 
   /// Aggiorna il nome dell'app broker rilevata (es. "MetaTrader 5").
@@ -677,6 +793,8 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     if (accountId.isEmpty) return;
 
     _metaApiTimer?.cancel();
+    _metaApiPrevPositions = null;
+    _metaApiTradesToday = 0;
     state = BrokerState(
       method: BrokerConnectionMethod.metaApi,
       status: BrokerConnectionStatus.connecting,
@@ -696,7 +814,42 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       return;
     }
 
-    final newData = _brokerDataFromMetaApi(data);
+    var newData = _brokerDataFromMetaApi(data);
+
+    // FIX F3: position-delta trade tracking (initial fetch — baseline only, no increment)
+    final initPositions = newData.openPositions ?? 0;
+    if (initPositions > 0) _metaApiPrevPositions = initPositions;
+
+    // FIX F4: set _initialBalanceToday for MetaAPI
+    final metaBalance = newData.balance;
+    final nowMeta = DateTime.now();
+    final todayStrMeta = nowMeta.toIso8601String().substring(0, 10);
+    if (metaBalance != null && metaBalance > 0 &&
+        (_initialBalanceToday == null || _initialBalanceDateStr != todayStrMeta)) {
+      _initialBalanceToday = metaBalance;
+      _initialBalanceDateStr = todayStrMeta;
+      SharedPreferences.getInstance()
+          .then((p) => p.setDouble('flutter_ref_balance_$todayStrMeta', metaBalance))
+          .ignore();
+    }
+    // Override dailyPnl with true value: equity vs start-of-day balance
+    if (newData.equity != null && _initialBalanceToday != null && _initialBalanceToday! > 0) {
+      final truePnl = newData.equity! - _initialBalanceToday!;
+      final lossUsd = truePnl < 0 ? truePnl.abs() : 0.0;
+      final lossPct = metaBalance != null && metaBalance > 0 ? lossUsd / metaBalance * 100 : 0.0;
+      newData = newData.copyWith(
+        dailyPnl: truePnl,
+        dailyLossUsd: lossUsd > 0 ? lossUsd : null,
+        dailyLossPct: lossPct > 0 ? lossPct : null,
+      );
+    }
+
+    // Inject tradesToday
+    final bestInit = _metaApiTradesToday > (newData.tradesToday ?? 0)
+        ? _metaApiTradesToday
+        : (newData.tradesToday ?? 0);
+    newData = newData.copyWith(tradesToday: bestInit);
+
     state = state.copyWith(
       status: BrokerConnectionStatus.connected,
       data: newData,
@@ -716,7 +869,49 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     if (!mounted) return;
     if (data == null) return; // mantieni l'ultimo stato valido in caso di errore transitorio
 
-    final newData = _brokerDataFromMetaApi(data);
+    var newData = _brokerDataFromMetaApi(data);
+
+    // FIX F3: Track trades via position delta (same as accessibility fallback)
+    final currentPositions = newData.openPositions ?? 0;
+    if (currentPositions > 0 && _metaApiPrevPositions != null) {
+      if (currentPositions > _metaApiPrevPositions!) {
+        final newlyOpened = currentPositions - _metaApiPrevPositions!;
+        _metaApiTradesToday += newlyOpened;
+        try { _ref.read(rulesProvider.notifier).setTradesToday(_metaApiTradesToday); } catch (_) {}
+      }
+    }
+    if (currentPositions > 0) _metaApiPrevPositions = currentPositions;
+
+    // Inject tradesToday into BrokerData so _checkLimits can enforce max trades
+    final best = _metaApiTradesToday > (newData.tradesToday ?? 0)
+        ? _metaApiTradesToday
+        : (newData.tradesToday ?? 0);
+    newData = newData.copyWith(tradesToday: best);
+
+    // FIX F4: set _initialBalanceToday for MetaAPI
+    final metaBalance = newData.balance;
+    final nowMeta = DateTime.now();
+    final todayStrMeta = nowMeta.toIso8601String().substring(0, 10);
+    if (metaBalance != null && metaBalance > 0 &&
+        (_initialBalanceToday == null || _initialBalanceDateStr != todayStrMeta)) {
+      _initialBalanceToday = metaBalance;
+      _initialBalanceDateStr = todayStrMeta;
+      SharedPreferences.getInstance()
+          .then((p) => p.setDouble('flutter_ref_balance_$todayStrMeta', metaBalance))
+          .ignore();
+    }
+    // Override dailyPnl with true value: equity vs start-of-day balance
+    if (newData.equity != null && _initialBalanceToday != null && _initialBalanceToday! > 0) {
+      final truePnl = newData.equity! - _initialBalanceToday!;
+      final lossUsd = truePnl < 0 ? truePnl.abs() : 0.0;
+      final lossPct = metaBalance != null && metaBalance > 0 ? lossUsd / metaBalance * 100 : 0.0;
+      newData = newData.copyWith(
+        dailyPnl: truePnl,
+        dailyLossUsd: lossUsd > 0 ? lossUsd : null,
+        dailyLossPct: lossPct > 0 ? lossPct : null,
+      );
+    }
+
     state = state.copyWith(
       status: BrokerConnectionStatus.connected,
       data: newData,
@@ -841,6 +1036,10 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         (_initialBalanceToday == null || _initialBalanceDateStr != todayStr)) {
       _initialBalanceToday = validBalance;
       _initialBalanceDateStr = todayStr;
+      // Persiste anche su Flutter prefs: sopravvive al riavvio dell'app indipendentemente da Kotlin.
+      SharedPreferences.getInstance()
+          .then((p) => p.setDouble('flutter_ref_balance_$todayStr', validBalance))
+          .ignore();
     }
 
     // Weekly loss tracking: balance al primo collegamento della settimana (lun-dom).
@@ -851,6 +1050,7 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         (_initialBalanceWeek == null || _initialBalanceWeekStr != weekStr)) {
       _initialBalanceWeek = validBalance;
       _initialBalanceWeekStr = weekStr;
+      _softWeekly80AlertSent = false; // New week → allow weekly 80% alert again
     }
 
     // Daily P&L = equity corrente - balance iniziale del giorno (include trade chiusi).
@@ -966,6 +1166,8 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     _accessibilitySub = null;
     _metaApiTimer?.cancel();
     _metaApiTimer = null;
+    _eaStalenessTimer?.cancel();
+    _eaStalenessTimer = null;
 
     try {
       final prefs = await SharedPreferences.getInstance();
@@ -1223,6 +1425,9 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       _baselineLotSizeToday ??= lotSize;
       if (!_lotSizeAlertSent && lotSize > (_baselineLotSizeToday! * 2.0)) {
         _lotSizeAlertSent = true;
+        // Update baseline to current size: next oversizing check will use this as reference,
+        // and _lotSizeAlertSent resets at midnight so the trader can't silently escalate.
+        _baselineLotSizeToday = lotSize;
         if (NotificationService.isPrefEnabled('risk_warnings')) {
           final s = _ref.read(appStringsProvider);
           NotificationService.showLocalNotification(
@@ -1264,10 +1469,25 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     }
     _prevOpenPositions = currentPositions;
 
-    // ── Alert all'80% del limite giornaliero ────────────────────────────────
+    // ── Alert al 50% e all'80% del limite giornaliero ─────────────────────────
     if (rules.maxDailyLoss != null && rules.maxDailyLoss! > 0) {
       final lossValue = rules.maxDailyLossType == 'percent' ? dayLossPct : dayLossUsd;
       final lossPercent = lossValue / rules.maxDailyLoss!;
+
+      // Alert at 50% of daily limit
+      if (lossPercent >= 0.50 && lossPercent < 0.80 && !_soft50AlertSent) {
+        _soft50AlertSent = true;
+        if (NotificationService.isPrefEnabled('risk_warnings')) {
+          final s = _ref.read(appStringsProvider);
+          NotificationService.showLocalNotification(
+            title: s.t('⚠️ 50% of daily limit reached', '⚠️ 50% del limite giornaliero raggiunto'),
+            body: s.t('You have used half your daily loss allowance. Slow down.', 'Hai usato metà del limite di perdita giornaliero. Rallenta.'),
+            id: 8000,
+          );
+        }
+      }
+      if (lossPercent < 0.50) _soft50AlertSent = false;
+
       if (lossPercent >= 0.80 && lossPercent < 1.0 && !_soft80AlertSent) {
         _soft80AlertSent = true;
         if (NotificationService.isPrefEnabled('risk_warnings')) {
@@ -1299,14 +1519,15 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         final weeklyLossUsd = (_initialBalanceWeek! - currentEquity).clamp(0.0, double.infinity);
         if (weeklyLossUsd >= rules.maxWeeklyLoss!) {
           reason = 'weekly_loss';
-        } else if (weeklyLossUsd >= rules.maxWeeklyLoss! * 0.80 && !_soft80AlertSent) {
-          // Avviso all'80% della perdita settimanale (riusa il flag daily per semplicità)
+        } else if (weeklyLossUsd >= rules.maxWeeklyLoss! * 0.80 && !_softWeekly80AlertSent) {
+          // Avviso all'80% della perdita settimanale (flag separato da quello daily)
+          _softWeekly80AlertSent = true;
           if (NotificationService.isPrefEnabled('risk_warnings')) {
             final s = _ref.read(appStringsProvider);
             NotificationService.showLocalNotification(
               title: s.t('⚠️ 80% of weekly limit reached', '⚠️ 80% del limite settimanale raggiunto'),
               body: s.t('You are close to your weekly loss limit. Stay disciplined.', 'Sei vicino al limite di perdita settimanale. Rimani disciplinato.'),
-              id: 8001,
+              id: 8002,
             );
           }
         }
@@ -1362,10 +1583,13 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
           if (recTrades != null && tradesToday > recTrades) {
             _planViolationAlertSent = true;
             if (NotificationService.isPrefEnabled('challenge_reminders')) {
+              final s = _ref.read(appStringsProvider);
               NotificationService.showLocalNotification(
-                title: '📋 AI Plan exceeded',
-                body:
-                    'You have made $tradesToday trades today. Your AI plan recommends max $recTrades.',
+                title: s.t('📋 AI Plan exceeded', '📋 Piano AI superato'),
+                body: s.t(
+                  'You have made $tradesToday trades today. Your AI plan recommends max $recTrades.',
+                  'Hai eseguito $tradesToday trade oggi. Il tuo piano AI raccomanda max $recTrades.',
+                ),
                 id: 8009,
               );
             }
@@ -1401,12 +1625,50 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
               reason = 'daily_loss';
               SupabaseService.updateChallengeStatus(activeChallenge.id, 'failed').catchError((_) {});
               if (NotificationService.isPrefEnabled('challenge_reminders')) {
+                final s = _ref.read(appStringsProvider);
                 NotificationService.showLocalNotification(
-                  title: '❌ Challenge Failed',
-                  body: 'Max drawdown reached. Your challenge has been marked as failed.',
+                  title: s.t('❌ Challenge Failed', '❌ Challenge Fallita'),
+                  body: s.t(
+                    'Max drawdown reached. Your challenge has been marked as failed.',
+                    'Drawdown massimo raggiunto. La tua challenge è stata segnata come fallita.',
+                  ),
                   id: 8003,
                 );
               }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    // Trading hours enforcement for EA and MetaAPI (Kotlin handles it for accessibility)
+    if (reason == null && state.method != BrokerConnectionMethod.accessibility) {
+      try {
+        final rulesState = _ref.read(rulesProvider);
+        final r = rulesState.rules;
+        if (r?.tradingHoursEnabled == true &&
+            r!.tradingHoursStart != null &&
+            r.tradingHoursEnd != null) {
+          final now = DateTime.now();
+          final nowMins = now.hour * 60 + now.minute;
+          final sp = r.tradingHoursStart!.split(':');
+          final ep = r.tradingHoursEnd!.split(':');
+          if (sp.length == 2 && ep.length == 2) {
+            final startMins = (int.tryParse(sp[0]) ?? 0) * 60 + (int.tryParse(sp[1]) ?? 0);
+            final endMins   = (int.tryParse(ep[0]) ?? 0) * 60 + (int.tryParse(ep[1]) ?? 0);
+            final isOutside = nowMins < startMins || nowMins >= endMins;
+            if (isOutside && !_tradingHoursAlertSent) {
+              _tradingHoursAlertSent = true;
+              if (NotificationService.isPrefEnabled('session_changes')) {
+                NotificationService.showLocalNotification(
+                  title: '🕐 Outside trading hours',
+                  body: 'You are trading outside your configured hours. Killswitch activating.',
+                  id: 8098,
+                );
+              }
+              reason = 'trading_hours';
+            } else if (!isOutside) {
+              _tradingHoursAlertSent = false;
             }
           }
         }
@@ -1422,7 +1684,10 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
             durationMin,
             userId,
             'personal',
+            snapshotLoss: dayLossUsd,
+            snapshotTrades: tradesToday,
           );
+      AnalyticsService.logKillswitchTriggered(reason: reason);
       // Reset after microtask — ksState.isActive will be true by then
       Future.microtask(() { _isActivating = false; });
     }
@@ -1540,6 +1805,7 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
     _accessibilitySub?.cancel();
     _accessibilityTimer?.cancel();
     _metaApiTimer?.cancel();
+    _eaStalenessTimer?.cancel();
     _midnightTimer?.cancel();
     super.dispose();
   }
@@ -1651,12 +1917,6 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
 final brokerProvider = StateNotifierProvider<BrokerNotifier, BrokerState>((ref) {
   return BrokerNotifier(ref);
 });
-
-// Alias per compatibilità con dashboard_screen.dart che usava metaApiProvider
-final metaApiProvider = brokerProvider;
-
-// Typedef per compatibilità con codice che usa MetaApiState
-typedef MetaApiState = BrokerState;
 
 /// True quando il Gatekeeper FOMO overlay deve essere mostrato nella dashboard.
 /// Resettato a false quando l'utente lo chiude.

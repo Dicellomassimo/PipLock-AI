@@ -50,6 +50,7 @@ class MainActivity : FlutterActivity() {
                     "balance" to intent.getDoubleExtra("balance", -1.0),
                     "profit" to intent.getDoubleExtra("profit", Double.NaN),
                     "positions" to intent.getIntExtra("positions", -1),
+                    "trades_today" to intent.getIntExtra("trades_today", -1),
                     "account_number" to (intent.getStringExtra("account_number") ?: ""),
                     "timestamp" to intent.getLongExtra("timestamp", 0L)
                 )

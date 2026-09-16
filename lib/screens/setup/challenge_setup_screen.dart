@@ -14,6 +14,7 @@ import '../../providers/navigation_provider.dart';
 import '../../services/ai_service.dart';
 import '../../services/monte_carlo_service.dart';
 import '../../services/supabase_service.dart';
+import '../../services/analytics_service.dart';
 import '../../widgets/animated_card.dart';
 import '../../widgets/glow_progress_bar.dart';
 import '../../widgets/premium_button.dart';
@@ -308,6 +309,7 @@ class _ChallengeSetupScreenState extends ConsumerState<ChallengeSetupScreen> {
 
       ref.read(pendingChallengeProvider.notifier).state = finalChallenge;
       ref.read(challengeListProvider.notifier).addChallenge(finalChallenge);
+      AnalyticsService.logChallengeCreated();
 
       // Lock challenge for its full duration to prevent rule bypasses
       final prefs = await SharedPreferences.getInstance();

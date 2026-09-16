@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:app_links/app_links.dart';
 import 'config/constants.dart';
@@ -15,6 +16,16 @@ Future<void> main() async {
 
   try {
     await Firebase.initializeApp();
+    // Wire up Crashlytics: cattura tutti gli errori Flutter non gestiti
+    // e li invia a Firebase Console per monitoraggio in produzione.
+    FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
+    // Cattura anche errori Dart async (Zone) non gestiti dal framework Flutter
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
+    // In debug non inviamo i crash a Crashlytics per evitare dati di test
+    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(kReleaseMode);
   } catch (_) {
     // google-services.json potrebbe non essere configurato completamente
   }

@@ -1,5 +1,6 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../services/analytics_service.dart';
 
 class ObserverState {
   final bool isActive;
@@ -130,6 +131,7 @@ class ObserverNotifier extends StateNotifier<ObserverState> {
       sessionsToday: sessionsToday,
       bestStreak: bestStreak,
     );
+    AnalyticsService.logObserverStarted();
   }
 
   Future<void> deactivate() async {

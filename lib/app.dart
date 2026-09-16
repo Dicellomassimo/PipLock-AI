@@ -31,6 +31,7 @@ import 'screens/journal/journal_entry_form_screen.dart';
 import 'screens/paywall/paywall_screen.dart';
 import 'screens/killswitch/trading_hours_block_screen.dart';
 import 'screens/setup/setup_wizard_screen.dart';
+import 'screens/help/privacy_policy_screen.dart';
 
 // Re-esporta kDevMode per compatibilità con altri file che lo importano da app.dart
 export 'config/constants.dart' show kDevMode;
@@ -144,6 +145,8 @@ class PipLockApp extends StatelessWidget {
               '/journal': (_) => const JournalScreen(),
               '/journal/add': (_) => const JournalEntryFormScreen(),
               '/auth-callback': (_) => const _AuthCallbackScreen(),
+              '/privacy_policy': (_) => const PrivacyPolicyScreen(),
+              '/terms_of_service': (_) => const PrivacyPolicyScreen(),
               '/trading_hours_block': (ctx) {
                 final args = ModalRoute.of(ctx)!.settings.arguments
                     as Map<String, dynamic>? ?? {};
