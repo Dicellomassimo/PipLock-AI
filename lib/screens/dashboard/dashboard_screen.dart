@@ -1959,36 +1959,44 @@ class _DashboardScreenState extends ConsumerState<DashboardScreen>
               ],
             ),
           ] else ...[
-            // Riga 1 — Max perdita
-            _buildLimitRow(
-              label: s.dashMaxLossLabel,
-              value: rulesState.rules!.maxDailyLossType == 'percent'
-                  ? '${rulesState.rules!.maxDailyLoss ?? 0}%'
-                  : '${_currencySymbol(rulesState.rules!.currency)}${(rulesState.rules!.maxDailyLoss ?? 0).toStringAsFixed(0)}',
-              progress: () {
-                if (rulesState.rules!.maxDailyLoss == null ||
-                    rulesState.rules!.maxDailyLoss! <= 0) return 0.0;
-                final rawPnl = metaState.dailyPnl ?? 0.0;
-                final safePnl = (rawPnl.isNaN || rawPnl.isInfinite) ? 0.0 : rawPnl;
-                // Only show loss progress when actually losing; profit → 0.
-                final loss = safePnl < 0 ? safePnl.abs() : 0.0;
-                final r = loss / rulesState.rules!.maxDailyLoss!;
-                return (r.isNaN || r.isInfinite) ? 0.0 : r.clamp(0.0, 1.0);
-              }(),
-            ),
+            // Riga 1 — disponibilità perdita residua. Il limite può cambiare
+            // dopo un token, ma il consumo giornaliero resta quello già fatto.
+            Builder(builder: (context) {
+              final maxLoss = rulesState.rules!.maxDailyLoss ?? 0.0;
+              final rawLoss = metaState.dailyLossUsd ?? rulesState.lossToday;
+              final lossUsed = rawLoss.isFinite && rawLoss > 0 ? rawLoss : 0.0;
+              final remainingLoss = (maxLoss - lossUsed).clamp(0.0, maxLoss);
+              final lossValue = rulesState.rules!.maxDailyLossType == 'percent'
+                  ? '${remainingLoss.toStringAsFixed(1)}% / ${maxLoss.toStringAsFixed(1)}%'
+                  : '${_currencySymbol(rulesState.rules!.currency)}${remainingLoss.toStringAsFixed(0)} / ${_currencySymbol(rulesState.rules!.currency)}${maxLoss.toStringAsFixed(0)}';
+              final progress = maxLoss > 0 ? (lossUsed / maxLoss).clamp(0.0, 1.0) : 0.0;
+              return _buildLimitRow(
+                label: s.dashMaxLossLabel,
+                value: lossValue,
+                progress: progress,
+              );
+            }),
             const SizedBox(height: 12),
-            // Riga 2 — Max trade
-            _buildLimitRow(
-              label: s.dashMaxTradesLabel,
-              value:
-                  '${rulesState.tradesToday} / ${rulesState.rules!.maxTradesPerDay ?? '—'}',
-              progress: rulesState.rules!.maxTradesPerDay != null &&
-                      rulesState.rules!.maxTradesPerDay! > 0
-                  ? (rulesState.tradesToday /
-                          rulesState.rules!.maxTradesPerDay!)
-                      .clamp(0.0, 1.0)
-                  : 0.0,
-            ),
+            // Riga 2 — trade residui, mantenuti anche dopo il cambio Rules.
+            Builder(builder: (context) {
+              final maxTrades = rulesState.rules!.maxTradesPerDay;
+              final tradesUsed = [
+                rulesState.tradesToday,
+                metaState.tradesToday ?? 0,
+              ].reduce((a, b) => a > b ? a : b);
+              final remainingTrades = maxTrades == null
+                  ? null
+                  : (maxTrades - tradesUsed).clamp(0, maxTrades);
+              return _buildLimitRow(
+                label: s.dashMaxTradesLabel,
+                value: maxTrades == null
+                    ? '$tradesUsed / —'
+                    : '$remainingTrades / $maxTrades',
+                progress: maxTrades != null && maxTrades > 0
+                    ? (tradesUsed / maxTrades).clamp(0.0, 1.0)
+                    : 0.0,
+              );
+            }),
             // Riga 3 — Orari trading (opzionale)
             if (rulesState.rules!.tradingHoursEnabled &&
                 rulesState.rules!.tradingHoursStart != null &&

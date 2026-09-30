@@ -25,6 +25,16 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
   bool _addingAnother = false;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        ref.read(brokerProvider.notifier).restorePersistedSnapshot();
+      }
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     final s = ref.watch(appStringsProvider);
     final state = ref.watch(brokerProvider);
@@ -340,7 +350,7 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
                           style: GoogleFonts.manrope(
                               color: AppColors.textSecondary, fontSize: 12),
                         ),
-                        if (state.isConnected && state.equity != null) ...[
+                        if (state.equity != null) ...[
                           const SizedBox(height: 4),
                           Text(
                             'Equity: ${state.currency ?? ''} ${state.equity!.toStringAsFixed(2)}'
@@ -403,7 +413,7 @@ class _BrokerScreenState extends ConsumerState<BrokerScreen> {
           ),
         ),
 
-        if (state.isConnected && state.equity != null) ...[
+        if (state.equity != null || state.balance != null) ...[
           const SizedBox(height: 16),
           _MetricsGrid(state: state),
         ],

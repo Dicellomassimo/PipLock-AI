@@ -91,6 +91,7 @@ class RulesState {
 class RulesNotifier extends StateNotifier<RulesState> {
   final Ref _ref;
   bool _disposed = false;
+  Future<void> _persistQueue = Future<void>.value();
 
   // ── Daily-counter persistence keys ─────────────────────────────────────────
   static String _todayKey() {
@@ -276,9 +277,14 @@ class RulesNotifier extends StateNotifier<RulesState> {
     await prefs.setDouble(_kLoss, loss);
   }
 
-  Future<void> _persistCounters(int trades, double loss) async {
-    final prefs = await SharedPreferences.getInstance();
-    await _writeCounters(prefs, _todayKey(), trades, loss);
+  Future<void> _persistCounters(int trades, double loss) {
+    // Serializza le scritture: eventi Accessibility ravvicinati non devono
+    // sovrascrivere un valore più recente con una write partita prima.
+    _persistQueue = _persistQueue.then((_) async {
+      final prefs = await SharedPreferences.getInstance();
+      await _writeCounters(prefs, _todayKey(), trades, loss);
+    });
+    return _persistQueue;
   }
 
   // ── Public methods ─────────────────────────────────────────────────────────
@@ -364,6 +370,21 @@ class RulesNotifier extends StateNotifier<RulesState> {
     if (n <= state.tradesToday) return;
     state = state.copyWith(tradesToday: n);
     _persistCounters(n, state.lossToday);
+  }
+
+  /// Sincronizza i contatori ricavati dal broker senza azzerarli quando
+  /// cambia la schermata o l'utente modifica i limiti dopo un token.
+  /// I contatori sono giornalieri e monotoni: vengono resettati solo da resetDay().
+  void setDailyCounters({int? trades, double? loss}) {
+    final nextTrades = trades != null && trades > state.tradesToday
+        ? trades
+        : state.tradesToday;
+    final nextLoss = loss != null && loss > state.lossToday
+        ? loss
+        : state.lossToday;
+    if (nextTrades == state.tradesToday && nextLoss == state.lossToday) return;
+    state = state.copyWith(tradesToday: nextTrades, lossToday: nextLoss);
+    _persistCounters(nextTrades, nextLoss);
   }
 
   void trackLoss(double amount) {

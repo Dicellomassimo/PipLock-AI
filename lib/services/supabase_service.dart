@@ -99,9 +99,9 @@ class SupabaseService {
     await _client.auth.signOut(scope: SignOutScope.global);
   }
 
-  /// Google Sign In — browser OAuth flow, no SHA-1 required.
-  static Future<void> signInWithGoogle() async {
-    await _client.auth.signInWithOAuth(
+  /// Opens Google's account chooser in the browser and returns to the app.
+  static Future<bool> signInWithGoogle() async {
+    return _client.auth.signInWithOAuth(
       OAuthProvider.google,
       redirectTo: 'piplock://auth-callback',
     );

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../config/env_config.dart';
@@ -85,10 +86,8 @@ class PurchaseService {
   /// [isAnnual] true = piano annuale, false = piano mensile.
   static Future<bool> purchasePro({bool isAnnual = false}) async {
     if (!_initialized) {
-      // RevenueCat non configurato → Pro gratis per tester (chiave mancante/test).
-      // Stesso comportamento di checkProStatus() → coerente per tutto il flusso auth.
       final publicKey = EnvConfig.revenueCatPublicKey;
-      if (publicKey.isEmpty || publicKey.startsWith('test_')) return true;
+      if (publicKey.isEmpty || publicKey.startsWith('test_')) return kDebugMode;
       return false;
     }
 
@@ -124,9 +123,7 @@ class PurchaseService {
     }
   }
 
-  /// Verifica stato Pro: prima da RevenueCat, poi da Supabase come fallback.
-  /// Se RevenueCat non è configurato (chiave mancante/test), concede Pro a tutti —
-  /// così i tester possono usare l'app gratuitamente prima del lancio ufficiale.
+  /// Verifica lo stato Pro da RevenueCat, con fallback Supabase se configurato.
   static Future<bool> checkProStatus() async {
     if (_initialized) {
       try {
@@ -134,9 +131,8 @@ class PurchaseService {
         return info.entitlements.active.containsKey(_proEntitlement);
       } catch (_) {}
     }
-    // RevenueCat non configurato → Pro gratis per tester (chiave non ancora impostata)
     final publicKey = EnvConfig.revenueCatPublicKey;
-    if (publicKey.isEmpty || publicKey.startsWith('test_')) return true;
+    if (publicKey.isEmpty || publicKey.startsWith('test_')) return kDebugMode;
     // Fallback Supabase (RC configurato ma temporaneamente non disponibile)
     try {
       final userId = Supabase.instance.client.auth.currentUser?.id;

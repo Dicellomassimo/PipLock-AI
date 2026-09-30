@@ -343,15 +343,12 @@ class PipLockAccessibilityService : AccessibilityService() {
 
         if (savedKey == todayKey) {
             val ref = prefs.getFloat("reference_balance", -1f).toDouble()
-            // Sanity: il reference deve essere entro ±50% del balance corrente.
-            // Se è fuori da questo range è quasi certamente corrotto (es. valore di margine
-            // salvato per errore da una versione precedente del service).
-            if (ref > 0 && ref >= currentBalance * 0.5 && ref <= currentBalance * 1.5) {
-                return ref
-            } else if (ref > 0) {
-                Log.w(TAG, "Reference balance corrotto (ref=$ref, balance=$currentBalance) — reset")
-                // non fare return: scendi a resettare il reference
-            }
+            // Il reference è il balance di inizio giornata: non va ricalcolato
+            // quando il conto perde, altrimenti la perdita giornaliera sparisce.
+            // La validazione della plausibilità viene fatta sull'estrazione prima
+            // di arrivare qui; una volta salvato, il reference resta stabile fino
+            // al cambio di giornata.
+            if (ref > 0) return ref
         }
 
         // Nuovo giorno: imposta il reference con il balance corrente
@@ -1290,29 +1287,44 @@ class PipLockAccessibilityService : AccessibilityService() {
 
     private fun sendExtractedData(data: ExtractedData) {
         val ts = System.currentTimeMillis()
-        // Persisti gli ultimi dati validi nelle SharedPreferences
-        // Flutter li legge all'avvio per popolare la dashboard subito
-        if (data.equity != null || data.balance != null) {
-            getSharedPreferences("piplock_broker_data", Context.MODE_PRIVATE).edit().apply {
-                putFloat("equity",       data.equity?.toFloat()   ?: -1f)
-                putFloat("balance",      data.balance?.toFloat()  ?: -1f)
-                putFloat("profit",       data.profit?.toFloat()   ?: Float.NaN)
-                putInt("positions",      data.positions           ?: -1)
-                putInt("trades_today",   data.tradesToday         ?: -1)
-                putLong("timestamp",     ts)
+        // L'albero di accessibilità spesso restituisce campi parziali durante
+        // il cambio tab/refresh di MT5. Non propagare sentinelle e non cancellare
+        // l'ultimo snapshot valido: un'estrazione incompleta è un aggiornamento
+        // parziale, non un nuovo valore vuoto.
+        val prefs = getSharedPreferences("piplock_broker_data", Context.MODE_PRIVATE)
+        val oldEquity = prefs.getFloat("equity", -1f).toDouble()
+        val oldBalance = prefs.getFloat("balance", -1f).toDouble()
+        val oldProfitRaw = prefs.getFloat("profit", Float.NaN)
+        val oldPositions = prefs.getInt("positions", -1)
+        val oldTrades = prefs.getInt("trades_today", -1)
+
+        val equity = data.equity ?: oldEquity.takeIf { it >= 0 }
+        val balance = data.balance ?: oldBalance.takeIf { it >= 0 }
+        val profit = data.profit ?: oldProfitRaw.takeIf { !it.isNaN() }?.toDouble()
+        val positions = data.positions ?: oldPositions.takeIf { it >= 0 }
+        val tradesToday = data.tradesToday ?: oldTrades.takeIf { it >= 0 }
+
+        if (equity != null || balance != null || profit != null) {
+            prefs.edit().apply {
+                if (equity != null) putFloat("equity", equity.toFloat())
+                if (balance != null) putFloat("balance", balance.toFloat())
+                if (profit != null) putFloat("profit", profit.toFloat())
+                if (positions != null) putInt("positions", positions)
+                if (tradesToday != null) putInt("trades_today", tradesToday)
+                putLong("timestamp", ts)
                 apply()
             }
         }
         sendBroadcast(Intent(ACTION_BROKER_DETECTED).apply {
             setPackage(this@PipLockAccessibilityService.packageName)
-            putExtra("event_type",    "broker_data")
-            putExtra("equity",        data.equity      ?: -1.0)
-            putExtra("balance",       data.balance     ?: -1.0)
-            putExtra("profit",        data.profit      ?: Double.NaN)
-            putExtra("positions",     data.positions   ?: -1)
-            putExtra("trades_today",  data.tradesToday ?: -1)
+            putExtra("event_type", "broker_data")
+            putExtra("equity", equity ?: -1.0)
+            putExtra("balance", balance ?: -1.0)
+            putExtra("profit", profit ?: Double.NaN)
+            putExtra("positions", positions ?: -1)
+            putExtra("trades_today", tradesToday ?: -1)
             putExtra("account_number", data.accountNumber ?: "")
-            putExtra("timestamp",     ts)
+            putExtra("timestamp", ts)
         })
     }
 

@@ -176,7 +176,9 @@ class _KillswitchScreenState extends ConsumerState<KillswitchScreen>
       await prefs.setBool('override_trade_pending', true);
       await prefs.setString('override_trade_reason', _overrideReason ?? '');
       if (mounted) {
-        Navigator.of(context).pushReplacementNamed('/main');
+        // Dopo lo sblocco l'utente deve modificare i limiti, non tornare
+        // direttamente alla Home con le regole precedenti.
+        Navigator.of(context).pushReplacementNamed('/personal_rules');
       }
     }
   }

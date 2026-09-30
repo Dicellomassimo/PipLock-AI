@@ -15,7 +15,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   try {
-    await Firebase.initializeApp();
+    await Firebase.initializeApp().timeout(const Duration(seconds: 8));
     // Wire up Crashlytics: cattura tutti gli errori Flutter non gestiti
     // e li invia a Firebase Console per monitoraggio in produzione.
     FlutterError.onError = FirebaseCrashlytics.instance.recordFlutterFatalError;
@@ -25,7 +25,9 @@ Future<void> main() async {
       return true;
     };
     // In debug non inviamo i crash a Crashlytics per evitare dati di test
-    await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(kReleaseMode);
+    await FirebaseCrashlytics.instance
+      .setCrashlyticsCollectionEnabled(kReleaseMode)
+      .timeout(const Duration(seconds: 3));
   } catch (_) {
     // google-services.json potrebbe non essere configurato completamente
   }
@@ -51,13 +53,17 @@ Future<void> main() async {
 
   // Handle deep links for email confirmation and password reset
   final appLinks = AppLinks();
-  appLinks.uriLinkStream.listen((uri) async {
+  Future<void> handleAuthLink(Uri uri) async {
     if (uri.scheme == 'piplock') {
       try {
         await Supabase.instance.client.auth.getSessionFromUrl(uri);
       } catch (_) {}
     }
-  });
+  }
+
+  appLinks.uriLinkStream.listen(handleAuthLink);
+  final initialUri = await appLinks.getInitialLink();
+  if (initialUri != null) await handleAuthLink(initialUri);
 
   MetaApiService.setToken(EnvConfig.metaApiToken);
 

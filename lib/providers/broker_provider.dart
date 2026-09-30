@@ -117,6 +117,11 @@ class BrokerState {
 
 class BrokerNotifier extends StateNotifier<BrokerState> {
   final Ref _ref;
+  static String _todayKey() {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
   StreamSubscription? _realtimeSub;
   StreamSubscription? _accessibilitySub;
   Timer? _accessibilityTimer;
@@ -149,6 +154,8 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
   DateTime? _lastPositionCloseTime;
   bool _fastReentryAlertSent = false;
   bool _dailyBriefingTriggered = false;
+  int _connectionGeneration = 0;
+  bool _tokenUnlockProcessing = false;
 
   // Bug C: balance iniziale del giorno
   double? _initialBalanceToday;
@@ -252,6 +259,7 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
 
   Future<void> _loadPersistedConnection() async {
     if (kDevMode) return;
+    final generation = ++_connectionGeneration;
     try {
       // 1. Prova a ripristinare connessione EA da Supabase
       final userId = _ref.read(currentUserIdProvider);
@@ -287,7 +295,8 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
             } catch (e) {
               debugPrint('[BrokerProvider] prefs save error: $e');
             }
-            state = BrokerState(
+            if (generation != _connectionGeneration) return;
+            state = state.copyWith(
               method: BrokerConnectionMethod.accessibility,
               status: BrokerConnectionStatus.connecting,
               statusMessage: 'Reading MT5 data...',
@@ -311,7 +320,8 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       if (!isEnabled && savedMethod != 'accessibility') return;
 
       // Imposta metodo accessibility e avvia subscription realtime + polling iniziale
-      state = BrokerState(
+      if (generation != _connectionGeneration) return;
+      state = state.copyWith(
         method: BrokerConnectionMethod.accessibility,
         status: BrokerConnectionStatus.connecting,
         statusMessage: 'Reading MT5 data...',
@@ -319,6 +329,7 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       _startAccessibilityStream();
       _startAccessibilityPolling();
       await _restoreAccessibilitySnapshot();
+      await _restoreFlutterSnapshot();
     } catch (e) {
       debugPrint('[BrokerProvider] data load error: $e');
     }
@@ -328,6 +339,36 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       if (mounted) syncAllAccountsToNative();
     });
     _scheduleMidnightReset();
+  }
+
+  /// Forza il ripristino quando una schermata viene riaperta: lo snapshot
+  /// resta visibile anche senza un nuovo evento MT5.
+  Future<void> restorePersistedSnapshot() async {
+    if (!mounted) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final savedMethod = prefs.getString('connection_method');
+      if (savedMethod != 'accessibility' &&
+          state.method != BrokerConnectionMethod.accessibility) return;
+      if (state.method != BrokerConnectionMethod.accessibility) {
+        state = state.copyWith(
+          method: BrokerConnectionMethod.accessibility,
+          status: BrokerConnectionStatus.connecting,
+          statusMessage: 'Restoring MT5 data...',
+        );
+      }
+      await _restoreAccessibilitySnapshot();
+      if (mounted && state.method == BrokerConnectionMethod.accessibility &&
+          state.data.equity != null) {
+        state = state.copyWith(
+          status: BrokerConnectionStatus.connected,
+          statusMessage: 'Screen reading MT5 mobile',
+          error: null,
+        );
+      }
+    } catch (e) {
+      debugPrint('[BrokerProvider] restorePersistedSnapshot error: $e');
+    }
   }
 
   /// Ripristina tradesToday, P&L e balance di riferimento dai dati persistiti.
@@ -399,11 +440,9 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
         } else {
           bestTradesToday = kotlinTrades ?? flutterTrades;
         }
-      }
-
-      updateFromAccessibility(
+      }      updateFromAccessibility(
         equity:      (equity      != null && equity      >= 0)  ? equity      : null,
-        balance:     (balance     != null && balance     >= 0)  ? balance     : null,
+        balance:     (balance     != null && balance     >= 0)  ? balance      : null,
         profit:      isToday ? ((profitRaw != null && !profitRaw.isNaN) ? profitRaw : null) : null,
         positions:   (positions   != null && positions   >= 0)  ? positions   : null,
         tradesToday: bestTradesToday,
@@ -541,7 +580,9 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
   /// Attiva il monitoraggio via Accessibility Service.
   /// Verifica subito se il servizio è attivo, poi polling ogni 2s fino a conferma.
   Future<void> connectAccessibility() async {
-    state = BrokerState(
+    ++_connectionGeneration;
+    // Mantieni lo snapshot già letto mentre riavvii il monitoraggio.
+    state = state.copyWith(
       method: BrokerConnectionMethod.accessibility,
       status: BrokerConnectionStatus.connecting,
       statusMessage: 'Checking accessibility permissions...',
@@ -565,6 +606,7 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       }
     } catch (_) {}
     _startAccessibilityStream();
+    await _restoreAccessibilitySnapshot();
     await _checkAccessibilityAndUpdate();
     _startAccessibilityPolling();
     _scheduleMidnightReset();
@@ -1027,8 +1069,6 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
 
     if (validEquity == null && validBalance == null && validProfit == null) return;
 
-    final prevBalance = validBalance ?? state.data.balance;
-
     // Bug C: memorizza il balance al PRIMO collegamento del giorno.
     final now = DateTime.now();
     final todayStr = now.toIso8601String().substring(0, 10);
@@ -1062,11 +1102,13 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       computedDailyPnl = validProfit;
     }
 
-    final dayLossUsd = validProfit != null
-        ? (computedDailyPnl != null && computedDailyPnl < 0 ? computedDailyPnl.abs() : null)
+    // La perdita giornaliera si calcola anche quando MT5 invia solo
+    // equity/balance: il campo profitto può mancare durante un refresh.
+    final dayLossUsd = computedDailyPnl != null && computedDailyPnl < 0
+        ? computedDailyPnl.abs()
         : null;
-    final dayLossPct = (dayLossUsd != null && prevBalance != null && prevBalance > 0)
-        ? dayLossUsd / prevBalance * 100
+    final dayLossPct = (dayLossUsd != null && _initialBalanceToday != null && _initialBalanceToday! > 0)
+        ? dayLossUsd / _initialBalanceToday! * 100
         : null;
     final drawdownPct = (validEquity != null && validBalance != null && validBalance > 0 && validEquity < validBalance)
         ? (validBalance - validEquity) / validBalance * 100
@@ -1133,7 +1175,7 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       equity: validEquity ?? state.data.equity,
       balance: validBalance ?? state.data.balance,
       dailyPnl: computedDailyPnl ?? state.data.dailyPnl,
-      dailyLossUsd: validProfit != null ? dayLossUsd : state.data.dailyLossUsd,
+      dailyLossUsd: dayLossUsd ?? state.data.dailyLossUsd,
       dailyLossPct: dayLossPct ?? state.data.dailyLossPct,
       drawdownPct: drawdownPct ?? state.data.drawdownPct,
       // When positions = 0, keep the last known non-zero count (MT5 likely backgrounded or tab changed)
@@ -1150,11 +1192,54 @@ class BrokerNotifier extends StateNotifier<BrokerState> {
       statusMessage: null,
     );
 
+    _persistAccessibilitySnapshot(newData);
+
     if (!wasConnected) {
       // Prima volta che riceviamo dati dall'accessibility
     }
 
+    // Allinea il provider che alimenta la Home e persiste i valori broker.
+    // Non usa trackLoss(), perché il P&L viene emesso più volte e non va sommato
+    // ad ogni polling: si salva il massimo cumulativo valido della giornata.
+    try {
+      _ref.read(rulesProvider.notifier).setDailyCounters(
+        trades: newData.tradesToday,
+        loss: newData.dailyLossUsd,
+      );
+    } catch (_) {}
     _checkLimits(newData);
+  }
+
+  Future<void> _persistAccessibilitySnapshot(BrokerData data) async {
+    if (data.equity == null && data.balance == null) return;
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('accessibility_snapshot_date', _todayKey());
+      if (data.equity != null) await prefs.setDouble('accessibility_snapshot_equity', data.equity!);
+      if (data.balance != null) await prefs.setDouble('accessibility_snapshot_balance', data.balance!);
+      if (data.dailyPnl != null) await prefs.setDouble('accessibility_snapshot_pnl', data.dailyPnl!);
+      if (data.dailyLossUsd != null) await prefs.setDouble('accessibility_snapshot_loss', data.dailyLossUsd!);
+      if (data.dailyLossPct != null) await prefs.setDouble('accessibility_snapshot_loss_pct', data.dailyLossPct!);
+      if (data.openPositions != null) await prefs.setInt('accessibility_snapshot_positions', data.openPositions!);
+      if (data.tradesToday != null) await prefs.setInt('accessibility_snapshot_trades', data.tradesToday!);
+      await prefs.setInt('accessibility_snapshot_timestamp', DateTime.now().millisecondsSinceEpoch);
+    } catch (_) {}
+  }
+
+  Future<void> _restoreFlutterSnapshot() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      if (prefs.getString('accessibility_snapshot_date') != _todayKey()) return;
+      final ts = prefs.getInt('accessibility_snapshot_timestamp') ?? 0;
+      if (ts <= 0 || DateTime.now().millisecondsSinceEpoch - ts > 86400000) return;
+      updateFromAccessibility(
+        equity: prefs.getDouble('accessibility_snapshot_equity'),
+        balance: prefs.getDouble('accessibility_snapshot_balance'),
+        profit: prefs.getDouble('accessibility_snapshot_pnl'),
+        positions: prefs.getInt('accessibility_snapshot_positions'),
+        tradesToday: prefs.getInt('accessibility_snapshot_trades'),
+      );
+    } catch (_) {}
   }
 
   // ── Disconnessione ──────────────────────────────────────────────────────────

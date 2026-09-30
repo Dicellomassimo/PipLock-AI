@@ -61,7 +61,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
       // authProvider listener handles navigation
     } catch (e) {
       if (mounted && !e.toString().contains('cancelled')) {
-        _showError('Google Sign In failed. Try again.');
+        _showError(_authErrorMessage(e));
       }
     } finally {
       if (mounted) setState(() => _googleLoading = false);
@@ -107,6 +107,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen>
         margin: const EdgeInsets.all(16),
       ),
     );
+  }
+
+  String _authErrorMessage(Object error) {
+    return _friendlyError(error.toString(), ref.read(appStringsProvider));
   }
 
   String _friendlyError(String raw, AppStrings s) {
