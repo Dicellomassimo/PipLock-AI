@@ -56,7 +56,7 @@ Pro users get 3 AI plan generations + 20 chat messages per day.
 Trial users get 2 + 5 per day (7-day free trial included).
 
 **TECHNICAL NOTE**
-PipLock uses Android's Accessibility Service to detect when you open a broker app and show the overlay. It reads only the foreground app's package name — it does not read screen content, keystrokes, or any data from your broker account.
+PipLock's optional Screen Reading feature uses Android's Accessibility Service only after you enable it and accept a separate in-app disclosure. It detects supported broker apps and, while one is open, reads visible accessibility fields to extract balance, equity, floating profit/loss, margin, open positions, daily trade count, and an account number if shown. These values are processed on your device to check your rules and control PipLock overlays; numeric snapshots are stored in the app's private local storage. This Accessibility Service does not send screen text or extracted broker values to PipLock servers or third parties. During an active Killswitch lockdown it intercepts Back and Recents key presses. It does not take screenshots, record keystrokes, or read passwords. You can decline and use another broker connection method, or disable the service in Android Accessibility settings.
 
 The "Display over other apps" permission is required to show the Killswitch overlay above your broker app.
 
@@ -91,6 +91,9 @@ PipLock AI è l'app per la disciplina nel trading, costruita per trader seri che
 📈 **Trade Limit Alert** — Banner arancione quando ti avvicini al limite giornaliero di trade. Attrito visivo prima che tu violi le tue regole.
 
 🔔 **Notifiche Smart** — Avvisi apertura/chiusura mercati, promemoria sessione, check-in giornalieri.
+
+**NOTA TECNICA — SERVIZIO DI ACCESSIBILITÀ**
+La funzione opzionale Lettura Schermo usa il Servizio di accessibilità Android solo dopo che lo abiliti e accetti una disclosure separata nell'app. Rileva le app broker supportate e, mentre una di queste è aperta, legge i campi visibili tramite le API di accessibilità per estrarre saldo, equity, profitto/perdita, margine, posizioni aperte, numero di operazioni giornaliere e, se visibile, il numero del conto. I valori vengono elaborati sul dispositivo per controllare le tue regole e gestire gli overlay PipLock; gli snapshot numerici sono salvati nello spazio privato locale dell'app. Questo servizio non invia testo dello schermo o dati broker estratti ai server PipLock o a terze parti. Durante un Killswitch attivo intercetta i tasti Indietro e Recenti. Non acquisisce screenshot, non registra la digitazione e non legge password. Puoi rifiutare e usare un altro metodo di collegamento al broker, oppure disattivare il servizio nelle impostazioni Android di accessibilità.
 
 **NON È CONSULENZA FINANZIARIA**
 PipLock AI è uno strumento di disciplina. Non fornisce segnali di trading, consigli di investimento o gestione del conto. Sei l'unico responsabile delle tue decisioni di trading.

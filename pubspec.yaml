@@ -2,7 +2,7 @@ name: piplock_ai
 description: "PipLock AI - Disciplina forzata per trader. Killswitch, AI Planner, anti-FOMO."
 publish_to: 'none'
 
-version: 1.0.0+19
+version: 1.0.0+20
 
 environment:
   sdk: ^3.11.5

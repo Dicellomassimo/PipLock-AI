@@ -7,6 +7,7 @@ import '../../config/app_colors.dart';
 import '../../config/app_strings.dart';
 import '../../services/accessibility_service.dart';
 import '../../services/notification_service.dart';
+import '../../widgets/accessibility_disclosure.dart';
 
 class PermissionsScreen extends ConsumerStatefulWidget {
   const PermissionsScreen({super.key});
@@ -146,127 +147,37 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen>
     }
   }
 
-  void _showAccessibilityExplanation(BuildContext context, AppStrings s) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        backgroundColor: AppColors.cardBg,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Row(
-          children: [
-            const Icon(Icons.accessibility_new, color: AppColors.fomo, size: 22),
-            const SizedBox(width: 10),
-            Expanded(
-              child: Text(
-                s.t('Accessibility Permission', 'Permesso Accessibilità'),
-                style: GoogleFonts.manrope(
-                    color: AppColors.textPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16),
-              ),
-            ),
-          ],
-        ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              s.t('Why PipLock needs this permission:',
-                  'Perché PipLock ha bisogno di questo permesso:'),
-              style: GoogleFonts.manrope(
-                  color: AppColors.textPrimary,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13),
-            ),
-            const SizedBox(height: 10),
-            _bulletPoint(s.t(
-              '✓  Detects when you open your broker app (MT5, MT4, etc.)',
-              '✓  Rileva quando apri l\'app del tuo broker (MT5, MT4, ecc.)',
-            )),
-            _bulletPoint(s.t(
-              '✓  Enforces the Killswitch block if your trading limits are reached',
-              '✓  Applica il blocco Killswitch se raggiungi i tuoi limiti di trading',
-            )),
-            _bulletPoint(s.t(
-              '✗  Does NOT read passwords, messages or any content from other apps',
-              '✗  NON legge password, messaggi o contenuti di altre app',
-            )),
-            _bulletPoint(s.t(
-              '✗  Does NOT take screenshots or record your screen',
-              '✗  NON acquisisce screenshot né registra lo schermo',
-            )),
-            const SizedBox(height: 12),
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.fomo.withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.fomo.withValues(alpha: 0.2)),
-              ),
-              child: Text(
-                s.t(
-                  'In the next screen, find "PipLock AI" in the list and enable the toggle.',
-                  'Nella schermata successiva, cerca "PipLock AI" nell\'elenco e abilita l\'interruttore.',
-                ),
-                style: GoogleFonts.manrope(
-                    color: AppColors.fomo, fontSize: 12, height: 1.4),
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: Text(s.t('Cancel', 'Annulla'),
-                style:
-                    GoogleFonts.manrope(color: AppColors.textSecondary)),
-          ),
-          ElevatedButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              final canChange = await _canChangePermissions();
-              if (!canChange) {
-                if (mounted) _showPermissionLockedDialog();
-                return;
-              }
-              final isCurrentlyEnabled = await AccessibilityService.isEnabled();
-              if (isCurrentlyEnabled && mounted) {
-                // User is trying to DISABLE — require 60s cooldown
-                _showPermissionCooldown(() {
-                  AccessibilityService.openSettings();
-                  SharedPreferences.getInstance()
-                      .then((p) => p.setBool(_kPermAccessibility, false));
-                });
-              } else {
-                AccessibilityService.openSettings();
-                SharedPreferences.getInstance()
-                    .then((p) => p.setBool(_kPermAccessibility, true));
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.accent,
-              foregroundColor: Colors.black,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            child: Text(s.t('Open Settings', 'Apri Impostazioni'),
-                style: GoogleFonts.manrope(fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-  }
+  Future<void> _showAccessibilityExplanation(
+      BuildContext context, AppStrings s) async {
+    final isCurrentlyEnabled = await AccessibilityService.isEnabled();
+    if (!context.mounted) return;
+    final prefs = await SharedPreferences.getInstance();
+    if (!context.mounted) return;
+    final hasDisclosureConsent =
+        prefs.getBool(accessibilityDisclosureConsentKey) ?? false;
+    if (!hasDisclosureConsent) {
+      final accepted = await requestAccessibilityDisclosure(context, s);
+      if (!accepted || !context.mounted) return;
+      if (isCurrentlyEnabled) return;
+    }
 
-  Widget _bulletPoint(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text(
-        text,
-        style: GoogleFonts.manrope(
-            color: AppColors.textSecondary, fontSize: 12, height: 1.4),
-      ),
-    );
+    final canChange = await _canChangePermissions();
+    if (!canChange) {
+      if (mounted) _showPermissionLockedDialog();
+      return;
+    }
+
+    if (isCurrentlyEnabled && mounted) {
+      _showPermissionCooldown(() {
+        AccessibilityService.openSettings();
+        SharedPreferences.getInstance()
+            .then((prefs) => prefs.setBool(_kPermAccessibility, false));
+      });
+    } else {
+      await AccessibilityService.openSettings();
+      await SharedPreferences.getInstance()
+          .then((prefs) => prefs.setBool(_kPermAccessibility, true));
+    }
   }
 
   @override
@@ -297,8 +208,8 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen>
             refreshKey: _refreshKey,
             title: s.permissionsAccessibilityTitle,
             description: s.t(
-              'Allows PipLock to detect when you open your broker app on this device. It never reads passwords or content from other apps.',
-              'Permette a PipLock di rilevare quando apri l\'app del tuo broker su questo dispositivo. Non legge password o contenuti delle altre app.',
+              'When enabled, detects supported broker apps and reads visible financial fields (balance, equity, P&L, positions and trade count) on this device to enforce your rules. It does not send these values to our servers.',
+              'Quando è attivo, rileva le app broker supportate e legge i dati finanziari visibili (saldo, equity, P&L, posizioni e numero di operazioni) su questo dispositivo per applicare le tue regole. Non invia questi valori ai nostri server.',
             ),
             statusFuture: AccessibilityService.isEnabled(),
             activeLabel: s.permissionsAccessibilityActive,
@@ -330,16 +241,15 @@ class _PermissionsScreenState extends ConsumerState<PermissionsScreen>
             }
             final isCurrentlyEnabled = await AccessibilityService.canDrawOverlays();
             if (isCurrentlyEnabled && mounted) {
-              // User is trying to DISABLE — require 60s cooldown
               _showPermissionCooldown(() {
                 AccessibilityService.requestOverlayPermission();
                 SharedPreferences.getInstance()
-                    .then((p) => p.setBool('perm_overlay_granted', false));
+                    .then((prefs) => prefs.setBool('perm_overlay_granted', false));
               });
             } else {
               AccessibilityService.requestOverlayPermission();
               SharedPreferences.getInstance()
-                  .then((p) => p.setBool('perm_overlay_granted', true));
+                  .then((prefs) => prefs.setBool('perm_overlay_granted', true));
             }
           }),
           const SizedBox(height: 16),
@@ -583,7 +493,7 @@ class _OverlayPermissionCard extends StatelessWidget {
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      isEnabled
+                        isEnabled
                           ? s.t('Active — overlay enabled', 'Attivo — overlay abilitato')
                           : s.t('Required for Killswitch overlay', 'Richiesto per l\'overlay Killswitch'),
                       style: GoogleFonts.manrope(

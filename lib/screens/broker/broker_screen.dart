@@ -10,6 +10,7 @@ import '../../providers/broker_provider.dart';
 import '../../providers/killswitch_provider.dart';
 import '../../providers/rules_provider.dart';
 import '../../services/accessibility_service.dart';
+import '../../widgets/accessibility_disclosure.dart';
 import '../../widgets/animated_card.dart';
 import '../../widgets/premium_button.dart';
 
@@ -1136,6 +1137,7 @@ class _AccessibilityFormState extends ConsumerState<_AccessibilityForm> {
             label: s.brokerEnableInSettings,
             icon: Icons.settings_outlined,
             onTap: () async {
+              if (!await requestAccessibilityDisclosure(context, s)) return;
               await AccessibilityService.openSettings();
               await Future.delayed(const Duration(seconds: 2));
               _checkStatus();
@@ -1194,8 +1196,9 @@ class _AccessibilityFormState extends ConsumerState<_AccessibilityForm> {
           PremiumButton(
             label: s.brokerStartMonitoring,
             icon: Icons.phone_android_outlined,
-            onTap: () {
-              ref.read(brokerProvider.notifier).connectAccessibility();
+            onTap: () async {
+              if (!await requestAccessibilityDisclosure(context, s)) return;
+              await ref.read(brokerProvider.notifier).connectAccessibility();
             },
           ),
 

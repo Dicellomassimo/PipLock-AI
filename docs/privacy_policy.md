@@ -1,6 +1,6 @@
 # Privacy Policy — PipLock AI
 
-**Effective date:** September 6, 2026  
+**Effective date:** October 6, 2026
 **App:** PipLock AI (com.piplock.piplock_ai)  
 **Developer:** PipLock  
 **Contact:** support.piplock@gmail.com
@@ -20,7 +20,7 @@
 
 ### 1.3 Device Data
 - **Push notification token (FCM)** — used to send market alerts and challenge reminders
-- **Broker app detection** — the Accessibility Service detects when you open a broker app (e.g. MetaTrader 5) to show protection overlays. **We do not read, record, or transmit any trading data, account balances, open positions, or personal trading activity.**
+- **Accessibility data (only if you enable Screen Reading)** — on-device foreground app package detection for supported broker apps; while a supported broker is open, visible accessibility text is processed to extract balance, equity, floating profit/loss, margin, open-position count, daily trade count, and an account number if it is visible. Numeric snapshots are stored in the app's private local storage and used on-device to evaluate your configured limits and update the dashboard. This Accessibility Service does not transmit screen text or extracted broker values to PipLock servers or third parties.
 
 ### 1.4 Data We Do NOT Collect
 - We do not collect payment card numbers (payments are processed by Google Play / RevenueCat)
@@ -59,15 +59,11 @@ Your data is processed in the EU and/or the United States depending on the servi
 
 ## 4. Accessibility Service
 
-PipLock AI uses Android's Accessibility Service to detect when you open a broker trading app (e.g. MetaTrader 5, MT4) and display a protection overlay (Killswitch or FOMO Gatekeeper).
+PipLock AI is not an accessibility tool for people with disabilities. If you choose the Screen Reading broker connection and affirmatively consent, Android's Accessibility Service checks the foreground app package to recognize supported broker apps (for example MetaTrader 4/5 and cTrader). While a supported broker is open, it reads visible accessibility text and fields to extract balance, equity, floating profit/loss, margin, open-position count, daily trade count, and an account number if shown. It uses these values on-device to evaluate your configured risk limits, update the dashboard, and show or dismiss PipLock protection and warning overlays.
 
-**This service does NOT:**
-- Read the content of any app on your screen
-- Record keystrokes or passwords
-- Capture screenshots
-- Transmit any data from your broker app
+The service passes extracted values only to PipLock components on the device and stores numeric snapshots in the app's private local storage. It does not transmit screen text or extracted financial values to PipLock servers or third parties. During an active Killswitch lockdown, it intercepts Back and Recents key presses to enforce the temporary lock. It does not take screenshots, record keystrokes, or read passwords.
 
-It only reads the package name of the foreground application to determine whether to show a PipLock overlay.
+You can decline this permission and use other broker connection methods. You can disable Accessibility Service at any time in Android Accessibility settings; Screen Reading monitoring and its related overlays will then stop.
 
 ---
 

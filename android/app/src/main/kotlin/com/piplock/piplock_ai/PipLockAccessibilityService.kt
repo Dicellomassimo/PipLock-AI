@@ -136,6 +136,7 @@ class PipLockAccessibilityService : AccessibilityService() {
      * Richiede FLAG_REQUEST_FILTER_KEY_EVENTS nell'AccessibilityServiceInfo.
      */
     override fun onKeyEvent(event: KeyEvent?): Boolean {
+        if (!hasAccessibilityDisclosureConsent()) return false
         if (event == null) return false
         if (KillswitchOverlayService.isRunning && KillswitchOverlayService.isOverlayVisible) {
             if (event.action == KeyEvent.ACTION_DOWN) {
@@ -180,6 +181,7 @@ class PipLockAccessibilityService : AccessibilityService() {
     }
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        if (!hasAccessibilityDisclosureConsent()) return
         if (event == null) return
         val pkg = event.packageName?.toString() ?: return
         val appName = resolveBrokerName(pkg)
@@ -249,6 +251,10 @@ class PipLockAccessibilityService : AccessibilityService() {
         extractBrokerData(root)
     }
 
+    private fun hasAccessibilityDisclosureConsent(): Boolean =
+        getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+            .getBoolean("flutter.accessibility_disclosure_2026_10", false)
+
     private fun extractBrokerData(root: AccessibilityNodeInfo) {
         val texts = mutableListOf<String>()
         collectTexts(root, texts)
@@ -282,7 +288,7 @@ class PipLockAccessibilityService : AccessibilityService() {
 
             val withAccount = result.copy(accountNumber = accountNum)
             val adjusted = computeDailyPnl(withAccount)
-            Log.d(TAG, "Dati estratti: eq=${adjusted.equity} bal=${adjusted.balance} pnl=${adjusted.profit} pos=${adjusted.positions} acc=${adjusted.accountNumber}")
+            Log.d(TAG, "Broker account fields processed on device")
 
             // IMPORTANTE: checkLimitsNatively PRIMA di sendExtractedData.
             // Così il servizio nativo ha la precedenza: se triggera showWithWarning(),
@@ -320,7 +326,7 @@ class PipLockAccessibilityService : AccessibilityService() {
 
         // Sanity check: perdita > 40% del balance → reference corrotto, reset
         if (dailyPnl < 0 && Math.abs(dailyPnl) > balance * 0.40) {
-            Log.w(TAG, "Reference corrotto (pnl=$dailyPnl balance=$balance) — reset reference")
+            Log.w(TAG, "Implausible daily P&L reference detected — reference reset")
             resetReferenceBalance(balance)
             return data.copy(profit = 0.0)  // P&L neutro fino al prossimo ciclo
         }
@@ -490,7 +496,7 @@ class PipLockAccessibilityService : AccessibilityService() {
                     else 1  // non ancora calibrato: conta almeno 1 trade per delta significativo
                     tradesOpenedToday += newTrades
                     lastDetectedTradeMarginDelta = delta  // usato da checkOverleveraging
-                    Log.d(TAG, "Nuovi trade (Δmargin=$delta, est/trade=$estimatedMarginPerTrade): +$newTrades → oggi=$tradesOpenedToday")
+                    Log.d(TAG, "Daily trade counter updated from broker screen")
                 } else {
                     lastDetectedTradeMarginDelta = 0.0
                 }
@@ -498,7 +504,7 @@ class PipLockAccessibilityService : AccessibilityService() {
             }
         }
 
-        Log.d(TAG, "ViewID: eq=$equity bal=$balance pnl=$profit openNow=$currentOpenPositions today=$tradesOpenedToday margin=$margin")
+        Log.d(TAG, "Broker fields extracted from supported trading screen")
         return ExtractedData(
             equity    = equity,
             balance   = balance,
@@ -1158,7 +1164,7 @@ class PipLockAccessibilityService : AccessibilityService() {
             val ratio = if (recommendedMargin > 0) tradeMargin / recommendedMargin else tradeMargin / estimatedMarginPerTrade
             // Log anche il lot size raccomandato dal AI Planner (se disponibile)
             val recLot = flutterPrefs.getFloat("flutter.recommended_lot_size", -1f)
-            Log.w(TAG, "Overleveraging: trade margin=$tradeMargin, avg/recommended=${if (recommendedMargin > 0) recommendedMargin else estimatedMarginPerTrade}, ratio=${String.format("%.1f", ratio)}x, AI plan lot=$recLot")
+            Log.w(TAG, "Overleveraging threshold exceeded by a newly opened trade")
             lastOverleveragingAlertTime = now
             FomoGatekeeperOverlayService.show(this, "overleveraging")
         }
@@ -1265,9 +1271,7 @@ class PipLockAccessibilityService : AccessibilityService() {
                 putString("registered_account_number", accountNumber)
                 apply()
             }
-            Log.d(TAG, "Rules loaded for account $accountNumber: " +
-                "maxLoss=${rules.optDouble("max_daily_loss_amount")} " +
-                "maxTrades=${rules.optInt("max_trades_per_day")}")
+            Log.d(TAG, "Local rules loaded for detected broker account")
         } catch (e: Exception) {
             Log.e(TAG, "Error parsing account_rules_map: $e")
         }
